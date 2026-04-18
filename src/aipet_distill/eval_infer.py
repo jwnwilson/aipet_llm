@@ -96,7 +96,8 @@ def main() -> None:
 
     def generate(context: dict[str, Any]) -> tuple[str, float]:
         prompt = build_prompt_text(context)
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_positions - max_new_tokens)
+        max_prompt_tokens = max(64, max_positions - max_new_tokens)
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_tokens)
         gen_kwargs = {
             "max_new_tokens": max_new_tokens,
             "pad_token_id": tokenizer.pad_token_id,

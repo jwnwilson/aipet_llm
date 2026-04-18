@@ -86,8 +86,26 @@ make serve MODEL_DIR=models/aipet-sft/final HOST=0.0.0.0 PORT=8000
 If you trained a smoke checkpoint, use:
 
 ```bash
-make serve MODEL_DIR=models/aipet-sft-smoke/final
+make serve MODEL_DIR=models/aipet-sft/final
 ```
+
+### Low latency mode (CPU)
+
+Use `configs/low_latency.yaml`: **fewer `max_new_tokens`**, **greedy decoding** (`do_sample: false`), and **`infer.skip_retry: true`** so invalid outputs skip the second generation pass (faster; may fall back more often).
+
+```bash
+make serve-low-latency MODEL_DIR=models/aipet-sft/final PORT=8000
+# other terminal:
+make request-example API_URL=http://127.0.0.1:8000
+```
+
+CLI inference without the API:
+
+```bash
+make infer-low-latency MODEL_DIR=models/aipet-sft/final
+```
+
+Override the low-latency config path: `CONFIG_LOW=configs/low_latency.yaml` (default).
 
 Endpoints:
 

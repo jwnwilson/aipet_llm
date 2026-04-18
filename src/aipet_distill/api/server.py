@@ -133,9 +133,10 @@ def health() -> dict[str, str]:
 @app.post("/v1/pet/turn")
 def pet_turn(req: TurnRequest) -> dict[str, Any]:
     context = req.context
+    skip_retry = bool(_infer_cfg.get("skip_retry", False))
     raw = _generate(context)
     obj = extract_json_object(raw)
-    if obj is None or validate_turn(context, obj):
+    if (obj is None or validate_turn(context, obj)) and not skip_retry:
         strict = (
             "Return ONLY one JSON object. No markdown. Keys: decision, needs_after_intent, "
             "emotion, dialog, confidence.\n"

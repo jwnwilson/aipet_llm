@@ -101,7 +101,8 @@ def main() -> None:
 
     def generate(extra_suffix: str = "") -> str:
         prompt = build_prompt_text(context) + extra_suffix
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_positions - max_new_tokens)
+        max_prompt_tokens = max(64, max_positions - max_new_tokens)
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=max_prompt_tokens)
         gen_kwargs = {
             "max_new_tokens": max_new_tokens,
             "pad_token_id": tokenizer.pad_token_id,
@@ -120,9 +121,10 @@ def main() -> None:
         gen_ids = out[0][inputs["input_ids"].shape[1] :]
         return tokenizer.decode(gen_ids, skip_special_tokens=True)
 
+    skip_retry = bool(infer_cfg.get("skip_retry", False))
     text = generate()
     obj = extract_json_object(text)
-    if obj is None or validate_turn(context, obj):
+    if (obj is None or validate_turn(context, obj)) and not skip_retry:
         strict = (
             "Return ONLY one JSON object. No markdown. Keys: decision, needs_after_intent, "
             "emotion, dialog, confidence.\n"
