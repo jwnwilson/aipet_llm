@@ -1,0 +1,30 @@
+model_name: "distilgpt2"
+max_length: 768
+max_new_tokens: 256
+
+train:
+  output_dir: "models/aipet-sft"
+  num_train_epochs: 5
+  per_device_train_batch_size: 2
+  per_device_eval_batch_size: 2
+  gradient_accumulation_steps: 4
+  learning_rate: 3.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.06
+  logging_steps: 10
+  evaluation_strategy: "steps"
+  eval_steps: 50
+  save_strategy: "steps"
+  save_steps: 100
+  save_total_limit: 2
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+  fp16: false
+  bf16: false
+
+infer:
+  temperature: 0.2
+  top_p: 0.9
+  do_sample: true
+  num_beams: 1

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aipet-distill"
+version = "0.1.0"
+description = "SFT + validation for a small CPU-friendly AI pet JSON policy model."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.2.0",
+  "transformers>=4.40.0",
+  "PyYAML>=6.0.1",
+  "tqdm>=4.66.0",
+  "pydantic>=2.6.0",
+  "accelerate>=1.13.0",
+  "fastapi>=0.112.0",
+  "uvicorn>=0.30.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
