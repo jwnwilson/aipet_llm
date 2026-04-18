@@ -71,4 +71,4 @@ runtime:
 		--input $(VAL_FILE)
 
 serve:
-	AIPET_CONFIG_PATH=$(CONFIG) AIPET_MODEL_DIR=$(MODEL_DIR) $(VENV_PY) -m uvicorn scripts.serve_api:app --host $(HOST) --port $(PORT)
+	AIPET_CONFIG_PATH=$(CONFIG) AIPET_MODEL_DIR=$(MODEL_DIR) $(VENV_PY) -m uvicorn aipet_distill.api.server:app --host $(HOST) --port $(PORT)

@@ -159,6 +159,7 @@ Override base URL with `OPENAI_API_BASE` (default `https://api.openai.com/v1/cha
 | `scripts/infer.py` | Load HF model, JSON extract, validate, fallback |
 | `scripts/eval_infer.py` | JSON parse/contract validity + action/need match metrics |
 | `scripts/runtime_check.py` | End-to-end CPU latency and fallback-rate check |
+| `src/aipet_distill/api/server.py` | FastAPI app for `/health` and `/v1/pet/turn` |
 
 ## Notes
 
