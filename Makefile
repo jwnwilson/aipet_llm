@@ -5,6 +5,9 @@ VENV_PIP := $(VENV_DIR)/bin/pip
 
 CONFIG ?= configs/sft.yaml
 CONFIG_LOW ?= configs/low_latency.yaml
+CONFIG_TWO ?= configs/two_stage.yaml
+CLASSIFIER_PATH ?= models/action_classifier.joblib
+SAY_MODEL_DIR ?= models/aipet-say/final
 TRAIN_FILE ?= data/processed/train.jsonl
 VAL_FILE ?= data/processed/val.jsonl
 MODEL_DIR ?= models/aipet-sft/final
@@ -13,7 +16,7 @@ HOST ?= 0.0.0.0
 PORT ?= 8000
 API_URL ?= http://127.0.0.1:$(PORT)
 
-.PHONY: help venv install setup validate prepare train infer eval runtime serve serve-low-latency infer-low-latency eval-low-latency request-example
+.PHONY: help venv install setup validate prepare train train-classifier train-say infer infer-simple eval runtime serve serve-low-latency serve-with-simple infer-low-latency eval-low-latency request-example request-example-simple
 
 help:
 	@echo "Targets:"
@@ -28,7 +31,12 @@ help:
 	@echo "  make serve-low-latency - API server with configs/low_latency.yaml (faster CPU)"
 	@echo "  make infer-low-latency - CLI infer with low-latency config"
 	@echo "  make eval-low-latency - eval metrics with low-latency config"
-	@echo "  make request-example - POST example context to local API"
+	@echo "  make request-example - POST example context to local API (JSON PetTurn)"
+	@echo "  make train-classifier - sklearn need||action from simple text"
+	@echo "  make train-say    - SFT only the dialog line (stage 2)"
+	@echo "  make infer-simple - need|action|say (classifier + say model)"
+	@echo "  make serve-with-simple - same as serve + two-stage env for /v1/pet/turn/simple"
+	@echo "  make request-example-simple - POST to /v1/pet/turn/simple"
 	@echo ""
 	@echo "Common overrides:"
 	@echo "  make train TRAIN_FILE=data/processed/train.jsonl VAL_FILE=data/processed/val.jsonl"
@@ -59,10 +67,29 @@ train:
 		--train-file $(TRAIN_FILE) \
 		--val-file $(VAL_FILE)
 
+train-classifier:
+	$(VENV_PY) scripts/train_classifier.py \
+		--input data/raw/example.jsonl \
+		--output $(CLASSIFIER_PATH) \
+		--config $(CONFIG_TWO)
+
+train-say:
+	$(VENV_PY) scripts/train_say_sft.py \
+		--config $(CONFIG_TWO) \
+		--train-file $(TRAIN_FILE) \
+		--val-file $(VAL_FILE)
+
 infer:
 	$(VENV_PY) scripts/infer.py \
 		--config $(CONFIG) \
 		--model-dir $(MODEL_DIR) \
+		--context $(CONTEXT_FILE)
+
+infer-simple:
+	$(VENV_PY) scripts/infer_simple.py \
+		--config $(CONFIG_TWO) \
+		--classifier $(CLASSIFIER_PATH) \
+		--say-model-dir $(SAY_MODEL_DIR) \
 		--context $(CONTEXT_FILE)
 
 eval:
@@ -82,6 +109,12 @@ serve:
 serve-low-latency:
 	AIPET_CONFIG_PATH=$(CONFIG_LOW) AIPET_MODEL_DIR=$(MODEL_DIR) $(VENV_PY) -m uvicorn aipet_distill.api.server:app --host $(HOST) --port $(PORT)
 
+# JSON PetTurn + two-stage simple line (set CLASSIFIER_PATH / SAY_MODEL_DIR after training).
+serve-with-simple:
+	AIPET_CONFIG_PATH=$(CONFIG) AIPET_MODEL_DIR=$(MODEL_DIR) \
+	AIPET_TWO_STAGE_CONFIG=$(CONFIG_TWO) AIPET_CLASSIFIER_PATH=$(CLASSIFIER_PATH) AIPET_SAY_MODEL_DIR=$(SAY_MODEL_DIR) \
+	$(VENV_PY) -m uvicorn aipet_distill.api.server:app --host $(HOST) --port $(PORT)
+
 infer-low-latency:
 	$(VENV_PY) scripts/infer.py \
 		--config $(CONFIG_LOW) \
@@ -96,5 +129,10 @@ eval-low-latency:
 
 request-example:
 	curl -sS -X POST "$(API_URL)/v1/pet/turn" \
+		-H "Content-Type: application/json" \
+		-d "{\"context\":$$(cat $(CONTEXT_FILE))}" | $(VENV_PY) -m json.tool
+
+request-example-simple:
+	curl -sS -X POST "$(API_URL)/v1/pet/turn/simple" \
 		-H "Content-Type: application/json" \
 		-d "{\"context\":$$(cat $(CONTEXT_FILE))}" | $(VENV_PY) -m json.tool

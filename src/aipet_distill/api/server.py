@@ -11,8 +11,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+import joblib
+
 from aipet_distill.constants import NEED_KEYS
 from aipet_distill.prompts import build_prompt_text
+from aipet_distill.two_stage_infer import run_two_stage
 from aipet_distill.validate import validate_turn
 
 
@@ -101,6 +104,37 @@ _model = AutoModelForCausalLM.from_pretrained(_server_cfg.model_dir)
 _model.eval()
 _max_positions = int(getattr(_model.config, "n_positions", 1024))
 
+# Optional two-stage (classifier + say LM): set AIPET_CLASSIFIER_PATH, AIPET_SAY_MODEL_DIR, AIPET_TWO_STAGE_CONFIG
+_two_stage_config_path = Path(os.environ.get("AIPET_TWO_STAGE_CONFIG", "configs/two_stage.yaml"))
+_classifier_path = Path(os.environ.get("AIPET_CLASSIFIER_PATH", ""))
+_say_model_dir = Path(os.environ.get("AIPET_SAY_MODEL_DIR", ""))
+_simple_state: tuple[dict, Any, Any, Any] | bool | None = None
+
+
+def _load_simple_pipeline() -> tuple[dict, Any, Any, Any] | None:
+    """Load classifier + say model if paths exist; else None."""
+    global _simple_state
+    if _simple_state is False:
+        return None
+    if isinstance(_simple_state, tuple):
+        return _simple_state
+    if not (
+        _classifier_path.is_file()
+        and _say_model_dir.is_dir()
+        and _two_stage_config_path.is_file()
+    ):
+        _simple_state = False
+        return None
+    simple_cfg = yaml.safe_load(_two_stage_config_path.read_text(encoding="utf-8"))
+    clf = joblib.load(_classifier_path)
+    say_tok = AutoTokenizer.from_pretrained(_say_model_dir, use_fast=True)
+    if say_tok.pad_token is None:
+        say_tok.pad_token = say_tok.eos_token
+    say_model = AutoModelForCausalLM.from_pretrained(_say_model_dir)
+    say_model.eval()
+    _simple_state = (simple_cfg, clf, say_tok, say_model)
+    return _simple_state
+
 
 def _generate(context: dict[str, Any], extra_suffix: str = "") -> str:
     prompt = build_prompt_text(context) + extra_suffix
@@ -153,4 +187,20 @@ def pet_turn(req: TurnRequest) -> dict[str, Any]:
     if errs:
         raise HTTPException(status_code=422, detail={"errors": errs})
     return obj
+
+
+@app.post("/v1/pet/turn/simple")
+def pet_turn_simple(req: TurnRequest) -> dict[str, Any]:
+    pip = _load_simple_pipeline()
+    if pip is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Two-stage pipeline not configured. Set AIPET_CLASSIFIER_PATH, "
+                "AIPET_SAY_MODEL_DIR, and AIPET_TWO_STAGE_CONFIG (defaults in README)."
+            ),
+        )
+    simple_cfg, clf, say_tok, say_model = pip
+    need, action, say, line = run_two_stage(req.context, clf, say_tok, say_model, simple_cfg)
+    return {"need": need, "action": action, "say": say, "line": line}
 
