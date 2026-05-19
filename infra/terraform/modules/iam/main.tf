@@ -171,7 +171,7 @@ resource "aws_iam_access_key" "aipet" {
 }
 
 data "aws_iam_policy_document" "ui_deploy" {
-  count = var.ui_bucket_arn != "" ? 1 : 0
+  count = var.create_ui_resources ? 1 : 0
 
   statement {
     effect    = "Allow"
@@ -193,13 +193,13 @@ data "aws_iam_policy_document" "ui_deploy" {
 }
 
 resource "aws_iam_policy" "ui_deploy" {
-  count  = var.ui_bucket_arn != "" ? 1 : 0
+  count  = var.create_ui_resources ? 1 : 0
   name   = "${var.repo_name}-ui-deploy"
   policy = data.aws_iam_policy_document.ui_deploy[0].json
 }
 
 resource "aws_iam_role_policy_attachment" "ui_deploy" {
-  count      = var.ui_bucket_arn != "" ? 1 : 0
+  count      = var.create_ui_resources ? 1 : 0
   role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.ui_deploy[0].arn
 }

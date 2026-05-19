@@ -20,7 +20,7 @@ resource "aws_route53_record" "temporal" {
 }
 
 resource "aws_route53_record" "llm_ui" {
-  count   = var.ui_cf_domain != "" ? 1 : 0
+  count   = var.create_ui_record ? 1 : 0
   zone_id = data.aws_route53_zone.zone.zone_id
   name    = "llm.${trimsuffix(var.zone_name, ".")}"
   type    = "CNAME"

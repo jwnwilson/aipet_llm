@@ -14,3 +14,9 @@ variable "ui_cf_domain" {
   type        = string
   default     = ""
 }
+
+variable "create_ui_record" {
+  description = "Set to true to create the llm UI CNAME record. Must be a literal bool, not derived from a computed value."
+  type        = bool
+  default     = false
+}

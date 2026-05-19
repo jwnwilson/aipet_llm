@@ -47,3 +47,9 @@ variable "ui_distribution_arn" {
   type        = string
   default     = ""
 }
+
+variable "create_ui_resources" {
+  description = "Set to true to create the UI deploy IAM policy and role attachment. Must be a literal bool, not derived from a computed value."
+  type        = bool
+  default     = false
+}

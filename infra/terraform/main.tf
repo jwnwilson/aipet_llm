@@ -36,10 +36,12 @@ module "iam" {
   ecr_pull_repo_arns         = [module.ecr.repository_arn, module.ecr_temporal_ui.repository_arn]
   ui_bucket_arn              = module.s3_ui.bucket_arn
   ui_distribution_arn        = module.s3_ui.distribution_arn
+  create_ui_resources        = true
 }
 
 module "dns" {
   source       = "./modules/dns"
   vps_ip       = var.vps_ip
-  ui_cf_domain = module.s3_ui.cloudfront_domain
+  ui_cf_domain     = module.s3_ui.cloudfront_domain
+  create_ui_record = true
 }
