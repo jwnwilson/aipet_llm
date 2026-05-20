@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -24,6 +25,7 @@ class _RunRow(Base):
     eval_valid_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     progress_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    training_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
@@ -37,6 +39,7 @@ def _row_to_domain(row: _RunRow) -> RunRecord:
         eval_valid_pct=row.eval_valid_pct,
         progress=row.progress,
         progress_detail=row.progress_detail,
+        training_config=json.loads(row.training_config) if row.training_config else None,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -56,6 +59,7 @@ class SQLAlchemyRunStore(RunStorePort):
             workflow_id=config.workflow_id,
             status=RunStatus.PENDING.value,
             eval_valid_pct=None,
+            training_config=json.dumps(config.training_config) if config.training_config else None,
             created_at=now,
             updated_at=now,
         )

@@ -86,6 +86,7 @@ class RunStatus(str, Enum):
 class RunConfig(BaseModel):
     model_id: str
     workflow_id: str
+    training_config: dict | None = None  # full training params saved at trigger time
 
 
 class RunRecord(RunConfig):

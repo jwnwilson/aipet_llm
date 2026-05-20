@@ -38,6 +38,7 @@ export interface RunRecord {
   eval_valid_pct: number | null
   progress: number | null
   progress_detail: string | null
+  training_config: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

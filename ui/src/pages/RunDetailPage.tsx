@@ -1,3 +1,4 @@
+import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { deleteRun, getRun, isRunActive } from '@/api/runs'
@@ -112,6 +113,22 @@ export function RunDetailPage() {
           </>
         )}
       </dl>
+
+      {run.training_config && Object.keys(run.training_config).length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-sm font-medium text-gray-500 mb-3">Run configuration</h2>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            {Object.entries(run.training_config)
+              .filter(([, v]) => v != null)
+              .map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <dt className="text-gray-500">{k.replace(/_/g, ' ')}</dt>
+                  <dd className="font-mono text-gray-900">{String(v)}</dd>
+                </React.Fragment>
+              ))}
+          </dl>
+        </div>
+      )}
     </div>
   )
 }

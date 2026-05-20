@@ -36,6 +36,8 @@ class TriggerRunRequest(BaseModel):
     skip_generate: bool | None = None
     remote_backend: str | None = None
     base_model: str | None = None
+    num_train_samples: int | None = None
+    num_eval_samples: int | None = None
 
 
 class EvaluateRequest(BaseModel):
@@ -113,15 +115,31 @@ async def trigger_run(
     skip_generate = body.skip_generate if body.skip_generate is not None else model.skip_generate
     remote_backend = body.remote_backend if body.remote_backend is not None else model.remote_backend
     base_model = body.base_model if body.base_model is not None else model.base_model
+    num_train_samples = body.num_train_samples
+    num_eval_samples = body.num_eval_samples
     if remote_backend == "local":
         remote_backend = ""
 
     log.info(
         "Trigger run: model=%s epochs=%s patience=%s warmup_ratio=%s "
-        "skip_generate=%s remote_backend=%s base_model=%s",
+        "skip_generate=%s remote_backend=%s base_model=%s "
+        "num_train_samples=%s num_eval_samples=%s",
         body.model_id, epochs, patience, warmup_ratio,
         skip_generate, remote_backend, base_model,
+        num_train_samples, num_eval_samples,
     )
+
+    # Build config blob — stored on the run record for auditability
+    run_training_config = {
+        "epochs": epochs,
+        "patience": patience,
+        "warmup_ratio": warmup_ratio,
+        "skip_generate": skip_generate,
+        "remote_backend": remote_backend or "local",
+        "base_model": base_model,
+        "num_train_samples": num_train_samples,
+        "num_eval_samples": num_eval_samples,
+    }
 
     try:
         from temporalio.client import Client
@@ -132,7 +150,11 @@ async def trigger_run(
         client = await Client.connect(temporal_host)
 
         workflow_id = f"training-{model.id}-{uuid.uuid4().hex[:8]}"
-        run = run_store.create(RunConfig(model_id=model.id, workflow_id=workflow_id))
+        run = run_store.create(RunConfig(
+            model_id=model.id,
+            workflow_id=workflow_id,
+            training_config=run_training_config,
+        ))
         run_id = run.id
 
         Path(f"data/workflow/{run_id}").mkdir(parents=True, exist_ok=True)
@@ -151,6 +173,8 @@ async def trigger_run(
             data_dir=f"data/workflow/{run_id}",
             output_dir=f"data/workflow/{run_id}/checkpoint",
             gguf_output=f"data/workflow/{run_id}/model.gguf",
+            **({"train_size": num_train_samples} if num_train_samples is not None else {}),
+            **({"eval_size": num_eval_samples} if num_eval_samples is not None else {}),
         )
 
         await client.start_workflow(
