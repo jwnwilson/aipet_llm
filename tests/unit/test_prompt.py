@@ -56,13 +56,13 @@ class TestAvailableActions:
     def test_bowl_in_scene_excludes_sleep(self):
         request = _make_request(objects=[_bowl_object()])
         prompt = build_prompt(request)
-        actions_line = next(l for l in prompt.splitlines() if l.startswith("Available actions:"))
+        actions_line = next(l for l in prompt.splitlines() if l.startswith("Actions:"))
         assert "SLEEP" not in actions_line
 
     def test_empty_scene_only_toilet_idle_explore(self):
         request = _make_request(objects=[])
         prompt = build_prompt(request)
-        actions_line = next(l for l in prompt.splitlines() if l.startswith("Available actions:"))
+        actions_line = next(l for l in prompt.splitlines() if l.startswith("Actions:"))
         for action in [Action.TOILET, Action.IDLE, Action.EXPLORE]:
             assert action.value in actions_line
         for action in [Action.EAT, Action.DRINK, Action.PLAY, Action.FETCH,
@@ -132,21 +132,27 @@ class TestSortedStats:
 
 class TestRuleLine:
     def test_rule_line_present(self):
+        # The compact prompt embeds the rule in its opening line rather than a
+        # separate "Rule:" label; verify the instruction is still present.
         request = _make_request()
         prompt = build_prompt(request)
-        assert "Rule:" in prompt
+        opening = prompt.splitlines()[0]
+        assert "highest stat" in opening
+        assert "closest" in opening
 
     def test_rule_mentions_highest_stat(self):
         request = _make_request()
         prompt = build_prompt(request)
-        rule_line = next(l for l in prompt.splitlines() if "Rule:" in l)
-        assert "highest stat" in rule_line
+        # Rule instruction lives in the opening line of the compact prompt.
+        opening = prompt.splitlines()[0]
+        assert "highest stat" in opening
 
     def test_rule_mentions_closest(self):
         request = _make_request()
         prompt = build_prompt(request)
-        rule_line = next(l for l in prompt.splitlines() if "Rule:" in l)
-        assert "closest" in rule_line
+        # Rule instruction lives in the opening line of the compact prompt.
+        opening = prompt.splitlines()[0]
+        assert "closest" in opening
 
 
 # ---------------------------------------------------------------------------
@@ -173,10 +179,13 @@ class TestSortedScene:
         )
 
     def test_scene_line_label_nearest_first(self):
+        # The compact prompt drops the "(nearest first)" annotation from the Scene
+        # label; the ordering guarantee is tested by test_objects_sorted_nearest_first.
+        # Verify the scene line includes distance info so ordering is readable.
         request = _make_request(objects=[_bowl_object()])
         prompt = build_prompt(request)
         scene_line = next(l for l in prompt.splitlines() if l.startswith("Scene"))
-        assert "nearest first" in scene_line
+        assert "dist=" in scene_line
 
     def test_empty_scene_shows_empty(self):
         request = _make_request(objects=[])
