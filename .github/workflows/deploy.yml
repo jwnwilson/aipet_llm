@@ -147,7 +147,7 @@ jobs:
 
       - name: Wait for rollouts
         run: |
-          kubectl rollout status daemonset/llm-api --timeout=600s
+          kubectl rollout status deployment/llm-api --timeout=600s
           kubectl rollout status deployment/temporal-worker --timeout=600s
 
       - name: Install smoke test dependencies
