@@ -38,7 +38,7 @@ def _make_token(
     if email is not None:
         claims["email"] = email
     if roles is not None:
-        claims["https://llm-api/roles"] = roles
+        claims["https://aipet/roles"] = roles
     return jwt.encode(claims, _PRIVATE_KEY, algorithm="RS256")
 
 

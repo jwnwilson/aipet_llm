@@ -86,8 +86,8 @@ jobs:
         run: |
           kubectl create secret generic llm-api-secrets \
             --from-literal=aws-s3-bucket=${{ secrets.AWS_S3_BUCKET }} \
-            --from-literal=aws-access-key-id=${{ secrets.LLM_API_AWS_ACCESS_KEY_ID }} \
-            --from-literal=aws-secret-access-key=${{ secrets.LLM_API_AWS_SECRET_ACCESS_KEY }} \
+            --from-literal=aws-access-key-id=${{ secrets.AIPET_AWS_ACCESS_KEY_ID }} \
+            --from-literal=aws-secret-access-key=${{ secrets.AIPET_AWS_SECRET_ACCESS_KEY }} \
             --from-literal=kaggle-username=${{ secrets.KAGGLE_USERNAME }} \
             --from-literal=kaggle-key=${{ secrets.KAGGLE_KEY }} \
             --from-literal=runpod-api-key=${{ secrets.RUNPOD_API_KEY }} \
@@ -104,9 +104,9 @@ jobs:
         run: |
           kubectl create secret generic llm-api-db-secret \
             --from-literal=postgres-user=aipet \
-            --from-literal=postgres-password="${{ secrets.LLM_API_DB_PASSWORD }}" \
+            --from-literal=postgres-password="${{ secrets.AIPET_DB_PASSWORD }}" \
             --from-literal=postgres-db=aipet \
-            --from-literal=database-url="postgresql+psycopg2://aipet:${{ secrets.LLM_API_DB_PASSWORD }}@llm-api-db:5432/aipet" \
+            --from-literal=database-url="postgresql+psycopg2://aipet:${{ secrets.AIPET_DB_PASSWORD }}@llm-api-db:5432/aipet" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Refresh ECR pull credentials in k8s
