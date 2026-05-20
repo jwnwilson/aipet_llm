@@ -33,7 +33,13 @@ variable "ecr_pull_repo_arns" {
 variable "tf_state_bucket" {
   description = "S3 bucket name used for Terraform remote state — grants GitHub Actions read/write access"
   type        = string
-  default     = "llm-api-terraform-state"
+  default     = "aipet-llm-terraform-state"
+}
+
+variable "tf_state_locks_table" {
+  description = "DynamoDB table name used for Terraform state locking — grants GitHub Actions access"
+  type        = string
+  default     = "aipet-llm-terraform-locks"
 }
 
 variable "ui_bucket_arn" {
