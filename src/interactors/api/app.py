@@ -127,6 +127,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 from interactors.api.routes.admin import router as admin_router  # noqa: E402
+from interactors.api.routes.datasets import router as datasets_router  # noqa: E402
 from interactors.api.routes.inference import router as inference_router  # noqa: E402
 from interactors.api.routes.login import router as login_router  # noqa: E402
 from interactors.api.routes.models import router as models_router  # noqa: E402
@@ -164,6 +165,7 @@ app.add_middleware(
 )
 
 app.include_router(admin_router)
+app.include_router(datasets_router)
 app.include_router(inference_router)
 app.include_router(models_router)
 app.include_router(runs_router)
