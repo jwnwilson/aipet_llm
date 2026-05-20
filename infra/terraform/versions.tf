@@ -8,10 +8,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "llm-api-terraform-state"
+    bucket         = "aipet-llm-terraform-state"
     key            = "terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "llm-api-terraform-locks"
+    dynamodb_table = "aipet-llm-terraform-locks"
     encrypt        = true
   }
 }
