@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { listRuns, getRun, isRunActive, triggerRun, deleteRun } from '@/api/runs'
-import { MODEL_FIXTURE, RUN_FIXTURE } from '../msw/fixtures'
+import { listRuns, getRun, isRunActive, triggerRun, deleteRun, getRunEvaluation } from '@/api/runs'
+import { MODEL_FIXTURE, RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
 
 describe('listRuns', () => {
   it('returns array of RunRecords with id field', async () => {
@@ -55,14 +55,13 @@ describe('deleteRun', () => {
 
 describe('getRunEvaluation', () => {
   it('returns EvaluationData for a known run', async () => {
-    const { getRunEvaluation } = await import('@/api/runs')
-    const result = await getRunEvaluation('run-uuid')
-    expect(result.run_id).toBe('run-uuid')
-    expect(result.status).toBeDefined()
+    const result = await getRunEvaluation(EVAL_DATA_FIXTURE.run_id)
+    expect(result.run_id).toBe(EVAL_DATA_FIXTURE.run_id)
+    expect(result.status).toBe('completed')
+    expect(result.eval_valid_pct).toBe(0.97)
   })
 
   it('throws for an unknown run id', async () => {
-    const { getRunEvaluation } = await import('@/api/runs')
     await expect(getRunEvaluation('does-not-exist')).rejects.toThrow()
   })
 })
