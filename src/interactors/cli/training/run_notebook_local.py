@@ -61,7 +61,7 @@ cmd = [
     "--warmup-ratio", str(CONFIG["warmup_ratio"]),
     "--train-data", "data/train.jsonl",
     "--eval-data", "data/eval.jsonl",
-    "--output-dir", "/tmp/aipet-test-checkpoint",
+    "--output-dir", "/tmp/llm-api-test-checkpoint",
 ]
 subprocess.run(cmd, check=True)
 

@@ -28,7 +28,7 @@ target_metadata = Base.metadata
 def _get_url() -> str:
     return os.getenv(
         "DATABASE_URL",
-        config.get_main_option("sqlalchemy.url", "sqlite:///data/aipet.db"),
+        config.get_main_option("sqlalchemy.url", "sqlite:///data/llm-api.db"),
     )
 
 

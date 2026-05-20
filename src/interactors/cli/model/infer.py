@@ -11,8 +11,8 @@ from adapters.inference import LlamaCppInferenceAdapter
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Run a single aipet inference from stdin JSON.")
-    parser.add_argument("--model-path", default="models/aipet.gguf", dest="model_path")
+    parser = argparse.ArgumentParser(description="Run a single llm-api inference from stdin JSON.")
+    parser.add_argument("--model-path", default="models/model.gguf", dest="model_path")
     args = parser.parse_args(argv)
 
     try:

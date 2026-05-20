@@ -41,5 +41,5 @@ async def infer(
 def health() -> dict:
     return {
         "status": "ok",
-        "model": os.getenv("MODEL_PATH", "models/aipet.gguf"),
+        "model": os.getenv("MODEL_PATH", "models/model.gguf"),
     }

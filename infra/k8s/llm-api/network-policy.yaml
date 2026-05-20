@@ -1,12 +1,12 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: aipet-llm-ingress-only
+  name: llm-api-ingress-only
   namespace: default
 spec:
   podSelector:
     matchLabels:
-      app: aipet-llm
+      app: llm-api
   policyTypes:
     - Ingress
   ingress:

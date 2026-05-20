@@ -3,13 +3,13 @@ output "github_actions_role_arn" {
   value       = aws_iam_role.github_actions.arn
 }
 
-output "aipet_aws_access_key_id" {
-  description = "Access key ID for the aipet app IAM user"
-  value       = aws_iam_access_key.aipet.id
+output "llm_api_aws_access_key_id" {
+  description = "Access key ID for the llm-api app IAM user"
+  value       = aws_iam_access_key.llm_api.id
 }
 
-output "aipet_aws_secret_access_key" {
-  description = "Secret access key for the aipet app IAM user"
-  value       = aws_iam_access_key.aipet.secret
+output "llm_api_aws_secret_access_key" {
+  description = "Secret access key for the llm-api app IAM user"
+  value       = aws_iam_access_key.llm_api.secret
   sensitive   = true
 }

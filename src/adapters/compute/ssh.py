@@ -18,7 +18,7 @@ class SshTrainingAdapter(RemoteTrainingPort):
         REMOTE_HOST      — hostname or IP of the remote machine
         REMOTE_USER      — SSH username
         REMOTE_KEY_PATH  — path to the private key file (optional; omit to use agent)
-        REMOTE_WORK_DIR  — working directory on the remote host (default: ~/aipet)
+        REMOTE_WORK_DIR  — working directory on the remote host (default: ~/llm-api)
 
     The training process is launched inside a ``screen`` session so it survives
     SSH disconnects.  ``rsync`` transfers data and the source tree; the checkpoint
@@ -29,7 +29,7 @@ class SshTrainingAdapter(RemoteTrainingPort):
         self._host = os.environ.get("REMOTE_HOST", "")
         self._user = os.environ.get("REMOTE_USER", "")
         self._key = os.environ.get("REMOTE_KEY_PATH", "")
-        self._work_dir = os.environ.get("REMOTE_WORK_DIR", "~/aipet")
+        self._work_dir = os.environ.get("REMOTE_WORK_DIR", "~/llm-api")
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -67,7 +67,7 @@ class SshTrainingAdapter(RemoteTrainingPort):
         )
 
         # Step 2: start training in a detached screen session.
-        session = f"aipet-{config.experiment_name}"
+        session = f"llm-api-{config.experiment_name}"
         train_cmd = (
             f"cd {self._work_dir} && "
             f"uv run python -m src.cli.train"

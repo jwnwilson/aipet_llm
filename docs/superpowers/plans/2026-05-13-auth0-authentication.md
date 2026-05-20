@@ -175,7 +175,7 @@ from adapters.auth.auth0 import Auth0Adapter
 from domain.models import UserContext
 
 DOMAIN = "test.auth0.com"
-AUDIENCE = "https://api.aipet.test"
+AUDIENCE = "https://api.llm-api.test"
 
 _PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _PUBLIC_KEY = _PRIVATE_KEY.public_key()
@@ -648,7 +648,7 @@ def infer(
 def health() -> dict:
     return {
         "status": "ok",
-        "model": os.getenv("MODEL_PATH", "models/aipet.gguf"),
+        "model": os.getenv("MODEL_PATH", "models/model.gguf"),
     }
 ```
 
@@ -814,7 +814,7 @@ git commit -m "feat: add /auth/login and /auth/callback for isolated testing"
 - [ ] **Step 1: Replace `src/interactors/api/app.py` with the updated version**
 
 ```python
-"""FastAPI application factory for the aipet inference service."""
+"""FastAPI application factory for the llm-api inference service."""
 
 from __future__ import annotations
 
@@ -893,9 +893,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 active.id,
                 exc_info=True,
             )
-            model_path = os.getenv("MODEL_PATH", "models/aipet.gguf")
+            model_path = os.getenv("MODEL_PATH", "models/model.gguf")
     else:
-        model_path = os.getenv("MODEL_PATH", "models/aipet.gguf")
+        model_path = os.getenv("MODEL_PATH", "models/model.gguf")
 
     configure(LlamaCppInferenceAdapter(model_path=model_path))
 
@@ -910,7 +910,7 @@ from interactors.api.routes.login import router as login_router  # noqa: E402
 from interactors.api.routes.models import router as models_router  # noqa: E402
 from interactors.api.routes.runs import router as runs_router  # noqa: E402
 
-app = FastAPI(title="aipet-llm inference service", lifespan=lifespan)
+app = FastAPI(title="llm-api inference service", lifespan=lifespan)
 
 _cors_raw = os.getenv("CORS_ORIGINS", "")
 if os.getenv("APP_ENV") == "development":
@@ -987,7 +987,7 @@ Local dev startup:
 ```bash
 APP_ENV=development \
 AUTH0_DOMAIN=your-tenant.auth0.com \
-AUTH0_AUDIENCE=https://api.aipet.example.com \
+AUTH0_AUDIENCE=https://api.llm-api.example.com \
 AUTH0_CLIENT_ID=abc123 \
 AUTH0_CLIENT_SECRET=secret \
 AUTH0_CALLBACK_URL=http://localhost:8000/auth/callback \

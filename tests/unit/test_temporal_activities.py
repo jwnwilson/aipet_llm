@@ -301,7 +301,7 @@ async def test_export_activity_raises_application_error_on_exception():
         with pytest.raises(ApplicationError, match="export failed"):
             await ENV.run(
                 export_activity,
-                ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/aipet.gguf"),
+                ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/model.gguf"),
             )
 
 
@@ -311,7 +311,7 @@ async def test_export_activity_raises_application_error_on_system_exit():
         with pytest.raises(ApplicationError, match="llama.cpp setup issue"):
             await ENV.run(
                 export_activity,
-                ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/aipet.gguf"),
+                ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/model.gguf"),
             )
 
 

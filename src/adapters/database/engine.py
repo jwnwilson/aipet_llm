@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, inspect as sa_inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-_DEFAULT_DB = "sqlite:///data/aipet.db"
+_DEFAULT_DB = "sqlite:///data/llm-api.db"
 _ALEMBIC_INI = Path(__file__).parent.parent.parent.parent / "alembic.ini"
 
 

@@ -29,7 +29,7 @@ def main(argv: list[str] | None = None) -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--checkpoint", default="models/checkpoints")
-    parser.add_argument("--output", default="models/aipet.gguf")
+    parser.add_argument("--output", default="models/model.gguf")
     parser.add_argument("--quantize", default="Q4_K_M")
     parser.add_argument("--llama-cpp-dir", default="llama.cpp", dest="llama_cpp_dir")
     parser.add_argument(

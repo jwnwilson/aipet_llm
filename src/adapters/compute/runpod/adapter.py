@@ -28,8 +28,8 @@ _BOOTSTRAP_FETCH_B64 = base64.b64encode(
     b"boto3.client('s3').download_file("
     b"os.environ['AWS_S3_BUCKET'],"
     b"os.environ['RUN_ID']+'/bootstrap.py',"
-    b"'/tmp/aipet_bootstrap.py');"
-    b"exec(open('/tmp/aipet_bootstrap.py').read())"
+    b"'/tmp/llm_api_bootstrap.py');"
+    b"exec(open('/tmp/llm_api_bootstrap.py').read())"
 ).decode()
 
 # RunPod desiredStatus values → canonical states (EXITED resolved via S3 status.txt)

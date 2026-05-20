@@ -1,33 +1,47 @@
 apiVersion: apps/v1
-kind: DaemonSet
+kind: Deployment
 metadata:
-  name: aipet-llm
+  name: llm-api
   labels:
-    app: aipet-llm
+    app: llm-api
 spec:
+  replicas: 2
   selector:
     matchLabels:
-      app: aipet-llm
-  updateStrategy:
+      app: llm-api
+  strategy:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 1
+      maxSurge: 1
   template:
     metadata:
       labels:
-        app: aipet-llm
+        app: llm-api
     spec:
       imagePullSecrets:
         - name: ecr-credentials
       affinity:
         nodeAffinity:
+          # Hard rule: never schedule on control-plane nodes
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
+          # Soft rule: strongly prefer the 16 GB high-memory node
+          # Label the target node first:
+          #   kubectl label node <node-name> node-type=llm-api
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-type
+                    operator: In
+                    values:
+                      - llm-api
       containers:
-        - name: aipet-llm
+        - name: llm-api
           # Replace with output of: terraform -chdir=infra/terraform output -raw repository_url
           image: <ECR_REPOSITORY_URL>:latest
           ports:
@@ -36,60 +50,60 @@ spec:
             - name: INFERENCE_DISABLED
               value: "false"
             - name: MODEL_PATH
-              value: /app/models/aipet.gguf
+              value: /app/models/model.gguf
             - name: MODEL_S3_KEY
-              value: models/test_aipet.gguf.gz
+              value: models/test_model.gguf.gz
             - name: AWS_DEFAULT_REGION
               value: us-east-1
             - name: AWS_S3_BUCKET
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: aws-s3-bucket
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: aws-access-key-id
             - name: AWS_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: aws-secret-access-key
             - name: CORS_ORIGINS
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: cors-origins
             - name: AUTH0_DOMAIN
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: auth0-domain
             - name: AUTH0_AUDIENCE
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: auth0-audience
             - name: AUTH0_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: auth0-client-id
             - name: AUTH0_MGMT_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: auth0-mgmt-client-id
             - name: AUTH0_MGMT_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: aipet-llm-secrets
+                  name: llm-api-secrets
                   key: auth0-mgmt-client-secret
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: aipet-db-secret
+                  name: llm-api-db-secret
                   key: database-url
             - name: TEMPORAL_HOST
               value: temporal:7233

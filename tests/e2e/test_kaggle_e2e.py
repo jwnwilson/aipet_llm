@@ -64,7 +64,7 @@ _ACTIVITIES = [
     update_run_status_activity,
 ]
 
-_MOCK_RUN_ID = "testuser/aipet-kaggle-e2e"
+_MOCK_RUN_ID = "testuser/llm-api-kaggle-e2e"
 
 # ---------------------------------------------------------------------------
 # Mock-only tests (fast — no real Kaggle job)

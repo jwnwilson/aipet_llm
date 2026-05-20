@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: aipet-llm
+  name: llm-api
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt"
     # Rate limiting: max 10 req/s per IP, max 5 concurrent connections
@@ -13,16 +13,16 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - aipet-llm-api.jwnwilson.co.uk
-      secretName: aipet-llm-tls
+        - llm-api.jwnwilson.co.uk
+      secretName: llm-api-tls
   rules:
-    - host: "aipet-llm-api.jwnwilson.co.uk"
+    - host: "llm-api.jwnwilson.co.uk"
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: aipet-llm
+                name: llm-api
                 port:
                   number: 80

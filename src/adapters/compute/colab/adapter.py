@@ -111,7 +111,7 @@ class ColabTrainingAdapter(RemoteTrainingPort):
 
         token_file = os.environ.get(
             "GOOGLE_OAUTH_TOKEN_FILE",
-            os.path.expanduser("~/.config/aipet/google_token.json"),
+            os.path.expanduser("~/.config/llm-api/google_token.json"),
         )
         if os.path.exists(token_file):
             import json

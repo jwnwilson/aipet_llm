@@ -1,4 +1,4 @@
-"""CLI: evaluate schema-valid response rate of a trained aipet model."""
+"""CLI: evaluate schema-valid response rate of a trained llm-api model."""
 
 from __future__ import annotations
 

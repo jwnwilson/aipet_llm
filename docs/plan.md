@@ -6,12 +6,12 @@
 
 ## EPIC-7: Project Consolidation
 
-> Rename the project to "llm-api" and make it a generic training platform usable beyond aipet.
+> Rename the project to "llm-api" and make it a generic training platform.
 
 ### Feature 7.1 — Rename project to llm-api
 
-#### TASK-7.1.1 — Remove aipet references
-Rename all `aipet`-prefixed identifiers, strings, and config values to `llm-api` equivalents throughout the codebase. Update `pyproject.toml`, `docker-compose.yml`, k8s manifests, Terraform outputs, and any hardcoded strings.
+#### TASK-7.1.1 — Remove legacy branding references
+Rename all legacy-prefixed identifiers, strings, and config values to `llm-api` equivalents throughout the codebase. Update `pyproject.toml`, `docker-compose.yml`, k8s manifests, Terraform outputs, and any hardcoded strings.
 
 **Outputs:** Updated `pyproject.toml`, `docker-compose.yml`, `infra/k8s/`, `infra/terraform/`, source files
 

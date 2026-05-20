@@ -47,7 +47,7 @@ class ExperimentConfig:
     dry_run: bool = False
     data_dir: str = "data"
     output_dir: str = DEFAULT_OUTPUT_DIR
-    gguf_output: str = "models/aipet.gguf"
+    gguf_output: str = "models/model.gguf"
     model: str = DEFAULT_MODEL
     train_size: int = TRAIN_SIZE
     eval_size: int = EVAL_SIZE
@@ -322,7 +322,7 @@ class ExportWorkflowConfig:
     remote_backend: str = ""
     remote_run_id: str = ""
     checkpoint_path: str = ""
-    gguf_output: str = "models/aipet.gguf"
+    gguf_output: str = "models/model.gguf"
 
 
 @workflow.defn

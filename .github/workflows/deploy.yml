@@ -14,8 +14,8 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: aipet-llm
-  ECR_TEMPORAL_UI_REPOSITORY: aipet-temporal-ui
+  ECR_REPOSITORY: llm-api
+  ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
 
 jobs:
   # ── Build: push ARM64 image to ECR ────────────────────────────────────────
@@ -82,9 +82,9 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
-      - name: Sync aipet-llm-secrets in k8s
+      - name: Sync llm-api-secrets in k8s
         run: |
-          kubectl create secret generic aipet-llm-secrets \
+          kubectl create secret generic llm-api-secrets \
             --from-literal=aws-s3-bucket=${{ secrets.AWS_S3_BUCKET }} \
             --from-literal=aws-access-key-id=${{ secrets.AIPET_AWS_ACCESS_KEY_ID }} \
             --from-literal=aws-secret-access-key=${{ secrets.AIPET_AWS_SECRET_ACCESS_KEY }} \
@@ -100,13 +100,13 @@ jobs:
             --from-literal=auth0-mgmt-client-secret=${{ secrets.AUTH0_MGMT_CLIENT_SECRET }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Sync aipet-db-secret in k8s
+      - name: Sync llm-api-db-secret in k8s
         run: |
-          kubectl create secret generic aipet-db-secret \
+          kubectl create secret generic llm-api-db-secret \
             --from-literal=postgres-user=aipet \
             --from-literal=postgres-password="${{ secrets.AIPET_DB_PASSWORD }}" \
             --from-literal=postgres-db=aipet \
-            --from-literal=database-url="postgresql+psycopg2://aipet:${{ secrets.AIPET_DB_PASSWORD }}@aipet-db:5432/aipet" \
+            --from-literal=database-url="postgresql+psycopg2://aipet:${{ secrets.AIPET_DB_PASSWORD }}@llm-api-db:5432/aipet" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Refresh ECR pull credentials in k8s
@@ -135,19 +135,19 @@ jobs:
       - name: Apply k8s manifests
         run: |
           sed -i "s|<ECR_REPOSITORY_URL>:latest|$IMAGE|g" \
-            infra/k8s/aipet-llm/deployment.yaml \
+            infra/k8s/llm-api/deployment.yaml \
             infra/k8s/temporal/worker.yaml
           sed -i "s|<TEMPORAL_UI_IMAGE>|$TEMPORAL_UI_IMAGE|g" \
             infra/k8s/temporal/server.yaml
           # Apply and wait for the database before rolling out the app so that
-          # db_migrate can resolve the "aipet-db" hostname on first boot.
-          kubectl apply -f infra/k8s/aipet-llm/postgres.yaml
-          kubectl rollout status statefulset/aipet-db --timeout=120s
+          # db_migrate can resolve the "llm-api-db" hostname on first boot.
+          kubectl apply -f infra/k8s/llm-api/postgres.yaml
+          kubectl rollout status statefulset/llm-api-db --timeout=120s
           find infra/k8s/ -name '*.yaml' ! -name '*.example.yaml' | sort | xargs -I{} kubectl apply -f {}
 
       - name: Wait for rollouts
         run: |
-          kubectl rollout status daemonset/aipet-llm --timeout=600s
+          kubectl rollout status daemonset/llm-api --timeout=600s
           kubectl rollout status deployment/temporal-worker --timeout=600s
 
       - name: Install smoke test dependencies
@@ -155,7 +155,7 @@ jobs:
 
       - name: Run smoke tests
         env:
-          API_URL: https://aipet-llm-api.jwnwilson.co.uk
+          API_URL: https://llm-api.jwnwilson.co.uk
           AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
           AUTH0_MGMT_CLIENT_ID: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
           AUTH0_MGMT_CLIENT_SECRET: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}

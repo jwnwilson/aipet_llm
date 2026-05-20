@@ -96,7 +96,7 @@ def configure_auth(port: AuthPort) -> None: ...
 | Variable | Required | Example | Purpose |
 |---|---|---|---|
 | `AUTH0_DOMAIN` | Yes | `your-tenant.auth0.com` | Auth0 tenant domain |
-| `AUTH0_AUDIENCE` | Yes | `https://api.aipet.example.com` | API identifier registered in Auth0 |
+| `AUTH0_AUDIENCE` | Yes | `https://api.llm-api.example.com` | API identifier registered in Auth0 |
 | `AUTH0_CLIENT_ID` | Yes | `abc123` | Application client ID (for login flow) |
 | `AUTH0_CLIENT_SECRET` | Yes | `secret` | Application client secret (for login flow) |
 | `AUTH0_CALLBACK_URL` | Yes | `http://localhost:8000/auth/callback` | Redirect URI registered in Auth0 |

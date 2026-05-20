@@ -23,19 +23,19 @@ output "github_actions_role_arn" {
   value       = module.iam.github_actions_role_arn
 }
 
-output "aipet_aws_access_key_id" {
-  description = "Access key ID for the aipet app IAM user — set as AIPET_AWS_ACCESS_KEY_ID secret"
-  value       = module.iam.aipet_aws_access_key_id
+output "llm_api_aws_access_key_id" {
+  description = "Access key ID for the llm-api app IAM user — set as LLM_API_AWS_ACCESS_KEY_ID secret"
+  value       = module.iam.llm_api_aws_access_key_id
 }
 
-output "aipet_aws_secret_access_key" {
-  description = "Secret access key for the aipet app IAM user — set as AIPET_AWS_SECRET_ACCESS_KEY secret"
-  value       = module.iam.aipet_aws_secret_access_key
+output "llm_api_aws_secret_access_key" {
+  description = "Secret access key for the llm-api app IAM user — set as LLM_API_AWS_SECRET_ACCESS_KEY secret"
+  value       = module.iam.llm_api_aws_secret_access_key
   sensitive   = true
 }
 
-output "aipet_llm_api_fqdn" {
-  description = "DNS name for the aipet LLM API"
+output "llm_api_fqdn" {
+  description = "DNS name for the llm-api LLM API"
   value       = module.dns.fqdn
 }
 

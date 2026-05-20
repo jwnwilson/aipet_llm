@@ -85,9 +85,9 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
                 "boto3.client('s3').download_file("
                 "os.environ['AWS_S3_BUCKET'],"
                 "os.environ['RUN_ID']+'/bootstrap.py',"
-                "'/tmp/aipet_bootstrap.py')"
+                "'/tmp/llm_api_bootstrap.py')"
                 '" && '
-                "python /tmp/aipet_bootstrap.py"
+                "python /tmp/llm_api_bootstrap.py"
             ),
             env=self._build_instance_env(run_id, config),
         )

@@ -48,7 +48,7 @@ def _import_llama_cpp() -> Any:
     except ImportError as exc:
         raise ImportError(
             "llama-cpp-python is not installed. "
-            "Install it with: pip install 'aipet-llm-api[inference]'"
+            "Install it with: pip install 'llm-api[inference]'"
         ) from exc
 
 

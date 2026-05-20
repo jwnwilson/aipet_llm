@@ -36,6 +36,12 @@ variable "tf_state_bucket" {
   default     = "aipet-llm-terraform-state"
 }
 
+variable "tf_state_locks_table" {
+  description = "DynamoDB table name used for Terraform state locking — grants GitHub Actions access"
+  type        = string
+  default     = "aipet-llm-terraform-locks"
+}
+
 variable "ui_bucket_arn" {
   description = "ARN of the S3 bucket hosting the UI static files"
   type        = string

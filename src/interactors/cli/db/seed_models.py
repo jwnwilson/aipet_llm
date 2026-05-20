@@ -49,7 +49,7 @@ _DEFAULT_MODELS: list[TrainingModelConfig] = [
 
 
 def main() -> None:
-    url = os.environ.get("DATABASE_URL", "sqlite:///data/aipet.db")
+    url = os.environ.get("DATABASE_URL", "sqlite:///data/llm-api.db")
     engine = make_engine(url)
     run_migrations(engine)
     store = SQLAlchemyModelStore(engine)

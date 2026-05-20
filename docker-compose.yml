@@ -1,14 +1,14 @@
 services:
-  aipet:
+  llm-api:
     build:
       context: .
       platforms:
         - linux/arm64
-    image: aipet-llm:latest
+    image: llm-api:latest
     ports:
       - "8000:8000"
     environment:
-      MODEL_PATH: /app/models/aipet.gguf
+      MODEL_PATH: /app/models/model.gguf
     volumes:
       # Mount models/ so the GGUF can be swapped without rebuilding the image
       - ./models:/app/models:ro
@@ -67,7 +67,7 @@ services:
   temporal-worker:
     build:
       context: .
-    image: aipet-llm:latest
+    image: llm-api:latest
     command: python -m interactors.temporal.worker
     environment:
       TEMPORAL_HOST: temporal:7233
@@ -78,7 +78,7 @@ services:
       REMOTE_HOST: ${REMOTE_HOST:-}
       REMOTE_USER: ${REMOTE_USER:-}
       REMOTE_KEY_PATH: ${REMOTE_KEY_PATH:-}
-      REMOTE_WORK_DIR: ${REMOTE_WORK_DIR:-~/aipet}
+      REMOTE_WORK_DIR: ${REMOTE_WORK_DIR:-~/llm-api}
     volumes:
       - ./data:/app/data
       - ./models:/app/models

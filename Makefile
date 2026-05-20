@@ -1,5 +1,5 @@
 KUBECONFIG  ?= ~/.kube/config.yaml
-MODEL_PATH  ?= models/aipet.gguf
+MODEL_PATH  ?= models/model.gguf
 CHECKPOINT  ?= models/checkpoints
 HOST        ?= 0.0.0.0
 PORT        ?= 8000
@@ -46,7 +46,7 @@ test: .venv ## Run unit + integration tests (fast; excludes slow/e2e)
 test-unit: .venv ## Run unit tests only
 	uv run python -m pytest tests/unit/ -v
 
-test-integration: .venv ## Run integration tests only (requires models/aipet.gguf)
+test-integration: .venv ## Run integration tests only (requires models/model.gguf)
 	uv run python -m pytest tests/integration/ -v
 
 test-e2e: .venv ## Run all e2e tests including slow training tests (cloud tests skip without credentials)
@@ -96,7 +96,7 @@ setup-llama: ## Clone and build llama.cpp (required for make export)
 	cmake --build llama.cpp/build --target llama-quantize --config Release -j$$(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 	@echo "\nllama.cpp ready — run 'make export' to convert your checkpoint."
 
-export: ## Convert HF checkpoint → GGUF Q4_K_M  → models/aipet.gguf
+export: ## Convert HF checkpoint → GGUF Q4_K_M  → models/model.gguf
 	PYTHONPATH=src uv run python src/interactors/cli/model/export.py
 
 evaluate-remote: ## Download checkpoint from remote and evaluate  (REMOTE_BACKEND / REMOTE_RUN_ID)
@@ -126,7 +126,7 @@ docker-build: ## Build the ARM64 Docker image  (IMAGE=... to override tag)
 docker-run: ## Run the image locally for smoke-testing  (MODEL_PATH/PORT to override)
 	docker run --rm -p $(PORT):8000 \
 		-v "$(PWD)/models:/app/models:ro" \
-		-e MODEL_PATH=/app/models/aipet.gguf \
+		-e MODEL_PATH=/app/models/model.gguf \
 		$(IMAGE):latest
 
 docker-export: ## Save the ARM64 image as a tarball for transfer to the RPi
@@ -238,10 +238,10 @@ db-revision: .venv ## Generate a new Alembic migration  (MSG="describe the chang
 seed-models: ## Seed the database with default training model configurations
 	PYTHONPATH=src uv run python -m interactors.cli.db.seed_models
 
-upload-test-model: ## Compress and upload models/aipet.gguf to S3 as the CI test model  (MODEL_PATH=... to override)
+upload-test-model: ## Compress and upload models/model.gguf to S3 as the CI test model  (MODEL_PATH=... to override)
 	set -a && . ./.env && set +a && uv run python -m interactors.cli.model.upload_model \
 		--model-path $(MODEL_PATH) \
-		--s3-key models/test_aipet.gguf.gz
+		--s3-key models/test_model.gguf.gz
 
 aws-env: ## Refresh AWS credentials in .env from the current AWS profile
 	uv run scripts/update_aws_env.py

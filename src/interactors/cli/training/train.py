@@ -1,4 +1,4 @@
-"""CLI: fine-tune a causal LM on aipet pet-brain data."""
+"""CLI: fine-tune a causal LM on llm-api pet-brain data."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from domain.train.trainer import (
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Fine-tune a causal LM on aipet pet-brain data.",
+        description="Fine-tune a causal LM on llm-api pet-brain data.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  # Bump this when models/aipet.gguf is replaced in S3.
+  # Bump this when models/model.gguf is replaced in S3.
   MODEL_VERSION: "2026-05-14"
 
 jobs:
@@ -36,7 +36,7 @@ jobs:
     env:
       AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
       AWS_DEFAULT_REGION: us-east-1
-      AIPET_TEST_MODEL_PATH: models/test_aipet.gguf
+      LLM_API_TEST_MODEL_PATH: models/test_model.gguf
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +73,7 @@ jobs:
         uses: actions/cache@v4
         id: cache-model
         with:
-          path: models/test_aipet.gguf
+          path: models/test_model.gguf
           key: model-test-${{ env.MODEL_VERSION }}-${{ runner.os }}
 
       - name: Verify S3 access (debug)
@@ -105,7 +105,7 @@ jobs:
     env:
       AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
       AWS_DEFAULT_REGION: us-east-1
-      AIPET_TEST_MODEL_PATH: models/test_aipet.gguf
+      LLM_API_TEST_MODEL_PATH: models/test_model.gguf
     steps:
       - uses: actions/checkout@v4
 
@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache@v4
         id: cache-model
         with:
-          path: models/test_aipet.gguf
+          path: models/test_model.gguf
           key: model-test-${{ env.MODEL_VERSION }}-${{ runner.os }}
 
       - name: Download and decompress test model from S3
