@@ -70,9 +70,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     storage = _make_storage_adapter()
     configure_storage(storage)
 
+    auth_disabled = os.getenv("AUTH_DISABLED", "").lower() == "true"
     auth0_domain = os.environ.get("AUTH0_DOMAIN", "")
     auth0_audience = os.environ.get("AUTH0_AUDIENCE", "")
-    if auth0_domain and auth0_audience:
+    if auth_disabled:
+        from adapters.auth.fake import FakeAuthAdapter
+        log.warning("AUTH_DISABLED=true — using FakeAuthAdapter, all requests treated as admin")
+        configure_auth(FakeAuthAdapter())
+    elif auth0_domain and auth0_audience:
         configure_auth(Auth0Adapter(domain=auth0_domain, audience=auth0_audience))
     elif os.getenv("APP_ENV") == "development":
         from adapters.auth.fake import FakeAuthAdapter

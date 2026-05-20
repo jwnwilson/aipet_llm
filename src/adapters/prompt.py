@@ -83,14 +83,12 @@ def build_prompt(request: InferenceRequest, rng: random.Random | None = None) ->
     actions_str = ", ".join(a.value for a in actions)
 
     prompt = (
-        f"You are an AI pet brain. Choose the best action for the pet.\n"
-        f"Stats (highest first): {stats_str}\n"
-        f"Rule: choose the action that satisfies the highest stat. "
-        f"If a target object is required, select the closest one.\n"
+        f"Pet brain. Pick best action for highest stat. Use closest valid target.\n"
+        f"Stats: {stats_str}\n"
         f"{_GUIDE}\n"
-        f"Scene (nearest first): {scene_str}\n"
-        f"Available actions: {actions_str}\n"
-        f"Respond with JSON only."
+        f"Scene: {scene_str}\n"
+        f"Actions: {actions_str}\n"
+        f"JSON:"
     )
     return prompt
 

@@ -84,13 +84,16 @@ class LlamaCppInferenceAdapter(InferencePort):
         """Instantiate and return the Llama model (called once, lazily)."""
         import os
         llama_cpp = self._get_llama_cpp()
-        # Leave one core free for the event loop and health probes.
-        n_threads = max(1, (os.cpu_count() or 4) - 1)
+        # Inference is serialised by the semaphore in the route, so use all cores.
+        # Allow override via N_THREADS env var for tuning on target hardware.
+        n_threads = int(os.getenv("N_THREADS", "") or os.cpu_count() or 4)
         log.info("Loading GGUF model from %s (n_threads=%d)", self._model_path, n_threads)
         return llama_cpp.Llama(
             model_path=self._model_path,
             n_ctx=self._context_size,
             n_threads=n_threads,
+            n_batch=512,
+            use_mlock=True,   # pin model in RAM, prevent swap on RPi
             verbose=False,
         )
 
@@ -153,9 +156,9 @@ class LlamaCppInferenceAdapter(InferencePort):
             llm = self._get_llm()
             completion: Any = llm(
                 prompt,
-                max_tokens=64,
+                max_tokens=48,  # JSON response is always <48 tokens
                 temperature=0.1,
-                stop=["```"],
+                stop=["```", "\n\n"],
                 grammar=self._grammar,
             )
             log.info(f"LLM Response: {completion}")

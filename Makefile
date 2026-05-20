@@ -21,7 +21,7 @@ GITHUB_REPO     ?= jwnwilson/aipet_llm_api
 TF_DIR          ?= infra/terraform
 TF_BOOTSTRAP_DIR ?= infra/terraform/bootstrap
 
-.PHONY: serve sync test test-unit test-integration test-cli test-all data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
+.PHONY: serve ui sync test test-unit test-integration test-cli test-all data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -32,6 +32,9 @@ help:
 
 sync: ## Install / sync all dependencies including dev groups
 	uv sync --extra dev --extra inference --reinstall-package kaggle
+
+ui: ## Start the UI dev server (Vite, http://localhost:5173)
+	cd ui && npm run dev
 
 serve: .venv ## Start the FastAPI server  (MODEL_PATH=... make serve)
 	MODEL_PATH=$(MODEL_PATH) PYTHONPATH=src uv run --env-file .env python -m uvicorn interactors.api.app:app \
