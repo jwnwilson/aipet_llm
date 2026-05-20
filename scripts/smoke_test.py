@@ -102,7 +102,7 @@ def main() -> None:
     result = subprocess.run(
         [
             "kubectl", "exec", "llm-api-db-0", "--",
-            "psql", "-U", "llm-api", "-d", "llm-api", "-t", "-c",
+            "psql", "-U", "aipet", "-d", "aipet", "-t", "-c",
             "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;",
         ],
         capture_output=True,
