@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Compress and upload the aipet GGUF model to S3 for CI caching.",
+        description="Compress and upload the llm-api GGUF model to S3 for CI caching.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

@@ -4,7 +4,7 @@ variable "name" {
 }
 
 variable "domain" {
-  description = "Full domain name served by this CloudFront distribution (e.g. aipet-v2.jwnwilson.co.uk)"
+  description = "Full domain name served by this CloudFront distribution (e.g. llm-v2.jwnwilson.co.uk)"
   type        = string
 }
 

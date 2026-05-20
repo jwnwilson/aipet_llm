@@ -13,7 +13,7 @@ from adapters.auth.auth0 import Auth0Adapter
 from domain.models import UserContext
 
 DOMAIN = "test.auth0.com"
-AUDIENCE = "https://api.aipet.test"
+AUDIENCE = "https://api.llm-api.test"
 
 _PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _PUBLIC_KEY = _PRIVATE_KEY.public_key()
@@ -38,7 +38,7 @@ def _make_token(
     if email is not None:
         claims["email"] = email
     if roles is not None:
-        claims["https://aipet/roles"] = roles
+        claims["https://llm-api/roles"] = roles
     return jwt.encode(claims, _PRIVATE_KEY, algorithm="RS256")
 
 

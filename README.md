@@ -85,8 +85,8 @@ The deploy workflow builds an ARM64 image, pushes it to ECR, and applies k8s man
 |--------|-------------|
 | `AWS_ROLE_ARN` | IAM role for OIDC auth — `terraform -chdir=infra/terraform output -raw github_actions_role_arn` |
 | `AWS_S3_BUCKET` | S3 bucket for training artefacts |
-| `LLM_API_AWS_ACCESS_KEY_ID` | AWS access key for the aipet service account |
-| `LLM_API_AWS_SECRET_ACCESS_KEY` | AWS secret key for the aipet service account |
+| `LLM_API_AWS_ACCESS_KEY_ID` | AWS access key for the llm-api service account |
+| `LLM_API_AWS_SECRET_ACCESS_KEY` | AWS secret key for the llm-api service account |
 | `AUTH0_DOMAIN` | Auth0 tenant domain (e.g. `yourapp.auth0.com`) |
 | `AUTH0_AUDIENCE` | Auth0 API audience identifier |
 | `AUTH0_CLIENT_ID` | Auth0 application client ID |

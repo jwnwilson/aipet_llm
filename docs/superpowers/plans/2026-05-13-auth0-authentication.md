@@ -175,7 +175,7 @@ from adapters.auth.auth0 import Auth0Adapter
 from domain.models import UserContext
 
 DOMAIN = "test.auth0.com"
-AUDIENCE = "https://api.aipet.test"
+AUDIENCE = "https://api.llm-api.test"
 
 _PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _PUBLIC_KEY = _PRIVATE_KEY.public_key()
@@ -814,7 +814,7 @@ git commit -m "feat: add /auth/login and /auth/callback for isolated testing"
 - [ ] **Step 1: Replace `src/interactors/api/app.py` with the updated version**
 
 ```python
-"""FastAPI application factory for the aipet inference service."""
+"""FastAPI application factory for the llm-api inference service."""
 
 from __future__ import annotations
 
@@ -987,7 +987,7 @@ Local dev startup:
 ```bash
 APP_ENV=development \
 AUTH0_DOMAIN=your-tenant.auth0.com \
-AUTH0_AUDIENCE=https://api.aipet.example.com \
+AUTH0_AUDIENCE=https://api.llm-api.example.com \
 AUTH0_CLIENT_ID=abc123 \
 AUTH0_CLIENT_SECRET=secret \
 AUTH0_CALLBACK_URL=http://localhost:8000/auth/callback \

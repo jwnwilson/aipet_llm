@@ -105,14 +105,14 @@ resource "aws_iam_role_policy_attachment" "github_actions_terraform_state" {
   policy_arn = aws_iam_policy.terraform_state.arn
 }
 
-# IAM user for the aipet application (RPi cluster + any non-OIDC workload).
+# IAM user for the llm-api application (RPi cluster + any non-OIDC workload).
 # Scoped to S3 read/write on the project bucket only.
 
-resource "aws_iam_user" "aipet" {
+resource "aws_iam_user" "llm_api" {
   name = "${var.repo_name}-app"
 }
 
-data "aws_iam_policy_document" "aipet_s3" {
+data "aws_iam_policy_document" "llm_api_s3" {
   statement {
     effect  = "Allow"
     actions = ["s3:ListBucket"]
@@ -126,17 +126,17 @@ data "aws_iam_policy_document" "aipet_s3" {
   }
 }
 
-resource "aws_iam_policy" "aipet_s3" {
+resource "aws_iam_policy" "llm_api_s3" {
   name   = "${var.repo_name}-app-s3"
-  policy = data.aws_iam_policy_document.aipet_s3.json
+  policy = data.aws_iam_policy_document.llm_api_s3.json
 }
 
-resource "aws_iam_user_policy_attachment" "aipet_s3" {
-  user       = aws_iam_user.aipet.name
-  policy_arn = aws_iam_policy.aipet_s3.arn
+resource "aws_iam_user_policy_attachment" "llm_api_s3" {
+  user       = aws_iam_user.llm_api.name
+  policy_arn = aws_iam_policy.llm_api_s3.arn
 }
 
-data "aws_iam_policy_document" "aipet_ecr_pull" {
+data "aws_iam_policy_document" "llm_api_ecr_pull" {
   statement {
     effect    = "Allow"
     actions   = ["ecr:GetAuthorizationToken"]
@@ -154,20 +154,20 @@ data "aws_iam_policy_document" "aipet_ecr_pull" {
   }
 }
 
-resource "aws_iam_policy" "aipet_ecr_pull" {
+resource "aws_iam_policy" "llm_api_ecr_pull" {
   count  = length(var.ecr_pull_repo_arns) > 0 ? 1 : 0
   name   = "${var.repo_name}-app-ecr-pull"
-  policy = data.aws_iam_policy_document.aipet_ecr_pull.json
+  policy = data.aws_iam_policy_document.llm_api_ecr_pull.json
 }
 
-resource "aws_iam_user_policy_attachment" "aipet_ecr_pull" {
+resource "aws_iam_user_policy_attachment" "llm_api_ecr_pull" {
   count      = length(var.ecr_pull_repo_arns) > 0 ? 1 : 0
-  user       = aws_iam_user.aipet.name
-  policy_arn = aws_iam_policy.aipet_ecr_pull[0].arn
+  user       = aws_iam_user.llm_api.name
+  policy_arn = aws_iam_policy.llm_api_ecr_pull[0].arn
 }
 
-resource "aws_iam_access_key" "aipet" {
-  user = aws_iam_user.aipet.name
+resource "aws_iam_access_key" "llm_api" {
+  user = aws_iam_user.llm_api.name
 }
 
 data "aws_iam_policy_document" "ui_deploy" {

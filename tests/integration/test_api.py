@@ -1,4 +1,4 @@
-"""Integration tests for the aipet FastAPI application."""
+"""Integration tests for the llm-api FastAPI application."""
 from __future__ import annotations
 
 import pytest

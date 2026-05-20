@@ -24,7 +24,7 @@ variable "github_repo" {
 variable "s3_bucket" {
   description = "S3 bucket name used to store models — grants the GitHub Actions role read access"
   type        = string
-  default     = "aipet-jwn"
+  default     = "llm-api-jwn"
 }
 
 variable "vps_ip" {

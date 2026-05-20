@@ -10,7 +10,7 @@ from domain.train.dataset import EVAL_SIZE, SEED, TRAIN_SIZE, generate
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Generate synthetic aipet training data.")
+    parser = argparse.ArgumentParser(description="Generate synthetic llm-api training data.")
     parser.add_argument("--data-dir", default="data", help="Output directory (default: data)")
     parser.add_argument("--train-size", type=int, default=TRAIN_SIZE)
     parser.add_argument("--eval-size", type=int, default=EVAL_SIZE)

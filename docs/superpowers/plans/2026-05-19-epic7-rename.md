@@ -29,7 +29,7 @@ Keep the old secrets in place until after the first successful CI run with the n
 ### 2 — Update Auth0 custom action
 
 In the Auth0 Dashboard → Actions → Flows → Login, find the action that sets custom claims.  
-Change the claim key from `https://aipet/roles` to `https://llm-api/roles`.  
+Change the claim key from `https://llm-api/roles` to `https://llm-api/roles`.  
 Deploy the action. This must be live before the code change deploys.
 
 ### 3 — Apply Terraform to create new ECR repos
@@ -199,7 +199,7 @@ Expected output: only postgres internal user/db (`postgres-user: "aipet"`, `post
 
 ```bash
 eval "$FIND" | xargs -0 sed -i '' \
-  's|https://aipet/|https://llm-api/|g'
+  's|https://llm-api/|https://llm-api/|g'
 eval "$FIND" | xargs -0 sed -i '' \
   's|https://api\.aipet\.|https://api.llm-api.|g'
 ```
@@ -213,17 +213,17 @@ Expected: no output.
 - [ ] **Step 2: Replace Python expression patterns**
 
 ```bash
-# SSH adapter tmux session prefix: f"aipet-{...}" → f"llm-api-{...}"
+# SSH adapter tmux session prefix: f"llm-api-{...}" → f"llm-api-{...}"
 eval "$FIND" | xargs -0 sed -i '' \
-  's/f"aipet-{/f"llm-api-{/g'
+  's/f"llm-api-{/f"llm-api-{/g'
 
-# Temporal default experiment name: or "aipet" → or "llm-api"
+# Temporal default experiment name: or "llm-api" → or "llm-api"
 eval "$FIND" | xargs -0 sed -i '' \
-  's/or "aipet"/or "llm-api"/g'
+  's/or "llm-api"/or "llm-api"/g'
 
 # Colab Google token path
 eval "$FIND" | xargs -0 sed -i '' \
-  's|config/aipet/|config/llm-api/|g'
+  's|config/llm-api/|config/llm-api/|g'
 ```
 
 - [ ] **Step 3: Replace remaining bare `aipet` words in docstrings and comments**

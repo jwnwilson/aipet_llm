@@ -1,7 +1,7 @@
 #TODO
 
 # Consolidate to llm-api
-- Rename this project to "llm-api" and make it a generic training platform. Remove "aipet" references
+- Rename this project to "llm-api" and make it a generic training platform. Remove legacy branding references [DONE - see EPIC-7]
 - Add llm-ui to this project
 
 ## LLM training pipeline

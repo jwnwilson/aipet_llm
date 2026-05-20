@@ -45,29 +45,29 @@ moved {
   to   = module.iam.aws_iam_role_policy_attachment.github_actions_s3
 }
 
-# IAM — aipet app user
+# IAM — llm-api app user
 moved {
   from = aws_iam_user.aipet
-  to   = module.iam.aws_iam_user.aipet
+  to   = module.iam.aws_iam_user.llm_api
 }
 
 moved {
   from = aws_iam_policy.aipet_s3
-  to   = module.iam.aws_iam_policy.aipet_s3
+  to   = module.iam.aws_iam_policy.llm_api_s3
 }
 
 moved {
   from = aws_iam_user_policy_attachment.aipet_s3
-  to   = module.iam.aws_iam_user_policy_attachment.aipet_s3
+  to   = module.iam.aws_iam_user_policy_attachment.llm_api_s3
 }
 
 moved {
   from = aws_iam_access_key.aipet
-  to   = module.iam.aws_iam_access_key.aipet
+  to   = module.iam.aws_iam_access_key.llm_api
 }
 
 # DNS
 moved {
   from = aws_route53_record.aipet_llm_api
-  to   = module.dns.aws_route53_record.aipet_llm_api
+  to   = module.dns.aws_route53_record.llm_api
 }

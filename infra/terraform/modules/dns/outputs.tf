@@ -1,6 +1,6 @@
 output "fqdn" {
-  description = "FQDN of the aipet LLM API DNS record"
-  value       = aws_route53_record.aipet_llm_api.fqdn
+  description = "FQDN of the llm-api LLM API DNS record"
+  value       = aws_route53_record.llm_api.fqdn
 }
 
 output "ui_fqdn" {

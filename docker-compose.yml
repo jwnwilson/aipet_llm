@@ -1,5 +1,5 @@
 services:
-  aipet:
+  llm-api:
     build:
       context: .
       platforms:

@@ -67,7 +67,7 @@ class SshTrainingAdapter(RemoteTrainingPort):
         )
 
         # Step 2: start training in a detached screen session.
-        session = f"aipet-{config.experiment_name}"
+        session = f"llm-api-{config.experiment_name}"
         train_cmd = (
             f"cd {self._work_dir} && "
             f"uv run python -m src.cli.train"

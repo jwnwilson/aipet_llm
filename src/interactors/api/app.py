@@ -1,4 +1,4 @@
-"""FastAPI application factory for the aipet inference service."""
+"""FastAPI application factory for the llm-api inference service."""
 
 from __future__ import annotations
 

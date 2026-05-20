@@ -272,7 +272,7 @@ async def _train_remote(config: TrainConfig, adapter: RemoteTrainingPort) -> Che
         epochs=config.epochs,
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
-        experiment_name=config.experiment_name or "aipet",
+        experiment_name=config.experiment_name or "llm-api",
     )
 
     loop = asyncio.get_event_loop()

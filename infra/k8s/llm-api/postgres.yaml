@@ -51,7 +51,7 @@ spec:
               mountPath: /var/lib/postgresql/data
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "aipet"]
+              command: ["pg_isready", "-U", "llm-api"]
             initialDelaySeconds: 5
             periodSeconds: 5
           resources:
