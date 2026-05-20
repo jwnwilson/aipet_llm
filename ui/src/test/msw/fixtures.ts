@@ -1,5 +1,5 @@
 // apps/llm-ui/src/test/msw/fixtures.ts
-import type { TrainingModel, RunRecord, UserContext } from '@/types'
+import type { TrainingModel, RunRecord, UserContext, QualityReport, EvaluationData } from '@/types'
 
 export const MODEL_FIXTURE: TrainingModel = {
   id: 'test-id-1',
@@ -42,4 +42,27 @@ export const APPROVED_USER_FIXTURE: UserContext = {
   user_id: 'auth0|approved-user',
   email: 'approved@example.com',
   status: 'approved',
+}
+
+export const QUALITY_REPORT_FIXTURE: QualityReport = {
+  per_stat_accuracy: {
+    hunger:    { correct: 38, total: 40, accuracy: 0.95,  passed: true  },
+    boredom:   { correct: 37, total: 40, accuracy: 0.925, passed: true  },
+    social:    { correct: 39, total: 40, accuracy: 0.975, passed: true  },
+    tiredness: { correct: 36, total: 40, accuracy: 0.9,   passed: false },
+    toilet:    { correct: 38, total: 40, accuracy: 0.95,  passed: true  },
+  },
+  target_accuracy:   { correct: 18, total: 20, accuracy: 0.9,  passed: true },
+  priority_conflict: { correct: 16, total: 20, accuracy: 0.8,  passed: true },
+  fallback_accuracy: { correct: 19, total: 20, accuracy: 0.95, passed: true },
+  action_distribution: { EAT: 50, SLEEP: 40, PLAY: 10 },
+  max_action_share: 0.5,
+  passed: true,
+}
+
+export const EVAL_DATA_FIXTURE: EvaluationData = {
+  run_id: 'run-uuid',
+  status: 'completed',
+  eval_valid_pct: 0.97,
+  quality_report: QUALITY_REPORT_FIXTURE,
 }

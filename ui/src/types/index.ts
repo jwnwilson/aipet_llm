@@ -61,3 +61,34 @@ export interface UserContext {
   email: string | null
   status: 'pending' | 'approved'
 }
+
+export interface StatAccuracyResult {
+  correct: number
+  total: number
+  accuracy: number
+  passed: boolean
+}
+
+export interface CategoryAccuracyResult {
+  correct: number
+  total: number
+  accuracy: number
+  passed: boolean
+}
+
+export interface QualityReport {
+  per_stat_accuracy: Record<string, StatAccuracyResult>
+  target_accuracy: CategoryAccuracyResult
+  priority_conflict: CategoryAccuracyResult
+  fallback_accuracy: CategoryAccuracyResult
+  action_distribution: Record<string, number>
+  max_action_share: number
+  passed: boolean
+}
+
+export interface EvaluationData {
+  run_id: string
+  status: RunStatus
+  eval_valid_pct: number | null
+  quality_report: QualityReport | null
+}

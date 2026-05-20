@@ -52,3 +52,17 @@ describe('deleteRun', () => {
     await expect(deleteRun('does-not-exist')).rejects.toThrow()
   })
 })
+
+describe('getRunEvaluation', () => {
+  it('returns EvaluationData for a known run', async () => {
+    const { getRunEvaluation } = await import('@/api/runs')
+    const result = await getRunEvaluation('run-uuid')
+    expect(result.run_id).toBe('run-uuid')
+    expect(result.status).toBeDefined()
+  })
+
+  it('throws for an unknown run id', async () => {
+    const { getRunEvaluation } = await import('@/api/runs')
+    await expect(getRunEvaluation('does-not-exist')).rejects.toThrow()
+  })
+})

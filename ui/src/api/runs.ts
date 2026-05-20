@@ -1,4 +1,4 @@
-import type { RunRecord, TriggerRunRequest } from '@/types'
+import type { EvaluationData, RunRecord, TriggerRunRequest } from '@/types'
 import { apiClient } from './client'
 
 export async function listRuns(): Promise<RunRecord[]> {
@@ -22,4 +22,9 @@ export async function deleteRun(id: string): Promise<void> {
 
 export function isRunActive(run: RunRecord): boolean {
   return run.status === 'running'
+}
+
+export async function getRunEvaluation(id: string): Promise<EvaluationData> {
+  const { data } = await apiClient.get<EvaluationData>(`/api/runs/${id}/evaluation`)
+  return data
 }
