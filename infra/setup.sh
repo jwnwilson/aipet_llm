@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # First-time CI/CD setup for EPIC-3.
 # Run from the repo root: bash infra/setup.sh <github_repo>
-# Example: bash infra/setup.sh myorg/aipet-llm
+# Example: bash infra/setup.sh myorg/llm-api
 #
 # Prerequisites:
 #   - AWS CLI configured (aws configure or AWS_* env vars)

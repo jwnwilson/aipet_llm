@@ -52,7 +52,7 @@ tests/
 data/
   workflow/{run_id}/   # all artifacts for a run (dataset, checkpoint, GGUF)
 models/
-  aipet.gguf           # quantised Q4_K_M export for RPi
+  model.gguf           # quantised Q4_K_M export for RPi
 ```
 
 > **Placement rules:**

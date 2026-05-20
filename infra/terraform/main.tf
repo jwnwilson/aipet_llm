@@ -10,7 +10,7 @@ module "ecr" {
 
 module "ecr_temporal_ui" {
   source                = "./modules/ecr"
-  repo_name             = "aipet-temporal-ui"
+  repo_name             = "llm-api-temporal-ui"
   image_retention_count = var.image_retention_count
 }
 

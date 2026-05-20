@@ -648,7 +648,7 @@ def infer(
 def health() -> dict:
     return {
         "status": "ok",
-        "model": os.getenv("MODEL_PATH", "models/aipet.gguf"),
+        "model": os.getenv("MODEL_PATH", "models/model.gguf"),
     }
 ```
 
@@ -893,9 +893,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 active.id,
                 exc_info=True,
             )
-            model_path = os.getenv("MODEL_PATH", "models/aipet.gguf")
+            model_path = os.getenv("MODEL_PATH", "models/model.gguf")
     else:
-        model_path = os.getenv("MODEL_PATH", "models/aipet.gguf")
+        model_path = os.getenv("MODEL_PATH", "models/model.gguf")
 
     configure(LlamaCppInferenceAdapter(model_path=model_path))
 
@@ -910,7 +910,7 @@ from interactors.api.routes.login import router as login_router  # noqa: E402
 from interactors.api.routes.models import router as models_router  # noqa: E402
 from interactors.api.routes.runs import router as runs_router  # noqa: E402
 
-app = FastAPI(title="aipet-llm inference service", lifespan=lifespan)
+app = FastAPI(title="llm-api inference service", lifespan=lifespan)
 
 _cors_raw = os.getenv("CORS_ORIGINS", "")
 if os.getenv("APP_ENV") == "development":

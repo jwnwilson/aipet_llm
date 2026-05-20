@@ -103,7 +103,7 @@ async def test_workflow_updates_run_status_in_db():
         async with await WorkflowEnvironment.start_time_skipping() as env:
             async with Worker(
                 env.client,
-                task_queue="aipet-training",
+                task_queue="llm-api-training",
                 workflows=[TrainingPipelineWorkflow],
                 activities=_ACTIVITIES,
             ):
@@ -111,7 +111,7 @@ async def test_workflow_updates_run_status_in_db():
                     TrainingPipelineWorkflow.run,
                     config,
                     id="wf-status-test",
-                    task_queue="aipet-training",
+                    task_queue="llm-api-training",
                 )
 
     final_run = run_store.get(run.id)

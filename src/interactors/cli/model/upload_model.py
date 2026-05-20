@@ -1,4 +1,4 @@
-"""CLI: gzip-compress and upload models/aipet.gguf to S3 for CI model caching.
+"""CLI: gzip-compress and upload models/model.gguf to S3 for CI model caching.
 
 One-time operation — run locally whenever the model changes.
 
@@ -28,13 +28,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--model-path",
-        default="models/aipet.gguf",
+        default="models/model.gguf",
         dest="model_path",
         help="Local path to the GGUF model file.",
     )
     parser.add_argument(
         "--s3-key",
-        default="models/aipet.gguf.gz",
+        default="models/model.gguf.gz",
         dest="s3_key",
         help="S3 object key (destination path inside the bucket).",
     )

@@ -357,9 +357,9 @@ class TestSshAdapterStatus:
         adapter = self._make_adapter(monkeypatch)
         monkeypatch.setattr(
             "adapters.compute.ssh.subprocess.run",
-            lambda *a, **kw: _ok("aipet-my-exp\t(Detached)"),
+            lambda *a, **kw: _ok("llm-api-my-exp\t(Detached)"),
         )
-        assert adapter.status("aipet-my-exp") == "running"
+        assert adapter.status("llm-api-my-exp") == "running"
 
     def test_done_when_session_gone_and_checkpoint_exists(self, monkeypatch):
         adapter = self._make_adapter(monkeypatch)
@@ -368,7 +368,7 @@ class TestSshAdapterStatus:
             "adapters.compute.ssh.subprocess.run",
             lambda *a, **kw: next(responses),
         )
-        assert adapter.status("aipet-my-exp") == "done"
+        assert adapter.status("llm-api-my-exp") == "done"
 
     def test_failed_when_session_gone_and_no_checkpoint(self, monkeypatch):
         adapter = self._make_adapter(monkeypatch)
@@ -377,7 +377,7 @@ class TestSshAdapterStatus:
             "adapters.compute.ssh.subprocess.run",
             lambda *a, **kw: next(responses),
         )
-        assert adapter.status("aipet-my-exp") == "failed"
+        assert adapter.status("llm-api-my-exp") == "failed"
 
 
 class TestSshAdapterDownload:
@@ -397,7 +397,7 @@ class TestSshAdapterDownload:
         from adapters.compute.ssh import SshTrainingAdapter
         adapter = SshTrainingAdapter()
         tmp = Path("/tmp/ckpt")
-        result = adapter.download("aipet-exp", tmp)
+        result = adapter.download("llm-api-exp", tmp)
 
         rsync_calls = [c for c in calls if c[0] == "rsync"]
         assert rsync_calls, "Expected rsync to download checkpoint"
@@ -420,7 +420,7 @@ class TestSshAdapterLogs:
             "adapters.compute.ssh.subprocess.run",
             lambda *a, **kw: _ok("step 10/200 loss=1.23\nstep 20/200 loss=1.10"),
         )
-        result = adapter.logs("aipet-my-exp")
+        result = adapter.logs("llm-api-my-exp")
         assert "loss=1.23" in result
 
     def test_ssh_command_tails_train_log(self, monkeypatch):
@@ -432,7 +432,7 @@ class TestSshAdapterLogs:
             return _ok()
 
         monkeypatch.setattr("adapters.compute.ssh.subprocess.run", fake_run)
-        adapter.logs("aipet-my-exp")
+        adapter.logs("llm-api-my-exp")
 
         ssh_calls = [c for c in calls if "ssh" in c]
         assert ssh_calls, "Expected an SSH call"
@@ -820,7 +820,7 @@ class TestSshAdapterProgress:
     def test_returns_zero_when_no_progress_file(self, monkeypatch):
         adapter = self._make_adapter(monkeypatch)
         monkeypatch.setattr("adapters.compute.ssh.subprocess.run", lambda *a, **kw: _ok(""))
-        frac, detail = adapter.progress("aipet-exp")
+        frac, detail = adapter.progress("llm-api-exp")
         assert frac == 0.0
         assert detail == ""
 
@@ -831,7 +831,7 @@ class TestSshAdapterProgress:
             "adapters.compute.ssh.subprocess.run",
             lambda *a, **kw: _ok(json.dumps(data)),
         )
-        frac, detail = adapter.progress("aipet-exp")
+        frac, detail = adapter.progress("llm-api-exp")
         assert abs(frac - 0.5) < 1e-6
         assert "epoch=1.0" in detail
         assert "loss=0.4312" in detail
@@ -843,13 +843,13 @@ class TestSshAdapterProgress:
             "adapters.compute.ssh.subprocess.run",
             lambda *a, **kw: _ok(json.dumps(data)),
         )
-        _, detail = adapter.progress("aipet-exp")
+        _, detail = adapter.progress("llm-api-exp")
         assert "eval_loss=0.3210" in detail
 
     def test_returns_zero_on_invalid_json(self, monkeypatch):
         adapter = self._make_adapter(monkeypatch)
         monkeypatch.setattr("adapters.compute.ssh.subprocess.run", lambda *a, **kw: _ok("not-json"))
-        frac, detail = adapter.progress("aipet-exp")
+        frac, detail = adapter.progress("llm-api-exp")
         assert frac == 0.0
         assert detail == ""
 
@@ -862,7 +862,7 @@ class TestSshAdapterProgress:
             return _ok("")
 
         monkeypatch.setattr("adapters.compute.ssh.subprocess.run", fake_run)
-        adapter.progress("aipet-exp")
+        adapter.progress("llm-api-exp")
         cmd_str = " ".join(c for cmd in calls for c in cmd)
         assert "progress.json" in cmd_str
         assert "checkpoints" in cmd_str

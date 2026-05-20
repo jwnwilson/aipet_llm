@@ -7,7 +7,7 @@ variable "aws_region" {
 variable "repo_name" {
   description = "ECR repository name"
   type        = string
-  default     = "aipet-llm"
+  default     = "llm-api"
 }
 
 variable "image_retention_count" {
@@ -17,7 +17,7 @@ variable "image_retention_count" {
 }
 
 variable "github_repo" {
-  description = "GitHub repository in owner/name format — scopes the OIDC trust to main-branch pushes (e.g. myorg/aipet-llm)"
+  description = "GitHub repository in owner/name format — scopes the OIDC trust to main-branch pushes (e.g. myorg/llm-api)"
   type        = string
 }
 
@@ -28,7 +28,7 @@ variable "s3_bucket" {
 }
 
 variable "vps_ip" {
-  description = "Public IP of the VPS / inlets exit node — used for the aipet-llm-api DNS A record"
+  description = "Public IP of the VPS / inlets exit node — used for the llm-api DNS A record"
   type        = string
   default     = "165.22.115.52"
 }

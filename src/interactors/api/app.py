@@ -34,7 +34,7 @@ def _resolve_model_path(storage) -> str:
             return str(local_path)
         except Exception:
             log.warning("Could not download model from MODEL_S3_KEY=%s", s3_key, exc_info=True)
-    return os.getenv("MODEL_PATH", "models/aipet.gguf")
+    return os.getenv("MODEL_PATH", "models/model.gguf")
 
 
 @asynccontextmanager
@@ -132,7 +132,7 @@ _auth0_audience = os.getenv("AUTH0_AUDIENCE", "")
 _auth0_client_id = os.getenv("AUTH0_CLIENT_ID", "")
 
 app = FastAPI(
-    title="aipet-llm inference service",
+    title="llm-api inference service",
     lifespan=lifespan,
     swagger_ui_oauth2_redirect_url="/docs/oauth2-redirect",
     swagger_ui_init_oauth={

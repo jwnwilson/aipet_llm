@@ -1,4 +1,4 @@
-"""Real model inference smoke test — no mocks, requires AIPET_TEST_MODEL_PATH or models/test_aipet.gguf."""
+"""Real model inference smoke test — no mocks, requires LLM_API_TEST_MODEL_PATH or models/test_model.gguf."""
 from __future__ import annotations
 
 import os
@@ -11,8 +11,8 @@ from adapters.inference import LlamaCppInferenceAdapter
 from adapters.prompt import parse_response
 from domain.models import InferenceRequest, PetStats, SceneData
 
-_DEFAULT_MODEL_PATH = Path(__file__).parents[2] / "models" / "test_aipet.gguf"
-MODEL_PATH = Path(os.environ.get("AIPET_TEST_MODEL_PATH", str(_DEFAULT_MODEL_PATH)))
+_DEFAULT_MODEL_PATH = Path(__file__).parents[2] / "models" / "test_model.gguf"
+MODEL_PATH = Path(os.environ.get("LLM_API_TEST_MODEL_PATH", str(_DEFAULT_MODEL_PATH)))
 
 pytestmark = pytest.mark.skipif(
     not MODEL_PATH.exists(),

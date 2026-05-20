@@ -25,7 +25,7 @@ tar xzf ./actions-runner-linux-arm64-2.321.0.tar.gz
 # 2. Configure — get the registration token from:
 #    https://github.com/<owner>/<repo>/settings/actions/runners/new
 ./config.sh \
-  --url https://github.com/<owner>/aipet-llm \
+  --url https://github.com/<owner>/llm-api \
   --token <RUNNER_TOKEN> \
   --name rpi5-k3s \
   --labels self-hosted,k3s,linux,arm64 \
@@ -39,7 +39,7 @@ sudo ./svc.sh start
 ## Verify registration
 
 After `./config.sh` completes, the runner appears at:
-`https://github.com/<owner>/aipet-llm/settings/actions/runners`
+`https://github.com/<owner>/llm-api/settings/actions/runners`
 
 Status should be **Idle**.
 

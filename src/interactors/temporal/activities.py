@@ -124,7 +124,7 @@ class EvalResult:
 @dataclass
 class ExportConfig:
     checkpoint_path: str = ""
-    gguf_output: str = "models/aipet.gguf"
+    gguf_output: str = "models/model.gguf"
     run_id: str = ""           # non-empty → download checkpoint from remote before export
     remote_backend: str = ""
     model_id: str = ""         # fallback storage key when pipeline_run_id is unset

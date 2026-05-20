@@ -1,5 +1,5 @@
 def main():
-    print("Hello from aipet-llm!")
+    print("Hello from llm-api!")
 
 
 if __name__ == "__main__":

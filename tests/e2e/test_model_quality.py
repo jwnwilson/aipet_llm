@@ -1,4 +1,4 @@
-"""Integration tests for real model quality — skipped if models/aipet.gguf is absent.
+"""Integration tests for real model quality — skipped if models/model.gguf is absent.
 
 Measures:
   - Per-stat action accuracy (model picks right action for each dominant stat)
@@ -23,8 +23,8 @@ from domain.train.quality_report import (
 from adapters.inference import LlamaCppInferenceAdapter
 
 import os
-_DEFAULT_MODEL_PATH = Path(__file__).parents[2] / "models" / "test_aipet.gguf"
-MODEL_PATH = Path(os.environ.get("AIPET_TEST_MODEL_PATH", str(_DEFAULT_MODEL_PATH)))
+_DEFAULT_MODEL_PATH = Path(__file__).parents[2] / "models" / "test_model.gguf"
+MODEL_PATH = Path(os.environ.get("LLM_API_TEST_MODEL_PATH", str(_DEFAULT_MODEL_PATH)))
 
 pytestmark = [
     pytest.mark.slow,

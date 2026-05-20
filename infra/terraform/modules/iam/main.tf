@@ -91,7 +91,7 @@ data "aws_iam_policy_document" "terraform_state" {
   statement {
     effect    = "Allow"
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-    resources = ["arn:aws:dynamodb:*:*:table/aipet-llm-terraform-locks"]
+    resources = ["arn:aws:dynamodb:*:*:table/llm-api-terraform-locks"]
   }
 }
 

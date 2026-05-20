@@ -1,7 +1,7 @@
 """Behavioural inference tests — require a real model, not run in the standard integration suite.
 
 Run locally with:
-    AIPET_TEST_MODEL_PATH=models/test_aipet.gguf uv run pytest tests/e2e/test_inference_behaviour.py -v
+    LLM_API_TEST_MODEL_PATH=models/test_model.gguf uv run pytest tests/e2e/test_inference_behaviour.py -v
 """
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from adapters.prompt import parse_response
 from domain.actions import Action
 from domain.models import InferenceRequest, PetStats, SceneData, SceneObject
 
-_DEFAULT_MODEL_PATH = Path(__file__).parents[2] / "models" / "test_aipet.gguf"
-MODEL_PATH = Path(os.environ.get("AIPET_TEST_MODEL_PATH", str(_DEFAULT_MODEL_PATH)))
+_DEFAULT_MODEL_PATH = Path(__file__).parents[2] / "models" / "test_model.gguf"
+MODEL_PATH = Path(os.environ.get("LLM_API_TEST_MODEL_PATH", str(_DEFAULT_MODEL_PATH)))
 
 pytestmark = pytest.mark.skipif(
     not MODEL_PATH.exists(),

@@ -121,12 +121,12 @@ ECR repository, lifecycle policy, GitHub OIDC IAM role, and push policy provisio
 `docker-compose.yml` runs `temporal`, `temporal-db`, and `temporal-ui`; Temporal UI at http://localhost:8233.
 
 ### Feature 1.3 — Temporal worker (local)
-Worker runs outside Docker via `uv run python -m src.temporal.worker`; handles task queue `aipet-training`.
+Worker runs outside Docker via `uv run python -m src.temporal.worker`; handles task queue `llm-api-training`.
 
 ### Feature 1.4 — Dataset generation and training trigger
 - `src/cli/generate_dataset.py` produces 5 000 train / 500 eval examples.
 - `src/cli/trigger_training.py` submits the Temporal workflow with `--remote-backend kaggle`.
-- `evaluate_activity` and `export_activity` wired end-to-end; GGUF written to `models/aipet.gguf` only when eval ≥ 95%.
+- `evaluate_activity` and `export_activity` wired end-to-end; GGUF written to `models/model.gguf` only when eval ≥ 95%.
 - Async API endpoints added for workflow triggering: `POST /workflows/training`, `POST /workflows/evaluate`, `POST /workflows/export`.
 - Alembic migrations in place for workflow run tracking.
 
@@ -145,7 +145,7 @@ Triggers on successful `Test` workflow run against `main`; OIDC via `secrets.AWS
 
 #### TASK-3.1.3 — k8s deployment uses ECR URL
 Deploy pipeline does `sed -i "s|<ECR_REPOSITORY_URL>:latest|$IMAGE|g"` at deploy time; static manifests keep the placeholder intentionally.
-**Outputs:** `infra/k8s/aipet-llm/deployment.yaml`, `infra/k8s/temporal/worker.yaml`
+**Outputs:** `infra/k8s/llm-api/deployment.yaml`, `infra/k8s/temporal/worker.yaml`
 
 #### TASK-3.1.4 — Terraform state files in `.gitignore`
 `.gitignore` entries: `infra/terraform/**/.terraform/`, `infra/terraform/*.tfstate*`, `infra/terraform/**/.terraform.lock.hcl`.

@@ -5,7 +5,7 @@ data "aws_route53_zone" "zone" {
 
 resource "aws_route53_record" "aipet_llm_api" {
   zone_id = data.aws_route53_zone.zone.zone_id
-  name    = "aipet-llm-api.${trimsuffix(var.zone_name, ".")}"
+  name    = "llm-api.${trimsuffix(var.zone_name, ".")}"
   type    = "A"
   ttl     = 300
   records = [var.vps_ip]

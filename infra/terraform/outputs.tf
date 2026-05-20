@@ -24,12 +24,12 @@ output "github_actions_role_arn" {
 }
 
 output "aipet_aws_access_key_id" {
-  description = "Access key ID for the aipet app IAM user — set as AIPET_AWS_ACCESS_KEY_ID secret"
+  description = "Access key ID for the aipet app IAM user — set as LLM_API_AWS_ACCESS_KEY_ID secret"
   value       = module.iam.aipet_aws_access_key_id
 }
 
 output "aipet_aws_secret_access_key" {
-  description = "Secret access key for the aipet app IAM user — set as AIPET_AWS_SECRET_ACCESS_KEY secret"
+  description = "Secret access key for the aipet app IAM user — set as LLM_API_AWS_SECRET_ACCESS_KEY secret"
   value       = module.iam.aipet_aws_secret_access_key
   sensitive   = true
 }

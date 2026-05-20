@@ -25,13 +25,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--s3-key",
-        default="models/test_aipet.gguf.gz",
+        default="models/test_model.gguf.gz",
         dest="s3_key",
         help="S3 object key to download.",
     )
     parser.add_argument(
         "--dest",
-        default="models/test_aipet.gguf",
+        default="models/test_model.gguf",
         dest="dest",
         help="Local path to write the decompressed model to.",
     )

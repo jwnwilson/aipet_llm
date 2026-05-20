@@ -30,7 +30,7 @@ from interactors.temporal.activities import (
 )
 from interactors.temporal.workflows import EvaluateWorkflow, ExportWorkflow, TrainingPipelineWorkflow
 
-TASK_QUEUE = "aipet-training"
+TASK_QUEUE = "llm-api-training"
 
 
 async def main() -> None:

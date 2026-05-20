@@ -357,7 +357,7 @@ module "ecr" {
 
 module "ecr_temporal_ui" {
   source                = "./modules/ecr"
-  repo_name             = "aipet-temporal-ui"
+  repo_name             = "llm-api-temporal-ui"
   image_retention_count = var.image_retention_count
 }
 
@@ -559,7 +559,7 @@ In the GitHub repo settings → Secrets and variables → Actions, add:
 | `VITE_AUTH0_DOMAIN` | your Auth0 tenant domain |
 | `VITE_AUTH0_CLIENT_ID` | your Auth0 SPA client ID |
 | `VITE_AUTH0_AUDIENCE` | `https://api.llm.jwnwilson.co.uk` |
-| `VITE_API_URL` | `https://aipet-llm-api.jwnwilson.co.uk` |
+| `VITE_API_URL` | `https://llm-api.jwnwilson.co.uk` |
 
 - [ ] **Step 4: Trigger the deploy workflow manually to verify**
 
