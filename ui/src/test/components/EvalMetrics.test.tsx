@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { EvalMetrics } from '@/components/EvalMetrics'
 import { QUALITY_REPORT_FIXTURE } from '../msw/fixtures'
 
@@ -32,8 +32,10 @@ describe('EvalMetrics — with quality report', () => {
 
   it('renders action distribution counts', () => {
     render(<EvalMetrics validPct={0.97} passed={true} qualityReport={QUALITY_REPORT_FIXTURE} />)
-    expect(screen.getByText('EAT')).toBeInTheDocument()
-    expect(screen.getByText('50')).toBeInTheDocument()
+    const heading = screen.getByText(/action distribution/i)
+    const section = heading.closest('div')!
+    expect(within(section).getByText('EAT')).toBeInTheDocument()
+    expect(within(section).getByText('50')).toBeInTheDocument()
   })
 
   it('renders accuracy percentage for a stat', () => {
@@ -45,5 +47,7 @@ describe('EvalMetrics — with quality report', () => {
   it('does not render per-stat table when qualityReport is null', () => {
     render(<EvalMetrics validPct={0.97} passed={true} qualityReport={null} />)
     expect(screen.queryByText('hunger')).not.toBeInTheDocument()
+    expect(screen.queryByText(/per-stat accuracy/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/action distribution/i)).not.toBeInTheDocument()
   })
 })

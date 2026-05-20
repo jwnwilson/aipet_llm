@@ -14,8 +14,8 @@ export function EvalMetrics({ validPct, passed, qualityReport }: EvalMetricsProp
     <div className="rounded-md border p-4 space-y-4">
       <div className="flex items-center gap-3">
         {passed
-          ? <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
-          : <XCircle className="h-5 w-5 text-red-600 shrink-0" />
+          ? <CheckCircle aria-label="passed" role="img" className="h-5 w-5 text-green-600 shrink-0" />
+          : <XCircle aria-label="failed" role="img" className="h-5 w-5 text-red-600 shrink-0" />
         }
         <div>
           <p className="text-sm font-medium">Eval score: {pctDisplay}%</p>
@@ -50,8 +50,8 @@ export function EvalMetrics({ validPct, passed, qualityReport }: EvalMetricsProp
                     </td>
                     <td className="py-1 text-right">
                       {result.passed
-                        ? <CheckCircle className="h-3.5 w-3.5 text-green-600 inline" />
-                        : <XCircle className="h-3.5 w-3.5 text-red-600 inline" />
+                        ? <CheckCircle aria-label="passed" role="img" className="h-3.5 w-3.5 text-green-600 inline" />
+                        : <XCircle aria-label="failed" role="img" className="h-3.5 w-3.5 text-red-600 inline" />
                       }
                     </td>
                   </tr>
