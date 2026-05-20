@@ -1,9 +1,10 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteRun, getRun, isRunActive } from '@/api/runs'
+import { deleteRun, getRunEvaluation, getRun, isRunActive } from '@/api/runs'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
+import { EvalMetrics } from '@/components/EvalMetrics'
 import type { PipelineStage, StageStatus } from '@/components/PipelineStages'
 import type { RunStatus } from '@/types'
 
@@ -33,6 +34,8 @@ function buildStages(status: RunStatus): PipelineStage[] {
   }))
 }
 
+const EVAL_STATUSES: RunStatus[] = ['completed', 'failed']
+
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
@@ -45,6 +48,14 @@ export function RunDetailPage() {
       const data = query.state.data
       return data && isRunActive(data) ? 5000 : false
     },
+  })
+
+  const showEval = run != null && EVAL_STATUSES.includes(run.status)
+
+  const { data: evalData } = useQuery({
+    queryKey: ['runs', runId, 'evaluation'],
+    queryFn: () => getRunEvaluation(runId!),
+    enabled: showEval,
   })
 
   const deleteMutation = useMutation({
@@ -127,6 +138,17 @@ export function RunDetailPage() {
                 </React.Fragment>
               ))}
           </dl>
+        </div>
+      )}
+
+      {showEval && run.eval_valid_pct != null && (
+        <div className="mt-8">
+          <h2 className="text-sm font-medium text-gray-500 mb-3">Evaluation results</h2>
+          <EvalMetrics
+            validPct={run.eval_valid_pct}
+            passed={evalData?.quality_report?.passed ?? (run.eval_valid_pct >= 0.95)}
+            qualityReport={evalData?.quality_report}
+          />
         </div>
       )}
     </div>
