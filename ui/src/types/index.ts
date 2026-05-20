@@ -29,6 +29,7 @@ export type RunStatus =
   | 'running'
   | 'completed'
   | 'failed'
+  | 'cancelled'
 
 export interface RunRecord {
   id: string

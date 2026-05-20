@@ -180,6 +180,18 @@ class RunStorePort(StorePort["RunRecord", "RunConfig"]):
     def update_progress(self, run_id: str, progress: float, detail: str = "") -> RunRecord | None:
         """Persist training/evaluation progress fraction and detail string."""
 
+    @abstractmethod
+    def fail_run(
+        self,
+        run_id: str,
+        reason: str,
+        status: RunStatus = RunStatus.FAILED,
+    ) -> RunRecord | None:
+        """Mark a run as failed or cancelled, persisting the reason in progress_detail.
+
+        Returns the updated record, or None if run_id is not found.
+        """
+
 
 class AuthPort(ABC):
     """Abstract interface for validating bearer tokens."""

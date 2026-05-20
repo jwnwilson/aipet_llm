@@ -137,3 +137,20 @@ class SQLAlchemyRunStore(RunStorePort):
             db.commit()
             db.refresh(row)
             return _row_to_domain(row)
+
+    def fail_run(
+        self,
+        run_id: str,
+        reason: str,
+        status: RunStatus = RunStatus.FAILED,
+    ) -> RunRecord | None:
+        with Session(self._engine) as db:
+            row = db.get(_RunRow, run_id)
+            if row is None:
+                return None
+            row.status = status.value
+            row.progress_detail = reason
+            row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(row)
+            return _row_to_domain(row)

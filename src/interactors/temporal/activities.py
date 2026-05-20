@@ -542,6 +542,24 @@ async def update_run_status_activity(run_id: str, status_value: str) -> None:
 
 
 @activity.defn
+async def fail_run_activity(run_id: str, reason: str, status_value: str = "failed") -> None:
+    """Mark a run as failed or cancelled, persisting the reason in progress_detail.
+
+    Called by the workflow's exception handlers so that any activity failure or
+    Temporal cancellation is reflected in the run record.
+    """
+    from domain.models import RunStatus
+    store = _get_run_store()
+    store.fail_run(run_id, reason, RunStatus(status_value))
+    activity.logger.info(
+        "Run %s marked %s: %s",
+        run_id,
+        status_value,
+        reason,
+    )
+
+
+@activity.defn
 async def save_gguf_path_activity(model_id: str, gguf_path: str) -> None:
     """Persist the storage key of the exported GGUF back to the model record."""
     store = _get_model_store()

@@ -9,6 +9,8 @@ from temporalio import workflow
 from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
+    import asyncio
+    from temporalio.exceptions import is_cancelled_exception
     from domain.models import RunStatus
     from domain.train.dataset import EVAL_SIZE, SEED, TRAIN_SIZE
     from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DIR, DEFAULT_PATIENCE, DEFAULT_WARMUP_RATIO
@@ -23,6 +25,7 @@ with workflow.unsafe.imports_passed_through():
         TrainConfig,
         evaluate_activity,
         export_activity,
+        fail_run_activity,
         finalise_run_activity,
         generate_dataset_activity,
         save_gguf_path_activity,
@@ -90,140 +93,162 @@ class TrainingPipelineWorkflow:
         )
         result = PipelineResult(run_id=config.run_id, experiment_name=config.experiment_name)
 
-        if config.skip_generate:
-            result.dataset_paths = DatasetPaths(
-                train=f"{config.data_dir}/train.jsonl",
-                eval=f"{config.data_dir}/eval.jsonl",
-            )
-            workflow.logger.info("skip_generate=True: reusing existing dataset at %s", config.data_dir)
-        else:
+        try:
+            if config.skip_generate:
+                result.dataset_paths = DatasetPaths(
+                    train=f"{config.data_dir}/train.jsonl",
+                    eval=f"{config.data_dir}/eval.jsonl",
+                )
+                workflow.logger.info("skip_generate=True: reusing existing dataset at %s", config.data_dir)
+            else:
+                if config.run_id:
+                    await workflow.execute_activity(
+                        update_run_status_activity,
+                        args=[config.run_id, RunStatus.GENERATING.value],
+                        start_to_close_timeout=timedelta(minutes=5),
+                        retry_policy=_RETRY,
+                    )
+                result.dataset_paths = await workflow.execute_activity(
+                    generate_dataset_activity,
+                    DatasetConfig(
+                        data_dir=config.data_dir,
+                        train_size=config.train_size,
+                        eval_size=config.eval_size,
+                        seed=config.seed,
+                    ),
+                    start_to_close_timeout=timedelta(minutes=30),
+                    heartbeat_timeout=timedelta(minutes=2),
+                    retry_policy=_RETRY,
+                )
+
             if config.run_id:
                 await workflow.execute_activity(
                     update_run_status_activity,
-                    args=[config.run_id, RunStatus.GENERATING.value],
+                    args=[config.run_id, RunStatus.TRAINING.value],
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=_RETRY,
                 )
-            result.dataset_paths = await workflow.execute_activity(
-                generate_dataset_activity,
-                DatasetConfig(
-                    data_dir=config.data_dir,
-                    train_size=config.train_size,
-                    eval_size=config.eval_size,
-                    seed=config.seed,
+
+            result.checkpoint = await workflow.execute_activity(
+                train_activity,
+                TrainConfig(
+                    model=config.model,
+                    train_data=result.dataset_paths.train,
+                    eval_data=result.dataset_paths.eval,
+                    output_dir=config.output_dir,
+                    epochs=config.epochs,
+                    patience=config.patience,
+                    warmup_ratio=config.warmup_ratio,
+                    dry_run=config.dry_run,
+                    remote_backend=config.remote_backend,
+                    experiment_name=config.experiment_name,
+                    db_run_id=config.run_id,
+                    force_qlora=config.force_qlora,
+                ),
+                start_to_close_timeout=timedelta(hours=6),
+                heartbeat_timeout=timedelta(minutes=10),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+
+            if config.run_id:
+                await workflow.execute_activity(
+                    update_run_status_activity,
+                    args=[config.run_id, RunStatus.EVALUATING.value],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+
+            result.eval_result = await workflow.execute_activity(
+                evaluate_activity,
+                EvalConfig(
+                    checkpoint=result.checkpoint.path,
+                    eval_data=result.dataset_paths.eval,
+                    run_id=result.checkpoint.run_id,
+                    remote_backend=result.checkpoint.remote_backend,
+                    output_dir=config.output_dir,
+                    db_run_id=config.run_id,
                 ),
                 start_to_close_timeout=timedelta(minutes=30),
                 heartbeat_timeout=timedelta(minutes=2),
                 retry_policy=_RETRY,
             )
 
-        if config.run_id:
-            await workflow.execute_activity(
-                update_run_status_activity,
-                args=[config.run_id, RunStatus.TRAINING.value],
-                start_to_close_timeout=timedelta(minutes=5),
-                retry_policy=_RETRY,
-            )
+            result.passed = result.eval_result.passed
 
-        result.checkpoint = await workflow.execute_activity(
-            train_activity,
-            TrainConfig(
-                model=config.model,
-                train_data=result.dataset_paths.train,
-                eval_data=result.dataset_paths.eval,
-                output_dir=config.output_dir,
-                epochs=config.epochs,
-                patience=config.patience,
-                warmup_ratio=config.warmup_ratio,
-                dry_run=config.dry_run,
-                remote_backend=config.remote_backend,
-                experiment_name=config.experiment_name,
-                db_run_id=config.run_id,
-                force_qlora=config.force_qlora,
-            ),
-            start_to_close_timeout=timedelta(hours=6),
-            heartbeat_timeout=timedelta(minutes=10),
-            retry_policy=RetryPolicy(maximum_attempts=3),
-        )
+            if result.eval_result.passed:
+                if config.run_id:
+                    await workflow.execute_activity(
+                        update_run_status_activity,
+                        args=[config.run_id, RunStatus.EXPORTING.value],
+                        start_to_close_timeout=timedelta(minutes=5),
+                        retry_policy=_RETRY,
+                    )
 
-        if config.run_id:
-            await workflow.execute_activity(
-                update_run_status_activity,
-                args=[config.run_id, RunStatus.EVALUATING.value],
-                start_to_close_timeout=timedelta(minutes=5),
-                retry_policy=_RETRY,
-            )
+                result.gguf_path = await workflow.execute_activity(
+                    export_activity,
+                    ExportConfig(
+                        checkpoint_path=result.checkpoint.path,
+                        gguf_output=config.gguf_output,
+                        run_id=result.checkpoint.run_id,
+                        remote_backend=result.checkpoint.remote_backend,
+                        model_id=config.model_id,
+                        pipeline_run_id=config.run_id,
+                        model_name=config.model_name,
+                    ),
+                    start_to_close_timeout=timedelta(hours=1),
+                    heartbeat_timeout=timedelta(minutes=2),
+                    retry_policy=_NO_RETRY,
+                )
 
-        result.eval_result = await workflow.execute_activity(
-            evaluate_activity,
-            EvalConfig(
-                checkpoint=result.checkpoint.path,
-                eval_data=result.dataset_paths.eval,
-                run_id=result.checkpoint.run_id,
-                remote_backend=result.checkpoint.remote_backend,
-                output_dir=config.output_dir,
-                db_run_id=config.run_id,
-            ),
-            start_to_close_timeout=timedelta(minutes=30),
-            heartbeat_timeout=timedelta(minutes=2),
-            retry_policy=_RETRY,
-        )
+                if config.model_id:
+                    await workflow.execute_activity(
+                        save_gguf_path_activity,
+                        args=[config.model_id, result.gguf_path.path],
+                        start_to_close_timeout=timedelta(minutes=5),
+                        retry_policy=_RETRY,
+                    )
 
-        result.passed = result.eval_result.passed
+                workflow.logger.info(
+                    "experiment=%s PASS valid_pct=%.1f%% gguf=%s",
+                    config.experiment_name,
+                    result.eval_result.valid_pct * 100,
+                    result.gguf_path.path,
+                )
+            else:
+                workflow.logger.warning(
+                    "experiment=%s FAIL valid_pct=%.1f%% (threshold=95%%) — export skipped",
+                    config.experiment_name,
+                    result.eval_result.valid_pct * 100,
+                )
 
-        if result.eval_result.passed:
             if config.run_id:
                 await workflow.execute_activity(
-                    update_run_status_activity,
-                    args=[config.run_id, RunStatus.EXPORTING.value],
+                    finalise_run_activity,
+                    args=[config.run_id, result.passed, result.eval_result.valid_pct],
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=_RETRY,
                 )
 
-            result.gguf_path = await workflow.execute_activity(
-                export_activity,
-                ExportConfig(
-                    checkpoint_path=result.checkpoint.path,
-                    gguf_output=config.gguf_output,
-                    run_id=result.checkpoint.run_id,
-                    remote_backend=result.checkpoint.remote_backend,
-                    model_id=config.model_id,
-                    pipeline_run_id=config.run_id,
-                    model_name=config.model_name,
-                ),
-                start_to_close_timeout=timedelta(hours=1),
-                heartbeat_timeout=timedelta(minutes=2),
-                retry_policy=_NO_RETRY,
-            )
-
-            if config.model_id:
-                await workflow.execute_activity(
-                    save_gguf_path_activity,
-                    args=[config.model_id, result.gguf_path.path],
-                    start_to_close_timeout=timedelta(minutes=5),
-                    retry_policy=_RETRY,
-                )
-
-            workflow.logger.info(
-                "experiment=%s PASS valid_pct=%.1f%% gguf=%s",
-                config.experiment_name,
-                result.eval_result.valid_pct * 100,
-                result.gguf_path.path,
-            )
-        else:
+        except Exception as exc:
+            cancelled = is_cancelled_exception(exc)
+            status = RunStatus.CANCELLED if cancelled else RunStatus.FAILED
+            reason = "cancelled by user" if cancelled else str(exc)
             workflow.logger.warning(
-                "experiment=%s FAIL valid_pct=%.1f%% (threshold=95%%) — export skipped",
+                "experiment=%s %s — marking run %s as %s: %s",
                 config.experiment_name,
-                result.eval_result.valid_pct * 100,
+                "cancelled" if cancelled else "failed",
+                config.run_id,
+                status.value,
+                exc,
             )
-
-        if config.run_id:
-            await workflow.execute_activity(
-                finalise_run_activity,
-                args=[config.run_id, result.passed, result.eval_result.valid_pct],
-                start_to_close_timeout=timedelta(minutes=5),
-                retry_policy=_RETRY,
-            )
+            if config.run_id:
+                await workflow.execute_activity(
+                    fail_run_activity,
+                    args=[config.run_id, reason, status.value],
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=_RETRY,
+                )
+            raise
 
         return result
 
@@ -247,28 +272,42 @@ class EvaluateWorkflowConfig:
 class EvaluateWorkflow:
     @workflow.run
     async def run(self, config: EvaluateWorkflowConfig) -> EvalResult:
-        result = await workflow.execute_activity(
-            evaluate_activity,
-            EvalConfig(
-                checkpoint=config.checkpoint_path,
-                eval_data=config.eval_data,
-                run_id=config.remote_run_id,
-                remote_backend=config.remote_backend,
-                output_dir=config.output_dir,
-                db_run_id=config.run_id,
-            ),
-            start_to_close_timeout=timedelta(minutes=30),
-            heartbeat_timeout=timedelta(minutes=2),
-            retry_policy=_RETRY,
-        )
-        if config.run_id:
-            await workflow.execute_activity(
-                finalise_run_activity,
-                args=[config.run_id, result.passed, result.valid_pct],
-                start_to_close_timeout=timedelta(minutes=5),
+        try:
+            result = await workflow.execute_activity(
+                evaluate_activity,
+                EvalConfig(
+                    checkpoint=config.checkpoint_path,
+                    eval_data=config.eval_data,
+                    run_id=config.remote_run_id,
+                    remote_backend=config.remote_backend,
+                    output_dir=config.output_dir,
+                    db_run_id=config.run_id,
+                ),
+                start_to_close_timeout=timedelta(minutes=30),
+                heartbeat_timeout=timedelta(minutes=2),
                 retry_policy=_RETRY,
             )
-        return result
+            if config.run_id:
+                await workflow.execute_activity(
+                    finalise_run_activity,
+                    args=[config.run_id, result.passed, result.valid_pct],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+            return result
+
+        except Exception as exc:
+            cancelled = is_cancelled_exception(exc)
+            status = RunStatus.CANCELLED if cancelled else RunStatus.FAILED
+            reason = "cancelled by user" if cancelled else str(exc)
+            if config.run_id:
+                await workflow.execute_activity(
+                    fail_run_activity,
+                    args=[config.run_id, reason, status.value],
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=_RETRY,
+                )
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -290,32 +329,46 @@ class ExportWorkflowConfig:
 class ExportWorkflow:
     @workflow.run
     async def run(self, config: ExportWorkflowConfig) -> GGUFPath:
-        gguf = await workflow.execute_activity(
-            export_activity,
-            ExportConfig(
-                checkpoint_path=config.checkpoint_path,
-                gguf_output=config.gguf_output,
-                run_id=config.remote_run_id,
-                remote_backend=config.remote_backend,
-                model_id=config.model_id,
-                pipeline_run_id=config.run_id,
-            ),
-            start_to_close_timeout=timedelta(hours=1),
-            heartbeat_timeout=timedelta(minutes=2),
-            retry_policy=_NO_RETRY,
-        )
-        if config.model_id:
-            await workflow.execute_activity(
-                save_gguf_path_activity,
-                args=[config.model_id, gguf.path],
-                start_to_close_timeout=timedelta(minutes=5),
-                retry_policy=_RETRY,
+        try:
+            gguf = await workflow.execute_activity(
+                export_activity,
+                ExportConfig(
+                    checkpoint_path=config.checkpoint_path,
+                    gguf_output=config.gguf_output,
+                    run_id=config.remote_run_id,
+                    remote_backend=config.remote_backend,
+                    model_id=config.model_id,
+                    pipeline_run_id=config.run_id,
+                ),
+                start_to_close_timeout=timedelta(hours=1),
+                heartbeat_timeout=timedelta(minutes=2),
+                retry_policy=_NO_RETRY,
             )
-        if config.run_id:
-            await workflow.execute_activity(
-                update_run_status_activity,
-                args=[config.run_id, "completed"],
-                start_to_close_timeout=timedelta(minutes=5),
-                retry_policy=_RETRY,
-            )
-        return gguf
+            if config.model_id:
+                await workflow.execute_activity(
+                    save_gguf_path_activity,
+                    args=[config.model_id, gguf.path],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+            if config.run_id:
+                await workflow.execute_activity(
+                    update_run_status_activity,
+                    args=[config.run_id, "completed"],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+            return gguf
+
+        except Exception as exc:
+            cancelled = is_cancelled_exception(exc)
+            status = RunStatus.CANCELLED if cancelled else RunStatus.FAILED
+            reason = "cancelled by user" if cancelled else str(exc)
+            if config.run_id:
+                await workflow.execute_activity(
+                    fail_run_activity,
+                    args=[config.run_id, reason, status.value],
+                    start_to_close_timeout=timedelta(seconds=30),
+                    retry_policy=_RETRY,
+                )
+            raise

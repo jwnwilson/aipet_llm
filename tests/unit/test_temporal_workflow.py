@@ -15,9 +15,11 @@ from temporalio.worker import Worker
 
 from interactors.temporal.activities import (
     EvalConfig,
+    configure_run_store,
     configure_storage,
     evaluate_activity,
     export_activity,
+    fail_run_activity,
     finalise_run_activity,
     generate_dataset_activity,
     save_gguf_path_activity,
@@ -68,6 +70,7 @@ _ACTIVITIES = [
     train_activity,
     evaluate_activity,
     export_activity,
+    fail_run_activity,
     finalise_run_activity,
     save_gguf_path_activity,
     update_run_status_activity,
@@ -243,3 +246,123 @@ async def test_evaluate_workflow_passes_db_run_id():
     # (The evaluate_activity only saves a quality report when config.db_run_id is non-empty)
     assert result.passed is True
     assert abs(result.valid_pct - 0.96) < 1e-6
+
+
+@pytest.mark.asyncio
+async def test_training_pipeline_workflow_activity_failure_marks_run_failed():
+    """When an activity raises, the workflow calls fail_run_activity and marks the run FAILED."""
+    from unittest.mock import MagicMock
+    from temporalio.client import WorkflowFailureError
+    from domain.models import RunStatus
+
+    _configure_mock_storage()
+    mock_store = MagicMock()
+    configure_run_store(mock_store)
+
+    async with await WorkflowEnvironment.start_time_skipping() as env:
+        async with Worker(
+            env.client,
+            task_queue="test-queue-fail-activity",
+            workflows=[TrainingPipelineWorkflow],
+            activities=_ACTIVITIES,
+        ):
+            patches = [
+                # generate_dataset raises to simulate an early stage failure
+                patch("domain.train.dataset.generate", side_effect=RuntimeError("disk full")),
+            ]
+            for p in patches:
+                p.start()
+            try:
+                config = ExperimentConfig(
+                    experiment_name="test-fail",
+                    run_id="run-fail-123",
+                    train_size=10,
+                    eval_size=5,
+                    epochs=1,
+                )
+                with pytest.raises(WorkflowFailureError):
+                    await env.client.execute_workflow(
+                        TrainingPipelineWorkflow.run,
+                        config,
+                        id="test-wf-activity-fail",
+                        task_queue="test-queue-fail-activity",
+                    )
+            finally:
+                for p in reversed(patches):
+                    p.stop()
+
+    # fail_run should have been called with FAILED status and the error reason
+    mock_store.fail_run.assert_called_once()
+    call_args = mock_store.fail_run.call_args
+    assert call_args.args[0] == "run-fail-123"
+    assert call_args.args[2] == RunStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_training_pipeline_workflow_cancelled_marks_run_cancelled():
+    """When Temporal cancels the workflow, fail_run_activity is called with CANCELLED status."""
+    import asyncio
+    import threading
+    from unittest.mock import MagicMock
+    from temporalio.client import WorkflowFailureError
+    from domain.models import RunStatus
+
+    _configure_mock_storage()
+    mock_store = MagicMock()
+    configure_run_store(mock_store)
+
+    # generate() runs in an executor thread — block there until Temporal cancels the
+    # run_in_executor future (asyncio.CancelledError), which happens when the workflow
+    # is cancelled.  We must NOT unblock manually before Temporal does; otherwise the
+    # thread returns None, activity thinks it finished, and no cancellation fires.
+    # stop_blocking is set after handle.result() returns so the thread can exit cleanly
+    # and the asyncio event loop can shut down without hanging on executor.shutdown(wait=True).
+    generate_started = threading.Event()
+    stop_blocking = threading.Event()
+    loop = asyncio.get_event_loop()
+
+    def slow_generate(*args, **kwargs):
+        """Block the executor thread until Temporal cancels the activity, then return."""
+        generate_started.set()
+        stop_blocking.wait(timeout=60)  # unblocked by test after workflow terminates
+
+    async with await WorkflowEnvironment.start_local() as env:
+        async with Worker(
+            env.client,
+            task_queue="test-queue-cancel",
+            workflows=[TrainingPipelineWorkflow],
+            activities=_ACTIVITIES,
+        ):
+            with patch("domain.train.dataset.generate", side_effect=slow_generate):
+                handle = await env.client.start_workflow(
+                    TrainingPipelineWorkflow.run,
+                    ExperimentConfig(
+                        experiment_name="test-cancel",
+                        run_id="run-cancel-456",
+                        train_size=2,
+                        eval_size=1,
+                        epochs=1,
+                    ),
+                    id="test-wf-cancel",
+                    task_queue="test-queue-cancel",
+                )
+                # Wait until generate is blocking inside the executor thread
+                await loop.run_in_executor(None, generate_started.wait, 15)
+                # Cancel the workflow — Temporal will cancel the in-progress activity
+                await handle.cancel()
+
+                try:
+                    with pytest.raises(WorkflowFailureError):
+                        await handle.result()
+                finally:
+                    # Unblock the executor thread so asyncio can shut down cleanly.
+                    # By this point the workflow has already terminated (cancelled), so
+                    # unblocking the thread is safe — the asyncio Future was already
+                    # cancelled before slow_generate returns.
+                    stop_blocking.set()
+
+    # fail_run should have been called with CANCELLED status
+    mock_store.fail_run.assert_called_once()
+    call_args = mock_store.fail_run.call_args
+    assert call_args.args[0] == "run-cancel-456"
+    assert call_args.args[2] == RunStatus.CANCELLED

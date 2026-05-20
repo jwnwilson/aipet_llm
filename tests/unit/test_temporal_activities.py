@@ -28,6 +28,7 @@ from interactors.temporal.activities import (
     configure_storage,
     evaluate_activity,
     export_activity,
+    fail_run_activity,
     finalise_run_activity,
     generate_dataset_activity,
     save_gguf_path_activity,
@@ -662,6 +663,68 @@ class TestUpdateRunStatusActivity:
 
         from domain.models import RunStatus
         mock_store.update_status.assert_called_once_with("run-42", RunStatus.COMPLETED)
+
+
+# ---------------------------------------------------------------------------
+# fail_run_activity
+# ---------------------------------------------------------------------------
+
+
+class TestFailRunActivity:
+    """Verify fail_run_activity calls store.fail_run with the correct arguments."""
+
+    @pytest.mark.asyncio
+    async def test_default_status_is_failed(self, monkeypatch):
+        import interactors.temporal.activities as acts
+        from interactors.temporal.activities import fail_run_activity
+
+        mock_store = MagicMock()
+        monkeypatch.setattr(acts, "_run_store", mock_store)
+
+        await ENV.run(fail_run_activity, "run-99", "train failed: OOM")
+
+        from domain.models import RunStatus
+        mock_store.fail_run.assert_called_once_with("run-99", "train failed: OOM", RunStatus.FAILED)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_status(self, monkeypatch):
+        import interactors.temporal.activities as acts
+        from interactors.temporal.activities import fail_run_activity
+
+        mock_store = MagicMock()
+        monkeypatch.setattr(acts, "_run_store", mock_store)
+
+        await ENV.run(fail_run_activity, "run-99", "cancelled by user", "cancelled")
+
+        from domain.models import RunStatus
+        mock_store.fail_run.assert_called_once_with("run-99", "cancelled by user", RunStatus.CANCELLED)
+
+    @pytest.mark.asyncio
+    async def test_explicit_failed_status(self, monkeypatch):
+        import interactors.temporal.activities as acts
+        from interactors.temporal.activities import fail_run_activity
+
+        mock_store = MagicMock()
+        monkeypatch.setattr(acts, "_run_store", mock_store)
+
+        await ENV.run(fail_run_activity, "run-55", "evaluate failed: timeout", "failed")
+
+        from domain.models import RunStatus
+        mock_store.fail_run.assert_called_once_with("run-55", "evaluate failed: timeout", RunStatus.FAILED)
+
+    @pytest.mark.asyncio
+    async def test_noop_when_run_not_found(self, monkeypatch):
+        """fail_run_activity must not raise if run_id is not in the store."""
+        import interactors.temporal.activities as acts
+        from interactors.temporal.activities import fail_run_activity
+
+        mock_store = MagicMock()
+        mock_store.fail_run.return_value = None  # store returns None for unknown id
+        monkeypatch.setattr(acts, "_run_store", mock_store)
+
+        # should complete without raising
+        await ENV.run(fail_run_activity, "unknown-run", "some error")
+        mock_store.fail_run.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
