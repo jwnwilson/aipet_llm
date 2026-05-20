@@ -209,3 +209,53 @@ All routers use `require_approved` or `require_admin` as router-level dependency
 ### Feature 6.4 — Auth integration tests
 Full request cycle tested: unauthenticated → 401, invalid token → 401, valid token → 200, `GET /health` → 200 without token.
 **Outputs:** `tests/integration/test_auth.py`
+
+---
+
+## EPIC-7: Project Consolidation
+
+> Rename the project to "llm-api" and make it a generic training platform.
+
+### Feature 7.1 — Rename project to llm-api
+
+#### TASK-7.1.1 — Remove legacy branding references
+Full aipet → llm-api sweep across `pyproject.toml`, `docker-compose.yml`, k8s manifests, Terraform, source files, and all string literals. Two-round sed sweep + targeted fixups; Terraform state buckets and S3 bucket kept at original names (cannot rename existing resources).
+**Outputs:** Updated `pyproject.toml`, `docker-compose.yml`, `infra/k8s/llm-api/`, `infra/terraform/`, source files
+
+#### TASK-7.1.2 — Integrate llm-ui into this repo
+React/TypeScript frontend added as `ui/` sub-project (Vite + React + Tailwind). Docker Compose updated to serve the UI; GitHub Actions workflow added for UI deploy.
+**Outputs:** `ui/` directory, updated `docker-compose.yml`, `.github/workflows/deploy-ui.yml`
+
+---
+
+## EPIC-8: LLM Training Pipeline (partial)
+
+> Improve reliability, observability, and user control over the training pipeline.
+
+### Feature 8.1 — Error handling in workflows
+
+#### TASK-8.1.1 — Update runs to failed/cancelled status with error message
+`fail_run` method added to `RunStorePort` and `DatabaseRunStore`; `fail_run_activity` Temporal activity calls it. `RunStatus.CANCELLED` added (distinct from `FAILED`). All three workflows (`TrainingPipelineWorkflow`, `EvaluateWorkflow`, `ExportWorkflow`) wrap their body in `try/except` using `is_cancelled_exception()` to distinguish user cancellations from hard failures; `fail_run_activity` is called in all error paths before re-raising. Unit tests cover failure, cancellation, and default-status paths.
+**Outputs:** Updated `src/domain/models.py`, `src/domain/ports.py`, `src/adapters/database/run_store.py`, `src/interactors/temporal/activities.py`, `src/interactors/temporal/workflows.py`, `src/interactors/temporal/worker.py`, `tests/unit/test_temporal_activities.py`, `tests/unit/test_temporal_workflow.py`
+
+### Feature 8.2 — Run overrides flowing to the pipeline
+
+#### TASK-8.2.1 — Run overrides reach the pipeline
+`epochs`, `patience`, `warmup_ratio`, `remote_backend`, `base_model`, `num_train_samples`, and `num_eval_samples` all flow from API trigger → `RunConfig.training_config` (persisted as JSON blob) → `ExperimentConfig` → Temporal workflow activities. Override tests present in `test_remote_adapters.py` (epochs, remote_backend). `training_config` column added via migration `0006`.
+**Outputs:** Updated `src/interactors/api/routes/runs.py`, `src/domain/models.py`, `src/adapters/database/run_store.py`, `src/adapters/database/alembic/versions/0006_add_model_config_to_runs.py`, updated `ui/src/types/index.ts`, `ui/src/pages/RunDetailPage.tsx`
+
+### Feature 8.3 — User-controlled training via UI (partial)
+
+#### TASK-8.3.2 — Select base model via UI
+"Base model" free-text input added to the RunModal trigger form; value passed as `base_model` in the workflow trigger payload.
+**Outputs:** Updated `ui/src/components/RunModal.tsx`
+
+#### TASK-8.3.3 — Select training platform via UI
+"Remote backend" dropdown (local / kaggle / ssh / vastai / colab) added to RunModal; value passed as `remote_backend` in the trigger payload.
+**Outputs:** Updated `ui/src/components/RunModal.tsx`
+
+### Feature 8.4 — Eval improvements (partial)
+
+#### TASK-8.4.1 — Improve eval metrics and expose via API
+`QualityReport` Pydantic model captures per-stat accuracy, target-object accuracy, priority-conflict accuracy, fallback accuracy, and action distribution. Written to `data/workflow/{run_id}/quality_report.json` during `evaluate_activity`. `GET /api/runs/{run_id}/evaluation` returns `EvaluationData` (run status + eval score + quality report).
+**Outputs:** `src/domain/models.py` (`QualityReport`, `EvaluationData`), updated `src/interactors/temporal/activities.py`, `src/interactors/api/routes/runs.py`
