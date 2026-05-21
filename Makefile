@@ -21,7 +21,7 @@ GITHUB_REPO     ?= jwnwilson/aipet_llm_api
 TF_DIR          ?= infra/terraform
 TF_BOOTSTRAP_DIR ?= infra/terraform/bootstrap
 
-.PHONY: serve ui sync test test-unit test-integration test-cli test-all data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
+.PHONY: serve ui dev sync test test-unit test-integration test-cli test-all data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -35,6 +35,16 @@ sync: ## Install / sync all dependencies including dev groups
 
 ui: ## Start the UI dev server (Vite, http://localhost:5173)
 	cd ui && npm run dev
+
+dev: .venv ## Start all local dev services: Temporal, API, worker, and UI (Ctrl-C stops all)
+	docker compose up temporal temporal-db temporal-ui -d
+	@echo "Temporal ready. Starting API, worker, and UI — Ctrl-C to stop all\n"
+	@trap 'kill 0' INT; \
+		MODEL_PATH=$(MODEL_PATH) PYTHONPATH=src uv run --env-file .env python -m uvicorn interactors.api.app:app \
+			--host $(HOST) --port $(PORT) --reload 2>&1 | sed 's/^/[api]     /' & \
+		KAGGLE_REPO_URL=$(KAGGLE_REPO_URL) PYTHONPATH=src uv run python -m interactors.temporal.worker 2>&1 | sed 's/^/[worker]  /' & \
+		(cd ui && npm run dev) 2>&1 | sed 's/^/[ui]      /' & \
+		wait
 
 serve: .venv ## Start the FastAPI server  (MODEL_PATH=... make serve)
 	MODEL_PATH=$(MODEL_PATH) PYTHONPATH=src uv run --env-file .env python -m uvicorn interactors.api.app:app \
