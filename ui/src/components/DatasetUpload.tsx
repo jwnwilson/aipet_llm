@@ -4,13 +4,18 @@ import { Button } from './ui/button'
 import { Label } from './ui/label'
 import { Input } from './ui/input'
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  return 'Unexpected error'
+}
+
 export function DatasetUpload() {
   const trainRef = useRef<HTMLInputElement>(null)
   const evalRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const trainFile = trainRef.current?.files?.[0]
     const evalFile = evalRef.current?.files?.[0]
@@ -24,13 +29,25 @@ export function DatasetUpload() {
     setMessage(null)
 
     try {
-      if (trainFile) await uploadTrainDataset(trainFile)
-      if (evalFile) await uploadEvalDataset(evalFile)
+      if (trainFile) {
+        try {
+          await uploadTrainDataset(trainFile)
+        } catch (err: unknown) {
+          throw new Error(`Training upload failed: ${getErrorMessage(err)}`)
+        }
+      }
+      if (evalFile) {
+        try {
+          await uploadEvalDataset(evalFile)
+        } catch (err: unknown) {
+          throw new Error(`Eval upload failed: ${getErrorMessage(err)}`)
+        }
+      }
       setMessage({ text: 'Uploaded successfully.', error: false })
       if (trainRef.current) trainRef.current.value = ''
       if (evalRef.current) evalRef.current.value = ''
-    } catch {
-      setMessage({ text: 'Upload failed. Please try again.', error: true })
+    } catch (err: unknown) {
+      setMessage({ text: getErrorMessage(err), error: true })
     } finally {
       setUploading(false)
     }
@@ -46,6 +63,7 @@ export function DatasetUpload() {
           accept=".jsonl"
           ref={trainRef}
           aria-label="Training dataset"
+          disabled={uploading}
         />
       </div>
       <div className="flex flex-col gap-1.5">
@@ -56,6 +74,7 @@ export function DatasetUpload() {
           accept=".jsonl"
           ref={evalRef}
           aria-label="Eval dataset"
+          disabled={uploading}
         />
       </div>
       {message && (
