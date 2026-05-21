@@ -4,22 +4,6 @@
 
 ---
 
-## EPIC-8: LLM Training Pipeline
-
-> Improve reliability, observability, and user control over the training pipeline.
-
-### TASK-8.1 — Upload training and eval data via UI
-Add API endpoints (`POST /api/datasets/train`, `POST /api/datasets/eval`) that accept JSONL file uploads and store them via `StoragePort`. Wire up a file-upload form in llm-ui.
-
-**Outputs:** `src/interactors/api/routes/datasets.py`, updated `src/domain/ports.py`, UI upload component
-
-### TASK-8.2 — Display eval results in llm-ui
-Add an eval results panel to the run detail page showing per-action accuracy and the overall pass/fail gate result. Use the existing `GET /api/runs/{run_id}/evaluation` endpoint and the `QualityReport` it returns. The current `EvalMetrics.tsx` only shows overall pass/fail — extend it to render `per_stat_accuracy` and `action_distribution`.
-
-**Outputs:** Updated `ui/src/pages/RunDetailPage.tsx`, updated `ui/src/components/EvalMetrics.tsx`
-
----
-
 ## EPIC-9: Inference Proxy
 
 > llm-api acts as a unified inference proxy, routing requests to either OpenRouter (cloud LLMs) or a locally-hosted GGUF model, selected by model ID at request time.
