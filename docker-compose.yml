@@ -1,88 +1,33 @@
+version: "3.9"
 services:
-  llm-api:
+  proxy:
     build:
       context: .
-      platforms:
-        - linux/arm64
-    image: llm-api:latest
-    ports:
-      - "8000:8000"
+      dockerfile: docker/proxy/Dockerfile
+    ports: ["8000:8000"]
     environment:
-      MODEL_PATH: /app/models/model.gguf
-    volumes:
-      # Mount models/ so the GGUF can be swapped without rebuilding the image
-      - ./models:/app/models:ro
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      DATABASE_URL: postgresql://llm:llm@db:5432/llm
+      K8S_MOCK: "true"
+      INFERENCE_WORKER_URL: http://inference:8080
+    depends_on: [db]
 
-  temporal-db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_USER: temporal
-      POSTGRES_PASSWORD: temporal
-      POSTGRES_DB: temporal
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "temporal"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  temporal-ui:
-    image: temporalio/ui:latest
-    ports:
-      - "8233:8080"   # Web UI
-    environment:
-      - TEMPORAL_ADDRESS=temporal:7233
-    depends_on:
-      temporal:
-        condition: service_healthy
-    restart: unless-stopped
-
-  temporal:
-    image: temporalio/auto-setup:1.24
-    ports:
-      - "7233:7233"   # gRPC API
-    environment:
-      - DB=postgres12
-      - DB_PORT=5432
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=temporal-db
-    depends_on:
-      temporal-db:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "temporal:7233"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-
-  temporal-worker:
+  inference:
     build:
       context: .
-    image: llm-api:latest
-    command: python -m interactors.temporal.worker
-    environment:
-      TEMPORAL_HOST: temporal:7233
-      # Kaggle remote training (optional — leave empty to disable)
-      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
-      KAGGLE_KEY: ${KAGGLE_KEY:-}
-      # SSH remote training (optional — leave empty to disable)
-      REMOTE_HOST: ${REMOTE_HOST:-}
-      REMOTE_USER: ${REMOTE_USER:-}
-      REMOTE_KEY_PATH: ${REMOTE_KEY_PATH:-}
-      REMOTE_WORK_DIR: ${REMOTE_WORK_DIR:-~/llm-api}
+      dockerfile: docker/inference/Dockerfile
+    ports: ["8080:8080"]
     volumes:
-      - ./data:/app/data
-      - ./models:/app/models
-    depends_on:
-      temporal:
-        condition: service_healthy
-    restart: unless-stopped
+      - ./models:/models:ro
+    environment:
+      GGUF_PATH: /models/model.gguf
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: llm
+      POSTGRES_PASSWORD: llm
+      POSTGRES_DB: llm
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+volumes:
+  pgdata:
