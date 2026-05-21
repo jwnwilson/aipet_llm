@@ -121,4 +121,22 @@ describe('RunDetailPage', () => {
     })
     expect(screen.queryByText('hunger')).not.toBeInTheDocument()
   })
+
+  it('shows error message when eval report fetch fails', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id) {
+          return HttpResponse.json({ ...RUN_FIXTURE, status: 'completed', eval_valid_pct: 0.97 })
+        }
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      }),
+      http.get('http://localhost:8000/api/runs/:id/evaluation', () =>
+        HttpResponse.json({ detail: 'Internal server error' }, { status: 500 })
+      ),
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText(/failed to load detailed report/i)).toBeInTheDocument()
+    })
+  })
 })

@@ -35,6 +35,7 @@ function buildStages(status: RunStatus): PipelineStage[] {
 }
 
 const EVAL_STATUSES: RunStatus[] = ['completed', 'failed']
+const EVAL_PASS_THRESHOLD = 0.95
 
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
@@ -50,9 +51,10 @@ export function RunDetailPage() {
     },
   })
 
-  const showEval = run != null && EVAL_STATUSES.includes(run.status)
+  // Only fetch eval data for terminal statuses that have a score to display
+  const showEval = run != null && EVAL_STATUSES.includes(run.status) && run.eval_valid_pct != null
 
-  const { data: evalData } = useQuery({
+  const { data: evalData, isError: evalError } = useQuery({
     queryKey: ['runs', runId, 'evaluation'],
     queryFn: () => getRunEvaluation(runId!),
     enabled: showEval,
@@ -144,9 +146,12 @@ export function RunDetailPage() {
       {showEval && run.eval_valid_pct != null && (
         <div className="mt-8">
           <h2 className="text-sm font-medium text-gray-500 mb-3">Evaluation results</h2>
+          {evalError && (
+            <p className="text-sm text-red-600 mb-2">Failed to load detailed report.</p>
+          )}
           <EvalMetrics
             validPct={run.eval_valid_pct}
-            passed={evalData?.quality_report?.passed ?? (run.eval_valid_pct >= 0.95)}
+            passed={evalData?.quality_report?.passed ?? (run.eval_valid_pct >= EVAL_PASS_THRESHOLD)}
             qualityReport={evalData?.quality_report}
           />
         </div>
