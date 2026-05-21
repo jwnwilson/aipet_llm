@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -123,18 +124,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from adapters.compute.k8s import K8sPodAdapter, MockPodAdapter
     from interactors.api.deps import clear_pod_adapter, configure_pod_adapter
     if os.environ.get("K8S_MOCK", "false").lower() == "true":
-        configure_pod_adapter(MockPodAdapter())
+        pod_adapter = MockPodAdapter()
+        configure_pod_adapter(pod_adapter)
         log.info("Pod adapter: MockPodAdapter (K8S_MOCK=true)")
     else:
-        configure_pod_adapter(K8sPodAdapter())
+        pod_adapter = K8sPodAdapter()
+        configure_pod_adapter(pod_adapter)
         log.info("Pod adapter: K8sPodAdapter")
+
+    from adapters.database.inference_store import SQLAlchemyInferenceStore
+    from interactors.api.deps import clear_inference_store, configure_inference_store
+    from interactors.api.idle_shutdown import idle_shutdown_loop
+
+    inference_store = SQLAlchemyInferenceStore(engine)
+    configure_inference_store(inference_store)
+
+    shutdown_task = asyncio.create_task(idle_shutdown_loop(inference_store, pod_adapter))
+    log.info("Idle inference shutdown task started")
 
     try:
         yield
     finally:
+        shutdown_task.cancel()
         clear_adapter()
         clear_auth()
         clear_dataset_store()
+        clear_inference_store()
         clear_storage()
         clear_pod_adapter()
 

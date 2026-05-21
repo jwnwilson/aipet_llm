@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 
-from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceStatus
+from domain.models import Action, InferenceInstance, InferenceInstanceConfig, InferenceStatus
 from interactors.api.app import app
 from interactors.api.deps import (
     clear_inference_store,
@@ -17,6 +17,11 @@ from interactors.api.deps import (
     configure_inference_store,
     configure_pod_adapter,
 )
+
+_INFER_PAYLOAD = {
+    "scene": {"objects": [{"id": "bowl-1", "type": "bowl", "distance": 1.0}], "tick": 1},
+    "pet_stats": {"hunger": 0.8, "boredom": 0.2, "social": 0.3, "toilet": 0.1, "tiredness": 0.4},
+}
 
 _VALID_CONFIG = {
     "model_id": "my-model",
@@ -118,6 +123,19 @@ class TestListInferences:
         assert resp.status_code == 200
         assert resp.json() == []
 
+    @pytest.mark.asyncio
+    async def test_returns_populated_list(self, client):
+        c, store, pod, _ = client
+        await c.post("/api/inferences", json=_VALID_CONFIG)
+        await c.post("/api/inferences", json={**_VALID_CONFIG, "model_id": "model-2"})
+
+        resp = await c.get("/api/inferences")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        model_ids = {d["model_id"] for d in data}
+        assert model_ids == {"my-model", "model-2"}
+
 
 class TestCreateInference:
     @pytest.mark.asyncio
@@ -131,10 +149,13 @@ class TestCreateInference:
         assert "id" in data
 
     @pytest.mark.asyncio
-    async def test_create_calls_store(self, client):
+    async def test_create_calls_store_with_correct_model_id(self, client):
         c, store, pod, _ = client
-        await c.post("/api/inferences", json=_VALID_CONFIG)
+        resp = await c.post("/api/inferences", json=_VALID_CONFIG)
         store.create.assert_called_once()
+        call_arg: InferenceInstanceConfig = store.create.call_args[0][0]
+        assert call_arg.model_id == "my-model"
+        assert resp.json()["model_id"] == "my-model"
 
 
 class TestGetInference:
@@ -164,6 +185,12 @@ class TestDeleteInference:
 
         resp = await c.delete(f"/api/inferences/{inst_id}")
         assert resp.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_returns_404_when_instance_missing(self, client):
+        c, store, pod, _ = client
+        resp = await c.delete("/api/inferences/nonexistent-id")
+        assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_returns_409_when_not_deletable(self, client):
@@ -213,13 +240,105 @@ class TestStopInference:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_stop_calls_delete_pod(self, client):
+    async def test_stop_calls_delete_pod_with_correct_args(self, client):
         c, store, pod, _ = client
         create_resp = await c.post("/api/inferences", json=_VALID_CONFIG)
         inst_id = create_resp.json()["id"]
 
         await c.post(f"/api/inferences/{inst_id}/stop")
-        pod.delete_pod.assert_called_once()
+        pod.delete_pod.assert_called_once_with(
+            pod_name=_VALID_CONFIG["pod_name"],
+            namespace=_VALID_CONFIG["pod_namespace"],
+        )
+
+
+class TestInferEndpoint:
+    @pytest_asyncio.fixture
+    async def available_client(self):
+        """Client with one AVAILABLE instance pre-created."""
+        store, instances = _make_store()
+        pod = _make_pod_adapter()
+        configure_inference_store(store)
+        configure_pod_adapter(pod)
+
+        async with httpx.AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as c:
+            create_resp = await c.post("/api/inferences", json=_VALID_CONFIG)
+            inst_id = create_resp.json()["id"]
+            instances[inst_id] = instances[inst_id].model_copy(
+                update={"status": InferenceStatus.AVAILABLE}
+            )
+            yield c, store, pod, instances, inst_id
+
+        clear_inference_store()
+        clear_pod_adapter()
+
+    @pytest.mark.asyncio
+    async def test_infer_returns_404_for_missing_instance(self, client):
+        c, *_ = client
+        resp = await c.post("/api/inferences/nonexistent/infer", json=_INFER_PAYLOAD)
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_infer_returns_409_when_not_available(self, client):
+        c, store, pod, _ = client
+        create_resp = await c.post("/api/inferences", json=_VALID_CONFIG)
+        inst_id = create_resp.json()["id"]  # status = PENDING
+
+        resp = await c.post(f"/api/inferences/{inst_id}/infer", json=_INFER_PAYLOAD)
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_infer_forwards_to_worker_and_returns_response(self, available_client):
+        c, store, pod, instances, inst_id = available_client
+        worker_response = {"action": "EAT", "target_object_id": "bowl-1", "stat": None, "confidence": 0.9}
+
+        mock_http = AsyncMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = worker_response
+        mock_http.post = AsyncMock(return_value=mock_resp)
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("interactors.api.routes.inferences.httpx.AsyncClient", return_value=mock_http):
+            resp = await c.post(f"/api/inferences/{inst_id}/infer", json=_INFER_PAYLOAD)
+
+        assert resp.status_code == 200
+        assert resp.json()["action"] == "EAT"
+
+    @pytest.mark.asyncio
+    async def test_infer_calls_update_last_used(self, available_client):
+        c, store, pod, instances, inst_id = available_client
+        worker_response = {"action": "IDLE", "target_object_id": None, "stat": None, "confidence": None}
+
+        mock_http = AsyncMock()
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = worker_response
+        mock_http.post = AsyncMock(return_value=mock_resp)
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("interactors.api.routes.inferences.httpx.AsyncClient", return_value=mock_http):
+            await c.post(f"/api/inferences/{inst_id}/infer", json=_INFER_PAYLOAD)
+
+        store.update_last_used.assert_called_once_with(inst_id)
+
+    @pytest.mark.asyncio
+    async def test_infer_returns_502_on_worker_http_error(self, available_client):
+        c, store, pod, instances, inst_id = available_client
+
+        mock_http = AsyncMock()
+        mock_http.post = AsyncMock(side_effect=httpx.HTTPError("connection refused"))
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("interactors.api.routes.inferences.httpx.AsyncClient", return_value=mock_http):
+            resp = await c.post(f"/api/inferences/{inst_id}/infer", json=_INFER_PAYLOAD)
+
+        assert resp.status_code == 502
 
 
 class TestUnauthenticated:
@@ -251,4 +370,34 @@ class TestUnauthenticated:
     async def test_create_returns_401(self, client):
         c, *_ = client
         resp = await c.post("/api/inferences", json=_VALID_CONFIG)
+        assert resp.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_get_by_id_returns_401(self, client):
+        c, *_ = client
+        resp = await c.get("/api/inferences/some-id")
+        assert resp.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_start_returns_401(self, client):
+        c, *_ = client
+        resp = await c.post("/api/inferences/some-id/start")
+        assert resp.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_stop_returns_401(self, client):
+        c, *_ = client
+        resp = await c.post("/api/inferences/some-id/stop")
+        assert resp.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_delete_returns_401(self, client):
+        c, *_ = client
+        resp = await c.delete("/api/inferences/some-id")
+        assert resp.status_code in (401, 403)
+
+    @pytest.mark.asyncio
+    async def test_infer_returns_401(self, client):
+        c, *_ = client
+        resp = await c.post("/api/inferences/some-id/infer", json=_INFER_PAYLOAD)
         assert resp.status_code in (401, 403)
