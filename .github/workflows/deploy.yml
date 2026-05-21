@@ -14,23 +14,24 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: llm-api
+  ECR_PROXY_REPOSITORY: llm-api-proxy
+  ECR_INFERENCE_REPOSITORY: llm-api-inference
   ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
 
 jobs:
-  # ── Build: push ARM64 image to ECR ────────────────────────────────────────
+  # ── Build: push ARM64 images to ECR ───────────────────────────────────────
   build:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.image.outputs.image }}
+      proxy_image: ${{ steps.proxy-image.outputs.image }}
+      inference_image: ${{ steps.inference-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # Set this secret to: terraform -chdir=infra/terraform output -raw github_actions_role_arn
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
@@ -41,22 +42,43 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push ARM64 image
+      # ── Proxy API image (lightweight — no torch/llama-cpp) ─────────────────
+      - name: Build and push proxy API image (ARM64)
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: docker/proxy/Dockerfile
           platforms: linux/arm64
           push: true
           tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:buildcache,mode=max
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:latest
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:buildcache,mode=max
 
-      - name: Export image ref
-        id: image
+      - name: Export proxy image ref
+        id: proxy-image
         run: |
-          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      # ── Inference worker image (heavy — llama-cpp-python cached at layer) ──
+      - name: Build and push inference worker image (ARM64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/inference/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:latest
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:buildcache,mode=max
+
+      - name: Export inference worker image ref
+        id: inference-image
+        run: |
+          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
   deploy:
@@ -66,7 +88,8 @@ jobs:
       id-token: write
       contents: read
     env:
-      IMAGE: ${{ needs.build.outputs.image }}
+      PROXY_IMAGE: ${{ needs.build.outputs.proxy_image }}
+      INFERENCE_IMAGE: ${{ needs.build.outputs.inference_image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -134,9 +157,13 @@ jobs:
 
       - name: Apply k8s manifests
         run: |
-          sed -i "s|<ECR_REPOSITORY_URL>:latest|$IMAGE|g" \
+          # Stamp proxy API image into the main deployment and temporal worker
+          sed -i "s|<ECR_PROXY_IMAGE>|$PROXY_IMAGE|g" \
             infra/k8s/llm-api/deployment.yaml \
             infra/k8s/temporal/worker.yaml
+          # Stamp inference worker image so the proxy can spawn pods with the correct tag
+          sed -i "s|<ECR_INFERENCE_IMAGE>|$INFERENCE_IMAGE|g" \
+            infra/k8s/llm-api/deployment.yaml
           sed -i "s|<TEMPORAL_UI_IMAGE>|$TEMPORAL_UI_IMAGE|g" \
             infra/k8s/temporal/server.yaml
           # Apply and wait for the database before rolling out the app so that
@@ -161,4 +188,3 @@ jobs:
           AUTH0_MGMT_CLIENT_SECRET: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
           AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
         run: python3 ./scripts/smoke_test.py
-

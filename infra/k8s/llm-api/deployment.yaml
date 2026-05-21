@@ -40,15 +40,23 @@ spec:
                     operator: In
                     values:
                       - llm-api
+      serviceAccountName: llm-api
       containers:
         - name: llm-api
-          # Replace with output of: terraform -chdir=infra/terraform output -raw repository_url
-          image: <ECR_REPOSITORY_URL>:latest
+          image: <ECR_PROXY_IMAGE>
           ports:
             - containerPort: 8000
           env:
             - name: INFERENCE_DISABLED
               value: "false"
+            - name: K8S_MOCK
+              value: "false"
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: INFERENCE_WORKER_IMAGE
+              value: <ECR_INFERENCE_IMAGE>
             - name: MODEL_PATH
               value: /app/models/model.gguf
             - name: MODEL_S3_KEY
