@@ -12,7 +12,7 @@ from interactors.api.deps import get_model_store
 
 def _make_model(model_id: str = "m1") -> TrainingModel:
     return TrainingModel(
-        id=model_id, name="test", description="", prompt_template="",
+        id=model_id, name="test", description="",
         skip_generate=False, gguf_path="", is_active=False,
         backend="local", backend_model_id="",
         created_at="2024-01-01T00:00:00Z", updated_at="2024-01-01T00:00:00Z",

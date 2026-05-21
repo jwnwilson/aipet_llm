@@ -65,6 +65,11 @@ export function InferencePanel({ model }: InferencePanelProps) {
         <span className={`text-xs font-medium px-2 py-1 rounded-full ${backendColor}`}>
           {backendLabel}
         </span>
+        {model.backend !== 'openrouter' && model.inference_status !== 'ready' && (
+          <p className="text-xs text-amber-600 mt-1">
+            ⚠ Model is not loaded — activate the model before running inference.
+          </p>
+        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <textarea

@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from domain.actions import Action
 
@@ -67,6 +67,12 @@ class TrainingModelConfig(BaseModel):
     backend: Literal["local", "openrouter"] = "local"
     backend_model_id: str = ""
 
+    @model_validator(mode="after")
+    def check_openrouter_model_id(self) -> "TrainingModelConfig":
+        if self.backend == "openrouter" and not self.backend_model_id:
+            raise ValueError("backend_model_id is required when backend='openrouter'")
+        return self
+
 
 class TrainingModel(TrainingModelConfig):
     id: str
@@ -90,6 +96,8 @@ class RunConfig(BaseModel):
     model_id: str
     workflow_id: str
     training_config: dict | None = None  # full training params saved at trigger time
+    train_dataset_id: str | None = None
+    eval_dataset_id: str | None = None
 
 
 class RunRecord(RunConfig):
@@ -149,4 +157,22 @@ class EvaluationData(BaseModel):
     status: RunStatus
     eval_valid_pct: float | None = None
     quality_report: QualityReport | None = None
+
+
+class DatasetType(str, Enum):
+    TRAIN = "train"
+    EVAL = "eval"
+
+
+class DatasetConfig(BaseModel):
+    name: str
+    description: str = ""
+    dataset_type: DatasetType
+    key: str  # storage key, e.g. "datasets/{id}.jsonl"
+
+
+class DatasetRecord(DatasetConfig):
+    id: str
+    created_at: datetime
+    updated_at: datetime
 

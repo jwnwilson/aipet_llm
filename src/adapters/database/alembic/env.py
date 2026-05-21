@@ -14,8 +14,9 @@ from sqlalchemy import engine_from_config, pool
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from adapters.database.engine import Base
-import adapters.database.model_store  # noqa: F401 — registers _TrainingModelRow with Base
-import adapters.database.run_store    # noqa: F401 — registers _RunRow with Base
+import adapters.database.dataset_store  # noqa: F401 — registers _DatasetRow with Base
+import adapters.database.model_store    # noqa: F401 — registers _TrainingModelRow with Base
+import adapters.database.run_store      # noqa: F401 — registers _RunRow with Base
 
 config = context.config
 

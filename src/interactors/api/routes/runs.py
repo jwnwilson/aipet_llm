@@ -11,9 +11,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus
-from domain.ports import ModelStorePort, RunStorePort
+from domain.ports import DatasetStorePort, ModelStorePort, RunStorePort
 from interactors.api.auth import require_approved
-from interactors.api.deps import get_model_store, get_run_store
+from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
 
 log = logging.getLogger(__name__)
 
@@ -38,6 +38,8 @@ class TriggerRunRequest(BaseModel):
     base_model: str | None = None
     num_train_samples: int | None = None
     num_eval_samples: int | None = None
+    train_dataset_id: str | None = None
+    eval_dataset_id: str | None = None
 
 
 class EvaluateRequest(BaseModel):
@@ -144,10 +146,25 @@ async def trigger_run(
     body: TriggerRunRequest,
     store: ModelStorePort = Depends(get_model_store),
     run_store: RunStorePort = Depends(get_run_store),
+    dataset_store: DatasetStorePort = Depends(get_dataset_store),
 ) -> dict[str, str]:
     model = store.get(body.model_id)
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found")
+
+    # Resolve dataset storage keys if dataset IDs provided
+    train_data = model.train_data
+    eval_data = model.eval_data
+    if body.train_dataset_id is not None:
+        train_ds = dataset_store.get(body.train_dataset_id)
+        if train_ds is None:
+            raise HTTPException(status_code=404, detail="Training dataset not found")
+        train_data = train_ds.key
+    if body.eval_dataset_id is not None:
+        eval_ds = dataset_store.get(body.eval_dataset_id)
+        if eval_ds is None:
+            raise HTTPException(status_code=404, detail="Eval dataset not found")
+        eval_data = eval_ds.key
 
     epochs = body.epochs if body.epochs is not None else model.epochs
     patience = body.patience if body.patience is not None else model.patience
@@ -179,6 +196,8 @@ async def trigger_run(
         "base_model": base_model,
         "num_train_samples": num_train_samples,
         "num_eval_samples": num_eval_samples,
+        "train_data": train_data,
+        "eval_data": eval_data,
     }
 
     try:
@@ -194,6 +213,8 @@ async def trigger_run(
             model_id=model.id,
             workflow_id=workflow_id,
             training_config=run_training_config,
+            train_dataset_id=body.train_dataset_id,
+            eval_dataset_id=body.eval_dataset_id,
         ))
         run_id = run.id
 

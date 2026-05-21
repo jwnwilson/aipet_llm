@@ -140,6 +140,12 @@ def infer(
         from adapters.inference_openrouter import OpenRouterInferenceAdapter
         adapter = OpenRouterInferenceAdapter(model_id=model.backend_model_id)
     else:
-        adapter = get_adapter()
+        try:
+            adapter = get_adapter()
+        except RuntimeError:
+            raise HTTPException(
+                status_code=503,
+                detail="Local inference model is not loaded — activate a model first",
+            )
 
     return adapter.infer(request)
