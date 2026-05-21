@@ -144,8 +144,10 @@ class TestListRuns:
     async def test_returns_all_runs(self, client_with_model):
         c, model, run_store = client_with_model
         from domain.models import RunConfig
-        run_store.create(RunConfig(model_id=model.id, workflow_id="wf-1"))
-        run_store.create(RunConfig(model_id=model.id, workflow_id="wf-2"))
+        # Runs must carry the integration-test owner_id so they appear in the
+        # filtered list (GET /api/runs uses owner_id from the auth token).
+        run_store.create(RunConfig(model_id=model.id, workflow_id="wf-1", owner_id="integration-test-user"))
+        run_store.create(RunConfig(model_id=model.id, workflow_id="wf-2", owner_id="integration-test-user"))
 
         resp = await c.get("/api/runs")
         assert resp.status_code == 200
