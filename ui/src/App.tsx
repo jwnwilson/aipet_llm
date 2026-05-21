@@ -7,6 +7,7 @@ import { ModelFormPage } from './pages/ModelFormPage'
 import { ModelDetailPage } from './pages/ModelDetailPage'
 import { RunsListPage } from './pages/RunsListPage'
 import { RunDetailPage } from './pages/RunDetailPage'
+import { InferencePage } from './pages/InferencePage'
 import { UsersPage } from './pages/UsersPage'
 import { TokenSync } from './components/TokenSync'
 import { AccessPending } from './components/AccessPending'
@@ -39,6 +40,7 @@ function Nav() {
     <nav className="border-b bg-white px-8 py-3 flex gap-6 text-sm font-medium items-center">
       <Link to="/models" className="text-gray-700 hover:text-gray-900">Models</Link>
       <Link to="/runs" className="text-gray-700 hover:text-gray-900">Runs</Link>
+      <Link to="/inferences" className="text-gray-700 hover:text-gray-900">Inference</Link>
       {isAdmin && <Link to="/admin/users" className="text-gray-700 hover:text-gray-900">Users</Link>}
       <AuthButton />
     </nav>
@@ -99,6 +101,7 @@ function AppContent() {
         <Route path="/models/:id/edit" element={<ModelFormPage />} />
         <Route path="/runs" element={<RunsListPage />} />
         <Route path="/runs/:runId" element={<RunDetailPage />} />
+        <Route path="/inferences" element={<InferencePage />} />
         <Route path="/admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
       </Routes>
     </div>
