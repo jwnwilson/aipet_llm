@@ -66,7 +66,7 @@ def update_model(
     user: UserContext = Depends(require_approved),
 ) -> TrainingModel:
     existing = store.get(model_id)
-    if existing is None or existing.owner_id != user.user_id:
+    if existing is None or (existing.owner_id is not None and existing.owner_id != user.user_id):
         raise HTTPException(status_code=404, detail="Model not found")
     owned_config = config.model_copy(update={"owner_id": user.user_id})
     model = store.update(model_id, owned_config)
@@ -82,7 +82,7 @@ def delete_model(
     user: UserContext = Depends(require_approved),
 ) -> None:
     existing = store.get(model_id)
-    if existing is None or existing.owner_id != user.user_id:
+    if existing is None or (existing.owner_id is not None and existing.owner_id != user.user_id):
         raise HTTPException(status_code=404, detail="Model not found")
     store.delete(model_id)
 

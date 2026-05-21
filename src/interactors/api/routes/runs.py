@@ -184,10 +184,14 @@ async def trigger_run(
         train_ds = dataset_store.get(body.train_dataset_id)
         if train_ds is None:
             raise HTTPException(status_code=404, detail="Training dataset not found")
+        if train_ds.owner_id is not None and train_ds.owner_id != user.user_id:
+            raise HTTPException(status_code=404, detail="Training dataset not found")
         train_data = train_ds.key
     if body.eval_dataset_id is not None:
         eval_ds = dataset_store.get(body.eval_dataset_id)
         if eval_ds is None:
+            raise HTTPException(status_code=404, detail="Eval dataset not found")
+        if eval_ds.owner_id is not None and eval_ds.owner_id != user.user_id:
             raise HTTPException(status_code=404, detail="Eval dataset not found")
         eval_data = eval_ds.key
 
