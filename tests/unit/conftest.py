@@ -54,3 +54,12 @@ if "google.auth" not in sys.modules:
     sys.modules["google.auth"] = MagicMock()
     sys.modules["google.oauth2"] = MagicMock()
     sys.modules["google.oauth2.service_account"] = MagicMock()
+
+# ---------------------------------------------------------------------------
+# llama-cpp-python (used by LlamaCppInferenceAdapter)
+#
+# Not installed in the dev environment — stub it so that
+# patch("llama_cpp.Llama", ...) in unit tests can resolve the module.
+# ---------------------------------------------------------------------------
+if "llama_cpp" not in sys.modules:
+    _stub("llama_cpp")
