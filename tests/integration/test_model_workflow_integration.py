@@ -19,8 +19,10 @@ from interactors.temporal.activities import (
     configure_model_store,
     configure_run_store,
     configure_storage,
+    create_inference_activity,
     evaluate_activity,
     export_activity,
+    fail_run_activity,
     finalise_run_activity,
     generate_dataset_activity,
     save_gguf_path_activity,
@@ -38,6 +40,8 @@ _ACTIVITIES = [
     finalise_run_activity,
     save_gguf_path_activity,
     update_run_status_activity,
+    create_inference_activity,
+    fail_run_activity,
 ]
 
 
@@ -91,6 +95,9 @@ async def test_workflow_updates_run_status_in_db():
         gguf_output="data/test/model.gguf",
     )
 
+    mock_inference_store = MagicMock()
+    mock_inference_store.create.return_value = MagicMock(id="test-inference-id")
+
     with ExitStack() as stack:
         stack.enter_context(patch("domain.train.dataset.generate", return_value=True))
         stack.enter_context(patch("domain.train.trainer.train"))
@@ -99,6 +106,7 @@ async def test_workflow_updates_run_status_in_db():
         stack.enter_context(patch("domain.train.evaluate.evaluate", side_effect=_fake_evaluate))
         stack.enter_context(patch("domain.train.export.export"))
         stack.enter_context(patch("adapters.storage.upload_model", side_effect=lambda s, p, k: k if k.endswith(".gz") else k + ".gz"))
+        stack.enter_context(patch("interactors.api.deps.get_inference_store", return_value=mock_inference_store))
 
         async with await WorkflowEnvironment.start_time_skipping() as env:
             async with Worker(

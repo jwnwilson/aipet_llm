@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -120,18 +121,43 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure(adapter)
     log.info("Inference adapter configured (model will load on first request): %s", model_path)
 
+    from adapters.compute.k8s import K8sPodAdapter, MockPodAdapter
+    from interactors.api.deps import clear_pod_adapter, configure_pod_adapter
+    if os.environ.get("K8S_MOCK", "false").lower() == "true":
+        pod_adapter = MockPodAdapter()
+        configure_pod_adapter(pod_adapter)
+        log.info("Pod adapter: MockPodAdapter (K8S_MOCK=true)")
+    else:
+        pod_adapter = K8sPodAdapter()
+        configure_pod_adapter(pod_adapter)
+        log.info("Pod adapter: K8sPodAdapter")
+
+    from adapters.database.inference_store import SQLAlchemyInferenceStore
+    from interactors.api.deps import clear_inference_store, configure_inference_store
+    from interactors.api.idle_shutdown import idle_shutdown_loop
+
+    inference_store = SQLAlchemyInferenceStore(engine)
+    configure_inference_store(inference_store)
+
+    shutdown_task = asyncio.create_task(idle_shutdown_loop(inference_store, pod_adapter))
+    log.info("Idle inference shutdown task started")
+
     try:
         yield
     finally:
+        shutdown_task.cancel()
         clear_adapter()
         clear_auth()
         clear_dataset_store()
+        clear_inference_store()
         clear_storage()
+        clear_pod_adapter()
 
 
 from interactors.api.routes.admin import router as admin_router  # noqa: E402
 from interactors.api.routes.datasets import router as datasets_router  # noqa: E402
 from interactors.api.routes.inference import router as inference_router  # noqa: E402
+from interactors.api.routes.inferences import router as inferences_router  # noqa: E402
 from interactors.api.routes.login import router as login_router  # noqa: E402
 from interactors.api.routes.models import router as models_router  # noqa: E402
 from interactors.api.routes.runs import router as runs_router  # noqa: E402
@@ -170,6 +196,7 @@ app.add_middleware(
 app.include_router(admin_router)
 app.include_router(datasets_router)
 app.include_router(inference_router)
+app.include_router(inferences_router)
 app.include_router(models_router)
 app.include_router(runs_router)
 app.include_router(login_router)

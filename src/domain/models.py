@@ -179,3 +179,26 @@ class DatasetRecord(DatasetConfig):
     created_at: datetime
     updated_at: datetime
 
+
+class InferenceStatus(str, Enum):
+    PENDING = "pending"
+    INITIALIZING = "initializing"
+    AVAILABLE = "available"
+    IDLE = "idle"
+    SHUTDOWN = "shutdown"
+    FAILED = "failed"
+
+
+class InferenceInstanceConfig(BaseModel):
+    model_id: str
+    pod_name: str = ""
+    pod_namespace: str = "default"
+    idle_timeout_minutes: int = 120
+
+
+class InferenceInstance(InferenceInstanceConfig):
+    id: str
+    status: InferenceStatus = InferenceStatus.PENDING
+    last_used_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime

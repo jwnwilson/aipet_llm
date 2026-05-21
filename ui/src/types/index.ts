@@ -149,3 +149,30 @@ export interface EvaluationData {
   eval_valid_pct: number | null
   quality_report: QualityReport | null
 }
+
+export type InferenceStatus =
+  | 'pending'
+  | 'initializing'
+  | 'available'
+  | 'idle'
+  | 'shutdown'
+  | 'failed'
+
+export interface InferenceInstanceConfig {
+  model_id: string
+  pod_name?: string
+  pod_namespace?: string
+  idle_timeout_minutes?: number
+}
+
+export interface InferenceInstance {
+  id: string
+  model_id: string
+  pod_name: string
+  pod_namespace: string
+  idle_timeout_minutes: number
+  status: InferenceStatus
+  last_used_at: string | null
+  created_at: string
+  updated_at: string
+}

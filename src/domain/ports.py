@@ -7,8 +7,11 @@ from typing import Generic, Literal, TypeVar
 from domain.models import (
     DatasetConfig,
     DatasetRecord,
+    InferenceInstance,
+    InferenceInstanceConfig,
     InferenceRequest,
     InferenceResponse,
+    InferenceStatus,
     RemoteTrainConfig,
     RunConfig,
     RunRecord,
@@ -218,3 +221,42 @@ class DatasetStorePort(StorePort["DatasetRecord", "DatasetConfig"]):
     def list(self, owner_id: str | None = None) -> list[DatasetRecord]:  # type: ignore[override]
         """Return all datasets, optionally filtered to a specific owner."""
 
+
+class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig"]):
+    """Abstract interface for persisting inference instance records."""
+
+    @abstractmethod
+    def update_status(self, id: str, status: InferenceStatus) -> InferenceInstance | None:
+        """Set the instance status; return updated record or None if not found."""
+
+    @abstractmethod
+    def update_pod(self, id: str, pod_name: str, pod_namespace: str) -> InferenceInstance | None:
+        """Set the pod name and namespace; return updated record or None if not found."""
+
+    @abstractmethod
+    def update_last_used(self, id: str) -> InferenceInstance | None:
+        """Set last_used_at to now; return updated record or None if not found."""
+
+    @abstractmethod
+    def list_active(self) -> list[InferenceInstance]:
+        """Return instances not in SHUTDOWN or FAILED status."""
+
+
+class PodLifecyclePort(ABC):
+    """Abstract interface for managing inference pod lifecycle."""
+
+    @abstractmethod
+    def create_pod(self, pod_name: str, model_id: str, model_path: str, namespace: str = "default") -> str:
+        """Create the inference pod and paired Service. Return pod_name."""
+
+    @abstractmethod
+    def pod_status(self, pod_name: str, namespace: str = "default") -> Literal["pending", "running", "failed", "unknown"]:
+        """Return the current pod phase without blocking."""
+
+    @abstractmethod
+    def delete_pod(self, pod_name: str, namespace: str = "default") -> None:
+        """Delete pod and its Service. No-op if already gone."""
+
+    @abstractmethod
+    def pod_service_url(self, pod_name: str, namespace: str = "default") -> str:
+        """Return the ClusterIP HTTP URL for routing inference requests to this pod."""

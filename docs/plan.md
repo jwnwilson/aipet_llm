@@ -52,9 +52,71 @@ We want to ability to:
 ---
 
 ## Epic-13 - Add inference management to ui
-We want users to be able to test new models that they train on the platform. Add an inference tab that will show a list of trained models that are available. Create inference table and model in the API to store models + datasets + config to load for the user. A new record will be created for each successfully trained model and the model will track if the inference is available and laoded or needs to be initialised.
 
-For local models that are not using openrouter should be able to be started on our k8 cluster. Setup logic so that the backend can trigger a new pod for each desired inference to be avilable. We will also need to track the state of the pod so the user knows when it's available. We will need a cron job to shut down inference that have not been used for 2 hours. This timelimit should be configurable.
+> Users can browse trained models in a dedicated Inference tab, start/stop inference instances, and track status. Local models run as K8s pods; OpenRouter models go live immediately. Idle instances auto-terminate after a configurable timeout.
+
+### TASK-13.1 — Inference instance domain model & database store
+
+Add `InferenceStatus` enum (`unloaded | initialising | ready | error | terminated`) and `InferenceConfig` / `InferenceInstance` Pydantic models to `src/domain/models.py`. Add `InferenceStorePort` abstract CRUD port to `src/domain/ports.py`. Implement `SQLAlchemyInferenceStore` adapter and an Alembic migration that creates the `inference_instances` table (columns: `id`, `model_id`, `run_id`, `backend`, `backend_model_id`, `gguf_path`, `status`, `pod_name`, `last_used_at`, `idle_timeout_hours`, `created_at`, `updated_at`).
+
+**Outputs:** `src/domain/models.py`, `src/domain/ports.py`, `src/adapters/database/inference_store.py`, new Alembic migration, `tests/unit/test_inference_store.py`
+
+### TASK-13.2 — Inference management REST API
+
+Add `src/interactors/api/routes/inferences.py` with the following endpoints (all require `require_approved`):
+- `GET /api/inferences` — list all instances
+- `POST /api/inferences` — create instance from `{model_id, run_id?}`
+- `GET /api/inferences/{id}` — get details + current status
+- `POST /api/inferences/{id}/start` — provision & start (triggers K8s pod for `local`; sets `ready` for `openrouter`)
+- `POST /api/inferences/{id}/stop` — teardown (terminates pod for `local`; sets `terminated` for `openrouter`)
+- `DELETE /api/inferences/{id}` — delete record (only if `unloaded` or `terminated`)
+
+Register the router in `src/interactors/api/app.py`. Add integration tests.
+
+**Outputs:** `src/interactors/api/routes/inferences.py`, updated `src/interactors/api/app.py`, `tests/integration/test_inferences_api.py`
+
+### TASK-13.3 — Auto-create inference instance on run completion
+
+After the export activity succeeds in the Temporal workflow, add a new activity `create_inference_activity` that auto-creates an `InferenceInstance` record (`status=unloaded`) linked to the completed run's model and GGUF path. Uses `InferenceStorePort` injected via `deps.py`.
+
+**Outputs:** Updated `src/interactors/temporal/activities.py`, updated `src/interactors/temporal/workflows.py`, `tests/unit/test_create_inference_activity.py`
+
+### TASK-13.4 — Kubernetes pod adapter for local model serving
+
+Implement `K8sPodAdapter` in `src/adapters/compute/k8s.py` with `start(instance: InferenceInstance) -> str` (returns pod name) and `stop(pod_name: str) -> None`. The pod spec mounts the GGUF from storage and serves it via `llama-cpp-python` HTTP server. Poll K8s API for pod phase (`Pending → Running → Succeeded/Failed`) and update `InferenceInstance.status` accordingly. The `start` endpoint for `backend=openrouter` skips K8s and immediately sets `status=ready`. Configured via `KUBECONFIG` / `K8S_NAMESPACE` env vars.
+
+**Outputs:** `src/adapters/compute/k8s.py`, updated `src/interactors/api/routes/inferences.py`, `tests/unit/test_k8s_adapter.py`
+
+### TASK-13.5 — Idle inference shutdown background task
+
+Add an `asyncio` background task (started in `app.lifespan`) that polls all `ready` `InferenceInstance` records every 5 minutes. Any instance whose `last_used_at` is older than `INFERENCE_IDLE_TIMEOUT_HOURS` (env var, default `2`) is stopped via the same logic as `POST /api/inferences/{id}/stop`. Update `last_used_at` on every successful `/infer` call. Expose current timeout value via `GET /health`.
+
+**Outputs:** Updated `src/interactors/api/app.py`, updated inference routes (stamp `last_used_at`), `tests/unit/test_idle_shutdown.py`
+
+### TASK-13.6 — Inference management UI tab
+
+Add a new **Inference** tab to the main navigation.
+
+- `ui/src/api/inferences.ts` — typed API client (`listInferences`, `createInference`, `startInference`, `stopInference`, `deleteInference`)
+- `ui/src/types/index.ts` — add `InferenceStatus`, `InferenceInstance` TypeScript types
+- `ui/src/pages/InferencePage.tsx` — table of all instances with columns: Model name, Backend, Status badge, Last used, Actions (Start / Stop / Delete). Empty state when no instances exist.
+- `ui/src/components/InferenceStatusBadge.tsx` — coloured badge for each `InferenceStatus`
+
+Wire the route in `App.tsx` / router config.
+
+**Outputs:** `ui/src/api/inferences.ts`, `ui/src/pages/InferencePage.tsx`, `ui/src/components/InferenceStatusBadge.tsx`, updated `ui/src/types/index.ts`, updated router/nav
+
+### TASK-13.7 — Docker containers: proxy API and inference worker
+
+Split the application into two purpose-built Docker images:
+
+**Proxy API container** (`docker/proxy/Dockerfile`): Lightweight image based on `python:3.12-slim`. Contains only the FastAPI app, SQLAlchemy, auth adapters, and management dependencies — no torch, no llama-cpp-python. Handles all REST API endpoints, inference state management, and K8s pod orchestration. Exposes port 8000. The K8s pod adapter, idle shutdown task, and all existing routes live here.
+
+**Inference worker container** (`docker/inference/Dockerfile`): Heavier image containing `llama-cpp-python` (and torch for future use). Exposes a minimal `POST /infer` HTTP API on port 8080 that the proxy forwards inference requests to. Uses BuildKit `--mount=type=cache,target=/root/.cache/uv` so pip/uv caches persist across rebuilds and heavy packages (torch, llama-cpp-python) are never re-downloaded unless their version changes. The K8s pod spec (TASK-13.4) references this image tag.
+
+Dependency groups in `pyproject.toml` separate proxy deps from inference deps so each Dockerfile installs only what it needs. Add `docker-compose.yml` for local development (proxy + inference + db).
+
+**Outputs:** `docker/proxy/Dockerfile`, `docker/inference/Dockerfile`, `docker/inference/server.py` (thin FastAPI inference HTTP wrapper), `docker-compose.yml`, updated `pyproject.toml` (dependency groups `proxy` / `inference`)
 
 Create 2 docker containers:
 - Lightweight proxy API to manage state and get model inference
