@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus
+from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
 from domain.ports import DatasetStorePort, ModelStorePort, RunStorePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
@@ -20,7 +20,6 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/runs",
     tags=["runs"],
-    dependencies=[Depends(require_approved)],
 )
 
 
@@ -57,14 +56,23 @@ class ExportRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.get("", response_model=list[RunRecord])
-def list_runs(run_store: RunStorePort = Depends(get_run_store)) -> list[RunRecord]:
-    return run_store.list()
+def list_runs(
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> list[RunRecord]:
+    return run_store.list(owner_id=user.user_id)
 
 
 @router.get("/{run_id}", response_model=RunRecord)
-def get_run(run_id: str, run_store: RunStorePort = Depends(get_run_store)) -> RunRecord:
+def get_run(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> RunRecord:
     run = run_store.get(run_id)
     if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     return run
 
@@ -73,9 +81,12 @@ def get_run(run_id: str, run_store: RunStorePort = Depends(get_run_store)) -> Ru
 def get_run_evaluation(
     run_id: str,
     run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
 ) -> EvaluationData:
     run = run_store.get(run_id)
     if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
     quality_report: QualityReport | None = None
@@ -95,10 +106,17 @@ def get_run_evaluation(
 
 
 @router.delete("/{run_id}", status_code=204)
-def delete_run(run_id: str, run_store: RunStorePort = Depends(get_run_store)) -> None:
-    deleted = run_store.delete(run_id)
-    if not deleted:
+def delete_run(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> None:
+    run = run_store.get(run_id)
+    if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+    run_store.delete(run_id)
 
 
 _CANCELLABLE_STATUSES = frozenset({
@@ -115,9 +133,12 @@ _CANCELLABLE_STATUSES = frozenset({
 async def cancel_run(
     run_id: str,
     run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
 ) -> None:
     run = run_store.get(run_id)
     if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     if run.status not in _CANCELLABLE_STATUSES:
         raise HTTPException(
@@ -147,9 +168,12 @@ async def trigger_run(
     store: ModelStorePort = Depends(get_model_store),
     run_store: RunStorePort = Depends(get_run_store),
     dataset_store: DatasetStorePort = Depends(get_dataset_store),
+    user: UserContext = Depends(require_approved),
 ) -> dict[str, str]:
     model = store.get(body.model_id)
     if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    if model.owner_id is not None and model.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Model not found")
 
     # Resolve dataset storage keys if dataset IDs provided
@@ -215,6 +239,7 @@ async def trigger_run(
             training_config=run_training_config,
             train_dataset_id=body.train_dataset_id,
             eval_dataset_id=body.eval_dataset_id,
+            owner_id=user.user_id,
         ))
         run_id = run.id
 
@@ -261,9 +286,12 @@ async def trigger_run(
 def activate_run(
     run_id: str,
     run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
 ) -> RunRecord:
     run = run_store.get(run_id)
     if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
     if run.status != RunStatus.COMPLETED:
         raise HTTPException(
@@ -299,9 +327,12 @@ async def evaluate_run(
     body: EvaluateRequest = EvaluateRequest(),
     run_store: RunStorePort = Depends(get_run_store),
     store: ModelStorePort = Depends(get_model_store),
+    user: UserContext = Depends(require_approved),
 ) -> dict[str, str]:
     run = run_store.get(run_id)
     if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
     model = store.get(run.model_id)
@@ -351,9 +382,12 @@ async def export_run(
     body: ExportRequest = ExportRequest(),
     run_store: RunStorePort = Depends(get_run_store),
     store: ModelStorePort = Depends(get_model_store),
+    user: UserContext = Depends(require_approved),
 ) -> dict[str, str]:
     run = run_store.get(run_id)
     if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
     model = store.get(run.model_id)

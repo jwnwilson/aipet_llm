@@ -32,6 +32,7 @@ class _TrainingModelRow(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     backend: Mapped[str] = mapped_column(String(16), nullable=False, default="local")
     backend_model_id: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    owner_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -53,6 +54,7 @@ def _row_to_domain(row: _TrainingModelRow) -> TrainingModel:
         is_active=row.is_active,
         backend=row.backend,
         backend_model_id=row.backend_model_id,
+        owner_id=row.owner_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -70,8 +72,14 @@ class SQLAlchemyModelStore(ModelStorePort):
             order_by=_TrainingModelRow.created_at.desc(),
         )
 
-    def list(self) -> list[TrainingModel]:
-        return self._crud.list()
+    def list(self, owner_id: str | None = None) -> list[TrainingModel]:
+        with Session(self._engine) as db:
+            stmt = select(_TrainingModelRow)
+            if owner_id is not None:
+                stmt = stmt.where(_TrainingModelRow.owner_id == owner_id)
+            stmt = stmt.order_by(_TrainingModelRow.created_at.desc())
+            rows = db.scalars(stmt).all()
+            return [_row_to_domain(r) for r in rows]
 
     def get(self, id: str) -> TrainingModel | None:
         return self._crud.get(id)

@@ -152,6 +152,10 @@ class ModelStorePort(StorePort["TrainingModel", "TrainingModelConfig"]):
     """Abstract interface for persisting training model configurations."""
 
     @abstractmethod
+    def list(self, owner_id: str | None = None) -> list[TrainingModel]:  # type: ignore[override]
+        """Return all models, optionally filtered to a specific owner."""
+
+    @abstractmethod
     def activate(self, id: str) -> TrainingModel | None:
         """Set ``is_active=True`` for this model, ``False`` for all others.
 
@@ -167,8 +171,8 @@ class RunStorePort(StorePort["RunRecord", "RunConfig"]):
     """Abstract interface for persisting training run records."""
 
     @abstractmethod
-    def list(self, model_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
-        """Return all runs, optionally filtered by model_id."""
+    def list(self, model_id: str | None = None, owner_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
+        """Return all runs, optionally filtered by model_id and/or owner_id."""
 
     @abstractmethod
     def update_status(self, run_id: str, status: RunStatus) -> RunRecord | None:
@@ -209,4 +213,8 @@ class DatasetStorePort(StorePort["DatasetRecord", "DatasetConfig"]):
     The actual file content lives in a ``StoragePort`` under ``key``.
     This store tracks the metadata: name, type, storage key, timestamps.
     """
+
+    @abstractmethod
+    def list(self, owner_id: str | None = None) -> list[DatasetRecord]:  # type: ignore[override]
+        """Return all datasets, optionally filtered to a specific owner."""
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-from domain.models import DatasetConfig, DatasetRecord, DatasetType
+from domain.models import DatasetConfig, DatasetRecord, DatasetType, UserContext
 from domain.ports import DatasetStorePort, StoragePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_storage
@@ -23,7 +23,6 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/datasets",
     tags=["datasets"],
-    dependencies=[Depends(require_approved)],
 )
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
@@ -89,6 +88,7 @@ async def _upload_to_storage(file: UploadFile, storage: StoragePort, key: str) -
 async def upload_train_dataset(
     file: UploadFile = File(...),
     storage: StoragePort = Depends(get_storage),
+    user: UserContext = Depends(require_approved),
 ) -> DatasetUploadResult:
     """Legacy fixed-key train upload (backwards compat)."""
     key = "datasets/train.jsonl"
@@ -100,6 +100,7 @@ async def upload_train_dataset(
 async def upload_eval_dataset(
     file: UploadFile = File(...),
     storage: StoragePort = Depends(get_storage),
+    user: UserContext = Depends(require_approved),
 ) -> DatasetUploadResult:
     """Legacy fixed-key eval upload (backwards compat)."""
     key = "datasets/eval.jsonl"
@@ -110,8 +111,9 @@ async def upload_eval_dataset(
 @router.get("", response_model=list[DatasetRecord])
 def list_datasets(
     dataset_store: DatasetStorePort = Depends(get_dataset_store),
+    user: UserContext = Depends(require_approved),
 ) -> list[DatasetRecord]:
-    return dataset_store.list()
+    return dataset_store.list(owner_id=user.user_id)
 
 
 @router.post("", status_code=201, response_model=DatasetRecord)
@@ -122,6 +124,7 @@ async def create_dataset(
     file: UploadFile = File(...),
     storage: StoragePort = Depends(get_storage),
     dataset_store: DatasetStorePort = Depends(get_dataset_store),
+    user: UserContext = Depends(require_approved),
 ) -> DatasetRecord:
     """Upload a file and create a named dataset record."""
     import uuid as _uuid
@@ -135,6 +138,7 @@ async def create_dataset(
         description=description,
         dataset_type=dataset_type,
         key=key,
+        owner_id=user.user_id,
     )
     return dataset_store.create(config)
 
@@ -143,9 +147,12 @@ async def create_dataset(
 def get_dataset(
     dataset_id: str,
     dataset_store: DatasetStorePort = Depends(get_dataset_store),
+    user: UserContext = Depends(require_approved),
 ) -> DatasetRecord:
     record = dataset_store.get(dataset_id)
     if record is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    if record.owner_id is not None and record.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Dataset not found")
     return record
 
@@ -155,9 +162,12 @@ def delete_dataset(
     dataset_id: str,
     dataset_store: DatasetStorePort = Depends(get_dataset_store),
     storage: StoragePort = Depends(get_storage),
+    user: UserContext = Depends(require_approved),
 ) -> None:
     record = dataset_store.get(dataset_id)
     if record is None:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    if record.owner_id is not None and record.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
     # Remove the file from storage (best-effort — don't fail if already gone)

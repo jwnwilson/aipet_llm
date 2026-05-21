@@ -90,4 +90,19 @@ For local models that are not using openrouter should be able to be started on o
 ---
 
 ## Epic-14 - Per User data
-I want to filter models, datasets and runs by user so that users can have their own private models. Update the database so that all our data can have an owner, then add filters to the API to filter responses by the user. Ensure this is done from the auth data / jwt signature and automatically applied to avoid users from seeing other users data. 
+I want to filter models, datasets and runs by user so that users can have their own private models. Update the database so that all our data can have an owner, then add filters to the API to filter responses by the user. Ensure this is done from the auth data / jwt signature and automatically applied to avoid users from seeing other users data.
+
+### TASK-14.1 — Add owner_id to models (DB + store + route)
+Add `owner_id` (String 255, nullable) to the `training_models` table via a new Alembic migration. Update the `_TrainingModelRow` ORM model and `_row_to_domain` mapper to include `owner_id`. Update `SQLAlchemyModelStore.list()` to filter by `owner_id`. Update `routes/models.py` to extract the current user from `require_approved` and automatically filter all list queries by the user's ID; set `owner_id` from JWT on create; return 404 (not 403) when a resource exists but is not owned by the requester.
+
+**Outputs:** `src/adapters/database/alembic/versions/0010_add_owner_id_to_models.py`, updated `src/adapters/database/model_store.py`, updated `src/interactors/api/routes/models.py`, `tests/unit/test_model_store_owner.py`
+
+### TASK-14.2 — Add owner_id to runs (DB + store + route)
+Add `owner_id` (String 255, nullable) to the `training_runs` table via a new Alembic migration. Update the `_RunRow` ORM model and `_row_to_domain` mapper to include `owner_id`. Update `SQLAlchemyRunStore.list()` to also accept and filter by `owner_id`. Update `routes/runs.py` to extract the current user and apply owner filtering on list; set `owner_id` from JWT when triggering a run; enforce ownership checks on all single-run endpoints.
+
+**Outputs:** `src/adapters/database/alembic/versions/0011_add_owner_id_to_runs.py`, updated `src/adapters/database/run_store.py`, updated `src/interactors/api/routes/runs.py`, `tests/unit/test_run_store_owner.py`
+
+### TASK-14.3 — Add owner_id to datasets (DB + store + route)
+Add `owner_id` (String 255, nullable) to the `datasets` table via a new Alembic migration. Update the `_DatasetRow` ORM model and `_row_to_domain` mapper to include `owner_id`. Update `SQLAlchemyDatasetStore.list()` to filter by `owner_id`. Update `routes/datasets.py` to extract the current user and apply owner filtering on list; set `owner_id` from JWT on create; enforce ownership checks on get/delete endpoints.
+
+**Outputs:** `src/adapters/database/alembic/versions/0012_add_owner_id_to_datasets.py`, updated `src/adapters/database/dataset_store.py`, updated `src/interactors/api/routes/datasets.py`, `tests/unit/test_dataset_store_owner.py`
