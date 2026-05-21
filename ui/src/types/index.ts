@@ -12,6 +12,8 @@ export interface TrainingModelConfig {
   skip_generate: boolean
   gguf_path?: string   // optional — backend defaults to ''
   is_active?: boolean  // optional — backend defaults to false
+  backend?: 'local' | 'openrouter'  // optional — backend defaults to 'local'
+  backend_model_id?: string  // optional — backend defaults to ''
 }
 
 export interface TrainingModel extends TrainingModelConfig {

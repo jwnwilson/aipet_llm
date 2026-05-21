@@ -64,6 +64,8 @@ class TrainingModelConfig(BaseModel):
     skip_generate: bool = False
     gguf_path: str = ""
     is_active: bool = False
+    backend: Literal["local", "openrouter"] = "local"
+    backend_model_id: str = ""
 
 
 class TrainingModel(TrainingModelConfig):

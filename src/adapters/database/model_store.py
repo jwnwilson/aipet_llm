@@ -30,6 +30,8 @@ class _TrainingModelRow(Base):
     skip_generate: Mapped[bool] = mapped_column(Boolean, nullable=False)
     gguf_path: Mapped[str] = mapped_column(Text, nullable=False, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    backend: Mapped[str] = mapped_column(String(16), nullable=False, default="local")
+    backend_model_id: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -49,6 +51,8 @@ def _row_to_domain(row: _TrainingModelRow) -> TrainingModel:
         skip_generate=row.skip_generate,
         gguf_path=row.gguf_path,
         is_active=row.is_active,
+        backend=row.backend,
+        backend_model_id=row.backend_model_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
