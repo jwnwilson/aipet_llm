@@ -66,10 +66,10 @@ export function InferencePanel({ model }: InferencePanelProps) {
         </span>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <Textarea
-          className="font-mono text-xs min-h-48 resize-y"
+        <textarea
+          className="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs min-h-48 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
           value={json}
-          onChange={e => setJson(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setJson(e.target.value)}
           spellCheck={false}
         />
         {parseError && <p className="text-xs text-red-600">{parseError}</p>}
