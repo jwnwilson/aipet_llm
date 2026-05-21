@@ -56,6 +56,10 @@ We want users to be able to test new models that they train on the platform. Add
 
 For local models that are not using openrouter should be able to be started on our k8 cluster. Setup logic so that the backend can trigger a new pod for each desired inference to be avilable. We will also need to track the state of the pod so the user knows when it's available. We will need a cron job to shut down inference that have not been used for 2 hours. This timelimit should be configurable.
 
+Create 2 docker containers:
+- Lightweight proxy API to manage state and get model inference
+- An inference docker container that can load models and run them, ensure the heavy files like torch are cached to avoid long build times re-downloading this every time.
+
 ---
 
 ## Epic-14 - Per User data

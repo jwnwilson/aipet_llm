@@ -1,15 +1,16 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(make test *)",
-      "Bash(python -m pytest *)",
-      "Bash(pip show *)",
-      "Bash(xargs ls *)",
-      "Bash(echo \"exit:$?\")",
-      "Bash(python3 -c \"from temporalio.common import WorkflowIDReusePolicy; print\\([x for x in dir\\(WorkflowIDReusePolicy\\) if not x.startswith\\('_'\\)]\\)\")",
-      "Bash(python3 -c \"import temporalio; print\\(temporalio.__version__\\)\")",
-      "Bash(python3 -c \"from temporalio.common import WorkflowExecutionStatus; print\\(list\\(WorkflowExecutionStatus.__members__\\)\\)\")"
-    ]
-  },
-  "defaultMode": "auto"
-}
+ {
+    "permissions": {
+      "allow": [
+        "Bash(make test *)",
+        "Bash(python -m pytest *)",
+        "Bash(pip show *)",
+        "Bash(xargs ls *)",
+        "Bash(echo \"exit:$?\")",
+        "Bash(git *)",
+        "Edit(*)",
+        "Write(*)",
+        "Read(*)"
+      ]
+    },
+    "defaultMode": "auto"
+  }
