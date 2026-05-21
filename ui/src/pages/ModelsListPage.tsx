@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { deleteModel, listModels } from '@/api/models'
 import { RunModal } from '@/components/RunModal'
@@ -10,6 +10,7 @@ import type { TrainingModel } from '@/types'
 
 export function ModelsListPage() {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [runTarget, setRunTarget] = useState<TrainingModel | null>(null)
 
@@ -85,14 +86,16 @@ export function ModelsListPage() {
                   </tr>
                 ) : (
                   filtered.map(model => (
-                    <tr key={model.id} className="border-b last:border-0 hover:bg-gray-50">
+                    <tr
+                      key={model.id}
+                      className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => navigate(`/models/${model.id}`)}
+                    >
                       <td className="px-4 py-3">
-                        <Link to={`/models/${model.id}`} className="hover:underline">
-                          <div className="font-medium text-gray-900">{model.name}</div>
-                          {model.description && (
-                            <div className="text-xs text-gray-400 mt-0.5">{model.description}</div>
-                          )}
-                        </Link>
+                        <div className="font-medium text-gray-900">{model.name}</div>
+                        {model.description && (
+                          <div className="text-xs text-gray-400 mt-0.5">{model.description}</div>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-mono text-gray-700 text-xs">{model.base_model}</td>
                       <td className="px-4 py-3 text-gray-700">{model.remote_backend}</td>
@@ -106,7 +109,7 @@ export function ModelsListPage() {
                           <span className="text-gray-300">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex gap-2">
                           <Button
                             size="sm"
