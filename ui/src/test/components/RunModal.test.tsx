@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RunModal } from '@/components/RunModal'
-import { MODEL_FIXTURE } from '../msw/fixtures'
+import { MODEL_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE } from '../msw/fixtures'
 
 function renderModal(onClose = vi.fn()) {
   const client = new QueryClient({
@@ -69,5 +69,31 @@ describe('RunModal', () => {
     await userEvent.click(skipCheckbox) // uncheck
     expect(screen.getByLabelText(/train samples/i)).not.toBeDisabled()
     expect(screen.getByLabelText(/eval samples/i)).not.toBeDisabled()
+  })
+
+  describe('dataset selectors', () => {
+    it('renders Train dataset and Eval dataset selectors', async () => {
+      renderModal()
+      await waitFor(() => {
+        expect(screen.getByRole('combobox', { name: /train dataset/i })).toBeInTheDocument()
+        expect(screen.getByRole('combobox', { name: /eval dataset/i })).toBeInTheDocument()
+      })
+    })
+
+    it('lists train datasets in the train selector', async () => {
+      renderModal()
+      await userEvent.click(await screen.findByRole('combobox', { name: /train dataset/i }))
+      await waitFor(() =>
+        expect(screen.getAllByText(TRAIN_DATASET_FIXTURE.name).length).toBeGreaterThan(0)
+      )
+    })
+
+    it('lists eval datasets in the eval selector', async () => {
+      renderModal()
+      await userEvent.click(await screen.findByRole('combobox', { name: /eval dataset/i }))
+      await waitFor(() =>
+        expect(screen.getAllByText(EVAL_DATASET_FIXTURE.name).length).toBeGreaterThan(0)
+      )
+    })
   })
 })

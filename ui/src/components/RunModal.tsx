@@ -2,10 +2,11 @@ import { useForm, Controller } from 'react-hook-form'
 import type { Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import type { TrainingModel } from '@/types'
 import { triggerRun } from '@/api/runs'
+import { listDatasets } from '@/api/datasets'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -34,6 +35,8 @@ const schema = z.object({
   skip_generate:      z.boolean(),
   num_train_samples:  z.coerce.number().int().positive().nullable(),
   num_eval_samples:   z.coerce.number().int().positive().nullable(),
+  train_dataset_id:   z.string().nullable(),
+  eval_dataset_id:    z.string().nullable(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -57,10 +60,19 @@ export function RunModal({ model, onClose }: RunModalProps) {
       skip_generate:     model.skip_generate,
       num_train_samples: null,
       num_eval_samples:  null,
+      train_dataset_id:  null,
+      eval_dataset_id:   null,
     },
   })
 
   const skipGenerate = watch('skip_generate')
+
+  const { data: allDatasets = [] } = useQuery({
+    queryKey: ['datasets'],
+    queryFn: listDatasets,
+  })
+  const trainDatasets = allDatasets.filter(d => d.dataset_type === 'train')
+  const evalDatasets  = allDatasets.filter(d => d.dataset_type === 'eval')
 
   const mutation = useMutation({
     mutationFn: triggerRun,
@@ -81,6 +93,8 @@ export function RunModal({ model, onClose }: RunModalProps) {
       ...(!values.skip_generate && values.num_train_samples != null && { num_train_samples: values.num_train_samples }),
       ...(!values.skip_generate && values.num_eval_samples  != null && { num_eval_samples:  values.num_eval_samples }),
       skip_generate: values.skip_generate,
+      ...(values.train_dataset_id   != null && { train_dataset_id:  values.train_dataset_id }),
+      ...(values.eval_dataset_id    != null && { eval_dataset_id:   values.eval_dataset_id }),
     })
   }
 
@@ -174,6 +188,47 @@ export function RunModal({ model, onClose }: RunModalProps) {
                 />
               )}
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Train dataset</Label>
+              <Controller
+                name="train_dataset_id"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value ?? ''} onValueChange={v => field.onChange(v || null)}>
+                    <SelectTrigger onBlur={field.onBlur} ref={field.ref} aria-label="Train dataset">
+                      <SelectValue placeholder="Model default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {trainDatasets.map(ds => (
+                        <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Eval dataset</Label>
+              <Controller
+                name="eval_dataset_id"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value ?? ''} onValueChange={v => field.onChange(v || null)}>
+                    <SelectTrigger onBlur={field.onBlur} ref={field.ref} aria-label="Eval dataset">
+                      <SelectValue placeholder="Model default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {evalDatasets.map(ds => (
+                        <SelectItem key={ds.id} value={ds.id}>{ds.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

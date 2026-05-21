@@ -2,6 +2,7 @@ import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { cancelRun, deleteRun, getRunEvaluation, getRun, isRunActive, isRunCancellable } from '@/api/runs'
+import { listDatasets } from '@/api/datasets'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
 import { EvalMetrics } from '@/components/EvalMetrics'
@@ -41,6 +42,12 @@ export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+
+  const { data: datasets = [] } = useQuery({
+    queryKey: ['datasets'],
+    queryFn: listDatasets,
+  })
+  const datasetById = Object.fromEntries(datasets.map(d => [d.id, d.name]))
 
   const { data: run, isLoading } = useQuery({
     queryKey: ['runs', runId],
@@ -150,6 +157,18 @@ export function RunDetailPage() {
           <>
             <dt className="text-gray-500">Detail</dt>
             <dd className="text-gray-900">{run.progress_detail}</dd>
+          </>
+        )}
+        {run.train_dataset_id != null && (
+          <>
+            <dt className="text-gray-500">Train dataset</dt>
+            <dd className="text-gray-900">{datasetById[run.train_dataset_id] ?? run.train_dataset_id}</dd>
+          </>
+        )}
+        {run.eval_dataset_id != null && (
+          <>
+            <dt className="text-gray-500">Eval dataset</dt>
+            <dd className="text-gray-900">{datasetById[run.eval_dataset_id] ?? run.eval_dataset_id}</dd>
           </>
         )}
       </dl>

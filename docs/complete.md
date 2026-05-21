@@ -267,3 +267,29 @@ React/TypeScript frontend added as `ui/` sub-project (Vite + React + Tailwind). 
 #### TASK-8.4.2 — Display eval results in UI
 Eval panel added to Run detail page: fetches `GET /api/runs/{run_id}/evaluation` (enabled only for terminal runs with `eval_valid_pct`), shows pass/fail badge, overall score, per-stat accuracy table, and action distribution. `EvalMetrics` component extended with `qualityReport` prop. Cancel-run button added (calls `POST /api/runs/{run_id}/cancel`); row-click navigation on Model list page.
 **Outputs:** Updated `ui/src/pages/RunDetailPage.tsx`, updated `ui/src/components/EvalMetrics.tsx`, `ui/src/api/runs.ts` (`cancelRun`, `isRunCancellable`), updated `src/interactors/api/routes/runs.py`
+
+---
+
+## EPIC-9: Inference Proxy
+
+> llm-api acts as a unified inference proxy, routing requests to either OpenRouter (cloud LLMs) or a locally-hosted GGUF model, selected by model ID at request time.
+
+### TASK-9.1 — OpenRouter inference adapter
+`OpenRouterInferenceAdapter` implemented in `src/adapters/inference_openrouter.py`. Converts `InferenceRequest` to OpenRouter chat completion format; parses JSON response back to `InferenceResponse`. Falls back to `Action.IDLE` on parse failure.
+**Outputs:** `src/adapters/inference_openrouter.py`, `tests/unit/test_inference_openrouter.py`
+
+### TASK-9.2 — Backend field on model records
+`backend: Literal["local", "openrouter"]` and `backend_model_id: str` added to `TrainingModel`. `POST /api/models` accepts and persists these fields; DB migration added.
+**Outputs:** Updated `src/domain/models.py`, DB migration, updated `src/interactors/api/routes/models.py`
+
+### TASK-9.3 — Per-model inference endpoint with backend routing
+`POST /api/models/{model_id}/infer` dispatches to `OpenRouterInferenceAdapter` for `openrouter` models or `LlamaCppInferenceAdapter` for `local` models. Returns unified `InferenceResponse` regardless of backend.
+**Outputs:** New route in `src/interactors/api/routes/models.py`, integration tests
+
+### TASK-9.4 — Lazy load for local GGUF models
+Local models loaded on first inference request rather than at startup. Only one GGUF held in memory at a time (RPi 8 GB constraint) — activating a second local model unloads the first. `GET /api/models/{model_id}` exposes `inference_status: unloaded | loading | ready`. `/health` returns 200 immediately regardless of model state.
+**Outputs:** Updated `src/adapters/inference.py`, updated `src/interactors/api/app.py`, updated model status in routes
+
+### TASK-9.5 — Inference UI
+Inference panel added to the model detail page: structured form / raw JSON input for `InferenceRequest`, "Run inference" button, and response display. Calls `POST /api/models/{model_id}/infer`. Shows which backend (OpenRouter / local) the model uses.
+**Outputs:** Updated `ui/src/pages/ModelDetailPage.tsx`, UI inference component

@@ -1,5 +1,25 @@
 // apps/llm-ui/src/test/msw/fixtures.ts
-import type { TrainingModel, RunRecord, UserContext, QualityReport, EvaluationData } from '@/types'
+import type { Dataset, TrainingModel, RunRecord, UserContext, QualityReport, EvaluationData } from '@/types'
+
+export const TRAIN_DATASET_FIXTURE: Dataset = {
+  id: 'ds-train-1',
+  name: 'train-v1',
+  description: 'Training dataset',
+  dataset_type: 'train',
+  key: 'datasets/ds-train-1.jsonl',
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+}
+
+export const EVAL_DATASET_FIXTURE: Dataset = {
+  id: 'ds-eval-1',
+  name: 'eval-v1',
+  description: 'Eval dataset',
+  dataset_type: 'eval',
+  key: 'datasets/ds-eval-1.jsonl',
+  created_at: '2024-01-01T00:00:00Z',
+  updated_at: '2024-01-01T00:00:00Z',
+}
 
 export const MODEL_FIXTURE: TrainingModel = {
   id: 'test-id-1',
@@ -28,6 +48,8 @@ export const RUN_FIXTURE: RunRecord = {
   progress: null,
   progress_detail: null,
   training_config: null,
+  train_dataset_id: null,
+  eval_dataset_id: null,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
 }

@@ -4,37 +4,6 @@
 
 ---
 
-## EPIC-9: Inference Proxy
-
-> llm-api acts as a unified inference proxy, routing requests to either OpenRouter (cloud LLMs) or a locally-hosted GGUF model, selected by model ID at request time.
-
-### TASK-9.1 — OpenRouter inference adapter
-Implement `OpenRouterInferenceAdapter` in `src/adapters/inference_openrouter.py` implementing `InferencePort`. Configured via `OPENROUTER_API_KEY` env var. Converts `InferenceRequest` to the OpenRouter chat completion format and parses the JSON response back to `InferenceResponse`. Falls back to `Action.IDLE` on parse failure (consistent with existing adapter contract).
-
-**Outputs:** `src/adapters/inference_openrouter.py`, `tests/unit/test_inference_openrouter.py`
-
-### TASK-9.2 — Backend field on model records
-Add `backend: Literal["local", "openrouter"]` and `backend_model_id: str` to the `Model` domain model. `backend_model_id` holds the OpenRouter model string (e.g. `"anthropic/claude-3-haiku"`) for cloud models, or the GGUF path for local models. Update `POST /api/models` to accept and persist these fields; add a DB migration.
-
-**Outputs:** Updated `src/domain/models.py`, DB migration, updated `src/interactors/api/routes/models.py`
-
-### TASK-9.3 — Per-model inference endpoint with backend routing
-Add `POST /api/models/{model_id}/infer` that dispatches to the model's configured backend — `OpenRouterInferenceAdapter` for `openrouter` models, `LlamaCppInferenceAdapter` for `local` models. Returns a unified `InferenceResponse` regardless of backend.
-
-**Outputs:** New route in `src/interactors/api/routes/models.py`, integration tests
-
-### TASK-9.4 — Lazy load for local GGUF models
-Local models are loaded on first inference request rather than at startup. Only one GGUF is held in memory at a time (RPi 8 GB constraint) — activating a second local model unloads the first. `GET /api/models/{model_id}` exposes `status: unloaded | loading | ready`. `/health` returns 200 immediately regardless of model state.
-
-**Outputs:** Updated `src/adapters/inference.py`, updated `src/interactors/api/app.py`, updated model status in routes
-
-### TASK-9.5 — Inference UI
-Add an inference panel to the model detail page: a structured form or raw JSON input for `InferenceRequest`, a "Run inference" button, and a response display. Calls `POST /api/models/{model_id}/infer`. Show which backend (OpenRouter / local) the model uses.
-
-**Outputs:** Updated `ui/src/pages/ModelDetailPage.tsx`, UI inference component
-
----
-
 ## EPIC-10: LLM API — API Keys & Rate Limiting
 
 > Per-user API keys and rate limiting for the inference endpoints.
