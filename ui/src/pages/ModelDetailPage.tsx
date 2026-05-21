@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { deleteModel, getModel } from '@/api/models'
 import { listRuns, triggerRun } from '@/api/runs'
 import { DatasetUpload } from '@/components/DatasetUpload'
+import { InferencePanel } from '@/components/InferencePanel'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -98,7 +99,9 @@ export function ModelDetailPage() {
         </div>
 
         {/* Right column */}
-        <div>
+        <div className="flex flex-col gap-6">
+          <InferencePanel model={model} />
+          <div>
           <h2 className="text-lg font-medium mb-3">Recent runs</h2>
           {runs.length === 0 ? (
             <p className="text-gray-500 text-sm">No runs yet.</p>
@@ -116,6 +119,7 @@ export function ModelDetailPage() {
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

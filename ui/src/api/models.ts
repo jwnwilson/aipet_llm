@@ -1,4 +1,4 @@
-import type { TrainingModel, TrainingModelConfig } from '@/types'
+import type { InferenceRequest, InferenceResponse, TrainingModel, TrainingModelConfig } from '@/types'
 import { apiClient } from './client'
 
 export async function listModels(): Promise<TrainingModel[]> {
@@ -23,4 +23,9 @@ export async function updateModel(id: string, config: TrainingModelConfig): Prom
 
 export async function deleteModel(id: string): Promise<void> {
   await apiClient.delete(`/api/models/${id}`)
+}
+
+export async function inferModel(id: string, request: InferenceRequest): Promise<InferenceResponse> {
+  const { data } = await apiClient.post<InferenceResponse>(`/api/models/${id}/infer`, request)
+  return data
 }

@@ -58,6 +58,35 @@ export interface TriggerRunRequest {
   num_eval_samples?: number | null
 }
 
+export interface SceneObject {
+  type: 'bowl' | 'bed' | 'toy' | 'player' | 'pet'
+  id: string
+  distance: number
+}
+
+export interface PetStats {
+  hunger: number
+  tiredness: number
+  boredom: number
+  social: number
+  toilet: number
+}
+
+export interface SceneData {
+  objects: SceneObject[]
+  pet_stats: PetStats
+}
+
+export interface InferenceRequest {
+  scene: SceneData
+}
+
+export interface InferenceResponse {
+  action: string
+  target_object_id: string | null
+  confidence: number | null
+}
+
 export interface UserContext {
   user_id: string
   email: string | null
