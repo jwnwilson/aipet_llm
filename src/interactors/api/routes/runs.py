@@ -99,6 +99,46 @@ def delete_run(run_id: str, run_store: RunStorePort = Depends(get_run_store)) ->
         raise HTTPException(status_code=404, detail="Run not found")
 
 
+_CANCELLABLE_STATUSES = frozenset({
+    RunStatus.PENDING,
+    RunStatus.GENERATING,
+    RunStatus.TRAINING,
+    RunStatus.EVALUATING,
+    RunStatus.EXPORTING,
+    RunStatus.RUNNING,
+})
+
+
+@router.post("/{run_id}/cancel", status_code=204)
+async def cancel_run(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+) -> None:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.status not in _CANCELLABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run cannot be cancelled (status={run.status.value})",
+        )
+
+    try:
+        from temporalio.client import Client
+
+        temporal_host = os.getenv("TEMPORAL_HOST", "localhost:7233")
+        client = await Client.connect(temporal_host)
+        handle = client.get_workflow_handle(run.workflow_id)
+        await handle.cancel()
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Failed to cancel Temporal workflow %s", run.workflow_id)
+        raise HTTPException(status_code=500, detail="Failed to cancel workflow")
+
+    run_store.update_status(run_id, RunStatus.CANCELLED)
+
+
 @router.post("/trigger", status_code=202)
 async def trigger_run(
     body: TriggerRunRequest,

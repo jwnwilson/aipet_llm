@@ -65,6 +65,11 @@ export const handlers = [
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
   }),
 
+  http.post(`${BASE}/api/runs/:id/cancel`, ({ params }) => {
+    if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
   http.get(`${BASE}/api/runs/:id/evaluation`, ({ params }) => {
     if (params.id === EVAL_DATA_FIXTURE.run_id) return HttpResponse.json(EVAL_DATA_FIXTURE)
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })

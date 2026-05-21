@@ -1,7 +1,7 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { deleteRun, getRunEvaluation, getRun, isRunActive } from '@/api/runs'
+import { cancelRun, deleteRun, getRunEvaluation, getRun, isRunActive, isRunCancellable } from '@/api/runs'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
 import { EvalMetrics } from '@/components/EvalMetrics'
@@ -68,9 +68,22 @@ export function RunDetailPage() {
     },
   })
 
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelRun(runId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['runs', runId] })
+    },
+  })
+
   function handleDelete() {
     if (window.confirm('Delete this run? This cannot be undone.')) {
       deleteMutation.mutate()
+    }
+  }
+
+  function handleCancel() {
+    if (window.confirm('Cancel this run?')) {
+      cancelMutation.mutate()
     }
   }
 
@@ -82,15 +95,29 @@ export function RunDetailPage() {
       <div className="flex items-center gap-3 mb-2">
         <h1 className="text-xl font-semibold font-mono truncate">{run.workflow_id}</h1>
         <RunStatusBadge status={run.status} />
-        <button
-          onClick={handleDelete}
-          disabled={deleteMutation.isPending}
-          className="ml-auto text-sm text-red-600 border border-red-300 rounded px-3 py-1 hover:bg-red-50 disabled:opacity-50"
-        >
-          {deleteMutation.isPending ? 'Deleting…' : 'Delete run'}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {run && isRunCancellable(run) && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelMutation.isPending}
+              className="text-sm text-yellow-700 border border-yellow-300 rounded px-3 py-1 hover:bg-yellow-50 disabled:opacity-50"
+            >
+              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel run'}
+            </button>
+          )}
+          <button
+            onClick={handleDelete}
+            disabled={deleteMutation.isPending}
+            className="text-sm text-red-600 border border-red-300 rounded px-3 py-1 hover:bg-red-50 disabled:opacity-50"
+          >
+            {deleteMutation.isPending ? 'Deleting…' : 'Delete run'}
+          </button>
+        </div>
       </div>
 
+      {cancelMutation.isError && (
+        <p className="text-sm text-red-600 mb-4">Failed to cancel run. Please try again.</p>
+      )}
       {deleteMutation.isError && (
         <p className="text-sm text-red-600 mb-4">Failed to delete run. Please try again.</p>
       )}

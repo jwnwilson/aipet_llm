@@ -79,6 +79,45 @@ describe('RunDetailPage', () => {
     )
   })
 
+  it('renders a Cancel run button for an active run', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /cancel run/i })).toBeInTheDocument()
+    )
+  })
+
+  it('does not render Cancel button for a completed run', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id)
+          return HttpResponse.json({ ...RUN_FIXTURE, status: 'completed', eval_valid_pct: 0.97 })
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      }),
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
+    expect(screen.queryByRole('button', { name: /cancel run/i })).not.toBeInTheDocument()
+  })
+
+  it('calls cancel API and refreshes run on confirm', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByRole('button', { name: /cancel run/i }))
+    await userEvent.click(screen.getByRole('button', { name: /cancel run/i }))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /cancelling/i })).not.toBeInTheDocument()
+    )
+  })
+
+  it('does not cancel when confirm is dismissed', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByRole('button', { name: /cancel run/i }))
+    await userEvent.click(screen.getByRole('button', { name: /cancel run/i }))
+    // Button stays enabled — no mutation in flight
+    expect(screen.getByRole('button', { name: /cancel run/i })).not.toBeDisabled()
+  })
+
   it('shows eval panel with quality report for completed run', async () => {
     server.use(
       http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
