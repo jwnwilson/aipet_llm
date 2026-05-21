@@ -7,10 +7,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from domain.models import TrainingModel, TrainingModelConfig
+from domain.models import InferenceRequest, InferenceResponse, TrainingModel, TrainingModelConfig
 from domain.ports import ModelStorePort
 from interactors.api.auth import require_approved
-from interactors.api.deps import get_model_store
+from interactors.api.deps import get_adapter, get_model_store
 
 log = logging.getLogger(__name__)
 
@@ -117,3 +117,22 @@ def activate_model(
 
     log.info("Activated model %s — gguf_path=%s", model_id, model.gguf_path)
     return model
+
+
+@router.post("/{model_id}/infer", response_model=InferenceResponse)
+def infer(
+    model_id: str,
+    request: InferenceRequest,
+    store: ModelStorePort = Depends(get_model_store),
+) -> InferenceResponse:
+    model = store.get(model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    if model.backend == "openrouter":
+        from adapters.inference_openrouter import OpenRouterInferenceAdapter
+        adapter = OpenRouterInferenceAdapter(model_id=model.backend_model_id)
+    else:
+        adapter = get_adapter()
+
+    return adapter.infer(request)
