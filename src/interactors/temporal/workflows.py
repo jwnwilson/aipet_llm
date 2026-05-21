@@ -23,6 +23,7 @@ with workflow.unsafe.imports_passed_through():
         ExportConfig,
         GGUFPath,
         TrainConfig,
+        create_inference_activity,
         evaluate_activity,
         export_activity,
         fail_run_activity,
@@ -204,6 +205,12 @@ class TrainingPipelineWorkflow:
                     await workflow.execute_activity(
                         save_gguf_path_activity,
                         args=[config.model_id, result.gguf_path.path],
+                        start_to_close_timeout=timedelta(minutes=5),
+                        retry_policy=_RETRY,
+                    )
+                    await workflow.execute_activity(
+                        create_inference_activity,
+                        args=[config.model_id],
                         start_to_close_timeout=timedelta(minutes=5),
                         retry_policy=_RETRY,
                     )
