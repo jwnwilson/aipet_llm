@@ -87,10 +87,12 @@ export function ModelsListPage() {
                   filtered.map(model => (
                     <tr key={model.id} className="border-b last:border-0 hover:bg-gray-50">
                       <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{model.name}</div>
-                        {model.description && (
-                          <div className="text-xs text-gray-400 mt-0.5">{model.description}</div>
-                        )}
+                        <Link to={`/models/${model.id}`} className="hover:underline">
+                          <div className="font-medium text-gray-900">{model.name}</div>
+                          {model.description && (
+                            <div className="text-xs text-gray-400 mt-0.5">{model.description}</div>
+                          )}
+                        </Link>
                       </td>
                       <td className="px-4 py-3 font-mono text-gray-700 text-xs">{model.base_model}</td>
                       <td className="px-4 py-3 text-gray-700">{model.remote_backend}</td>
