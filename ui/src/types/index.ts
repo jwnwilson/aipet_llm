@@ -43,8 +43,29 @@ export interface RunRecord {
   progress: number | null
   progress_detail: string | null
   training_config: Record<string, unknown> | null
+  train_dataset_id: string | null
+  eval_dataset_id: string | null
   created_at: string
   updated_at: string
+}
+
+export type DatasetType = 'train' | 'eval'
+
+export interface Dataset {
+  id: string
+  name: string
+  description: string
+  dataset_type: DatasetType
+  key: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateDatasetRequest {
+  name: string
+  dataset_type: DatasetType
+  description?: string
+  file: File
 }
 
 export interface TriggerRunRequest {
@@ -57,6 +78,8 @@ export interface TriggerRunRequest {
   base_model?: string | null
   num_train_samples?: number | null
   num_eval_samples?: number | null
+  train_dataset_id?: string | null
+  eval_dataset_id?: string | null
 }
 
 export interface SceneObject {

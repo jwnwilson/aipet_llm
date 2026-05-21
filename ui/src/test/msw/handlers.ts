@@ -1,11 +1,12 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
-import type { TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
-import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE } from './fixtures'
+import type { Dataset, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
+import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE } from './fixtures'
 
 const BASE = 'http://localhost:8000'
 
 let models: TrainingModel[] = [MODEL_FIXTURE]
+let datasets: Dataset[] = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
 let pendingUsers: UserContext[] = [PENDING_USER_FIXTURE]
 let approvedUsers: UserContext[] = [APPROVED_USER_FIXTURE]
 
@@ -75,6 +76,39 @@ export const handlers = [
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
   }),
 
+  // Named dataset CRUD
+  http.get(`${BASE}/api/datasets`, () => HttpResponse.json(datasets)),
+
+  http.post(`${BASE}/api/datasets`, async () => {
+    // Client-side validates name/file before reaching here;
+    // return a fixed created dataset so tests can assert success state.
+    const created: Dataset = {
+      id: `ds-new-${Date.now()}`,
+      name: 'uploaded-dataset',
+      description: '',
+      dataset_type: 'train',
+      key: 'datasets/ds-new.jsonl',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    datasets = [...datasets, created]
+    return HttpResponse.json(created, { status: 201 })
+  }),
+
+  http.get(`${BASE}/api/datasets/:id`, ({ params }) => {
+    const ds = datasets.find(d => d.id === params.id)
+    if (!ds) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    return HttpResponse.json(ds)
+  }),
+
+  http.delete(`${BASE}/api/datasets/:id`, ({ params }) => {
+    const idx = datasets.findIndex(d => d.id === params.id)
+    if (idx === -1) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    datasets = datasets.filter(d => d.id !== params.id)
+    return new HttpResponse(null, { status: 204 })
+  }),
+
+  // Legacy fixed-key uploads (backwards compat)
   http.post(`${BASE}/api/datasets/train`, async () => {
     return HttpResponse.json({ key: 'datasets/train.jsonl' }, { status: 201 })
   }),
@@ -107,6 +141,7 @@ export const handlers = [
 
 export function resetHandlerState() {
   models = [MODEL_FIXTURE]
+  datasets = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
   pendingUsers = [PENDING_USER_FIXTURE]
   approvedUsers = [APPROVED_USER_FIXTURE]
 }

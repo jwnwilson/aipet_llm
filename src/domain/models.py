@@ -64,6 +64,7 @@ class TrainingModelConfig(BaseModel):
     skip_generate: bool = False
     gguf_path: str = ""
     is_active: bool = False
+    owner_id: str | None = None
     backend: Literal["local", "openrouter"] = "local"
     backend_model_id: str = ""
 
@@ -98,6 +99,7 @@ class RunConfig(BaseModel):
     training_config: dict | None = None  # full training params saved at trigger time
     train_dataset_id: str | None = None
     eval_dataset_id: str | None = None
+    owner_id: str | None = None
 
 
 class RunRecord(RunConfig):
@@ -169,6 +171,7 @@ class DatasetConfig(BaseModel):
     description: str = ""
     dataset_type: DatasetType
     key: str  # storage key, e.g. "datasets/{id}.jsonl"
+    owner_id: str | None = None
 
 
 class DatasetRecord(DatasetConfig):

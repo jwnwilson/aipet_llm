@@ -28,6 +28,7 @@ class _RunRow(Base):
     training_config: Mapped[str | None] = mapped_column(Text, nullable=True)
     train_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     eval_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    owner_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
@@ -44,6 +45,7 @@ def _row_to_domain(row: _RunRow) -> RunRecord:
         training_config=json.loads(row.training_config) if row.training_config else None,
         train_dataset_id=row.train_dataset_id,
         eval_dataset_id=row.eval_dataset_id,
+        owner_id=row.owner_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -66,6 +68,7 @@ class SQLAlchemyRunStore(RunStorePort):
             training_config=json.dumps(config.training_config) if config.training_config else None,
             train_dataset_id=config.train_dataset_id,
             eval_dataset_id=config.eval_dataset_id,
+            owner_id=config.owner_id,
             created_at=now,
             updated_at=now,
         )
@@ -80,11 +83,13 @@ class SQLAlchemyRunStore(RunStorePort):
             row = db.get(_RunRow, id)
             return _row_to_domain(row) if row else None
 
-    def list(self, model_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
+    def list(self, model_id: str | None = None, owner_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
         with Session(self._engine) as db:
             stmt = select(_RunRow)
             if model_id is not None:
                 stmt = stmt.where(_RunRow.model_id == model_id)
+            if owner_id is not None:
+                stmt = stmt.where(_RunRow.owner_id == owner_id)
             stmt = stmt.order_by(_RunRow.created_at.desc())
             rows = db.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]

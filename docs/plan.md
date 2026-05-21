@@ -4,37 +4,6 @@
 
 ---
 
-## EPIC-9: Inference Proxy
-
-> llm-api acts as a unified inference proxy, routing requests to either OpenRouter (cloud LLMs) or a locally-hosted GGUF model, selected by model ID at request time.
-
-### TASK-9.1 — OpenRouter inference adapter
-Implement `OpenRouterInferenceAdapter` in `src/adapters/inference_openrouter.py` implementing `InferencePort`. Configured via `OPENROUTER_API_KEY` env var. Converts `InferenceRequest` to the OpenRouter chat completion format and parses the JSON response back to `InferenceResponse`. Falls back to `Action.IDLE` on parse failure (consistent with existing adapter contract).
-
-**Outputs:** `src/adapters/inference_openrouter.py`, `tests/unit/test_inference_openrouter.py`
-
-### TASK-9.2 — Backend field on model records
-Add `backend: Literal["local", "openrouter"]` and `backend_model_id: str` to the `Model` domain model. `backend_model_id` holds the OpenRouter model string (e.g. `"anthropic/claude-3-haiku"`) for cloud models, or the GGUF path for local models. Update `POST /api/models` to accept and persist these fields; add a DB migration.
-
-**Outputs:** Updated `src/domain/models.py`, DB migration, updated `src/interactors/api/routes/models.py`
-
-### TASK-9.3 — Per-model inference endpoint with backend routing
-Add `POST /api/models/{model_id}/infer` that dispatches to the model's configured backend — `OpenRouterInferenceAdapter` for `openrouter` models, `LlamaCppInferenceAdapter` for `local` models. Returns a unified `InferenceResponse` regardless of backend.
-
-**Outputs:** New route in `src/interactors/api/routes/models.py`, integration tests
-
-### TASK-9.4 — Lazy load for local GGUF models
-Local models are loaded on first inference request rather than at startup. Only one GGUF is held in memory at a time (RPi 8 GB constraint) — activating a second local model unloads the first. `GET /api/models/{model_id}` exposes `status: unloaded | loading | ready`. `/health` returns 200 immediately regardless of model state.
-
-**Outputs:** Updated `src/adapters/inference.py`, updated `src/interactors/api/app.py`, updated model status in routes
-
-### TASK-9.5 — Inference UI
-Add an inference panel to the model detail page: a structured form or raw JSON input for `InferenceRequest`, a "Run inference" button, and a response display. Calls `POST /api/models/{model_id}/infer`. Show which backend (OpenRouter / local) the model uses.
-
-**Outputs:** Updated `ui/src/pages/ModelDetailPage.tsx`, UI inference component
-
----
-
 ## EPIC-10: LLM API — API Keys & Rate Limiting
 
 > Per-user API keys and rate limiting for the inference endpoints.
@@ -149,7 +118,26 @@ Dependency groups in `pyproject.toml` separate proxy deps from inference deps so
 
 **Outputs:** `docker/proxy/Dockerfile`, `docker/inference/Dockerfile`, `docker/inference/server.py` (thin FastAPI inference HTTP wrapper), `docker-compose.yml`, updated `pyproject.toml` (dependency groups `proxy` / `inference`)
 
+Create 2 docker containers:
+- Lightweight proxy API to manage state and get model inference
+- An inference docker container that can load models and run them, ensure the heavy files like torch are cached to avoid long build times re-downloading this every time.
+
 ---
 
 ## Epic-14 - Per User data
-I want to filter models, datasets and runs by user so that users can have their own private models. Update the database so that all our data can have an owner, then add filters to the API to filter responses by the user. Ensure this is done from the auth data / jwt signature and automatically applied to avoid users from seeing other users data. 
+I want to filter models, datasets and runs by user so that users can have their own private models. Update the database so that all our data can have an owner, then add filters to the API to filter responses by the user. Ensure this is done from the auth data / jwt signature and automatically applied to avoid users from seeing other users data.
+
+### TASK-14.1 — Add owner_id to models (DB + store + route)
+Add `owner_id` (String 255, nullable) to the `training_models` table via a new Alembic migration. Update the `_TrainingModelRow` ORM model and `_row_to_domain` mapper to include `owner_id`. Update `SQLAlchemyModelStore.list()` to filter by `owner_id`. Update `routes/models.py` to extract the current user from `require_approved` and automatically filter all list queries by the user's ID; set `owner_id` from JWT on create; return 404 (not 403) when a resource exists but is not owned by the requester.
+
+**Outputs:** `src/adapters/database/alembic/versions/0010_add_owner_id_to_models.py`, updated `src/adapters/database/model_store.py`, updated `src/interactors/api/routes/models.py`, `tests/unit/test_model_store_owner.py`
+
+### TASK-14.2 — Add owner_id to runs (DB + store + route)
+Add `owner_id` (String 255, nullable) to the `training_runs` table via a new Alembic migration. Update the `_RunRow` ORM model and `_row_to_domain` mapper to include `owner_id`. Update `SQLAlchemyRunStore.list()` to also accept and filter by `owner_id`. Update `routes/runs.py` to extract the current user and apply owner filtering on list; set `owner_id` from JWT when triggering a run; enforce ownership checks on all single-run endpoints.
+
+**Outputs:** `src/adapters/database/alembic/versions/0011_add_owner_id_to_runs.py`, updated `src/adapters/database/run_store.py`, updated `src/interactors/api/routes/runs.py`, `tests/unit/test_run_store_owner.py`
+
+### TASK-14.3 — Add owner_id to datasets (DB + store + route)
+Add `owner_id` (String 255, nullable) to the `datasets` table via a new Alembic migration. Update the `_DatasetRow` ORM model and `_row_to_domain` mapper to include `owner_id`. Update `SQLAlchemyDatasetStore.list()` to filter by `owner_id`. Update `routes/datasets.py` to extract the current user and apply owner filtering on list; set `owner_id` from JWT on create; enforce ownership checks on get/delete endpoints.
+
+**Outputs:** `src/adapters/database/alembic/versions/0012_add_owner_id_to_datasets.py`, updated `src/adapters/database/dataset_store.py`, updated `src/interactors/api/routes/datasets.py`, `tests/unit/test_dataset_store_owner.py`

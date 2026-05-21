@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { deleteModel, getModel } from '@/api/models'
 import { listRuns, triggerRun } from '@/api/runs'
-import { DatasetUpload } from '@/components/DatasetUpload'
+import { LinkedDatasetsCard } from '@/components/LinkedDatasetsCard'
 import { InferencePanel } from '@/components/InferencePanel'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { Button } from '@/components/ui/button'
@@ -87,15 +87,7 @@ export function ModelDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><CardTitle>Upload datasets</CardTitle></CardHeader>
-            <CardContent>
-              <p className="text-sm text-gray-500 mb-4">
-                Upload JSONL files to replace the training or eval dataset used by this model.
-              </p>
-              <DatasetUpload />
-            </CardContent>
-          </Card>
+          <LinkedDatasetsCard model={model} />
         </div>
 
         {/* Right column */}

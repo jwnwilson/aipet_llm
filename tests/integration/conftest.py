@@ -7,7 +7,18 @@ from pathlib import Path
 
 import pytest
 
+from domain.models import UserContext
+
 _LLAMA_CPP_DIR = Path(__file__).parents[2] / "llama.cpp"
+
+# Default user injected by the auth bypass fixture.
+# All resources created through the API in integration tests will be owned by
+# this user, so list/get/delete endpoints can find them.
+_INTEGRATION_TEST_USER = UserContext(
+    user_id="integration-test-user",
+    email="test@integration.test",
+    roles=["user", "admin"],
+)
 
 
 @pytest.fixture(scope="session")
@@ -47,8 +58,8 @@ def _auth_bypass():
     from interactors.api.app import app
     from interactors.api.auth import require_admin, require_approved
 
-    app.dependency_overrides[require_approved] = lambda: None
-    app.dependency_overrides[require_admin] = lambda: None
+    app.dependency_overrides[require_approved] = lambda: _INTEGRATION_TEST_USER
+    app.dependency_overrides[require_admin] = lambda: _INTEGRATION_TEST_USER
     yield
     app.dependency_overrides.pop(require_approved, None)
     app.dependency_overrides.pop(require_admin, None)
