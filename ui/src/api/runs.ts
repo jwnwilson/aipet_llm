@@ -1,5 +1,9 @@
-import type { RunRecord, TriggerRunRequest } from '@/types'
+import type { EvaluationData, RunRecord, RunStatus, TriggerRunRequest } from '@/types'
 import { apiClient } from './client'
+
+const ACTIVE_STATUSES = new Set<RunStatus>([
+  'pending', 'generating', 'training', 'evaluating', 'exporting', 'running',
+])
 
 export async function listRuns(): Promise<RunRecord[]> {
   const { data } = await apiClient.get<RunRecord[]>('/api/runs')
@@ -20,6 +24,19 @@ export async function deleteRun(id: string): Promise<void> {
   await apiClient.delete(`/api/runs/${id}`)
 }
 
+export async function cancelRun(id: string): Promise<void> {
+  await apiClient.post(`/api/runs/${id}/cancel`)
+}
+
 export function isRunActive(run: RunRecord): boolean {
   return run.status === 'running'
+}
+
+export function isRunCancellable(run: RunRecord): boolean {
+  return ACTIVE_STATUSES.has(run.status)
+}
+
+export async function getRunEvaluation(id: string): Promise<EvaluationData> {
+  const { data } = await apiClient.get<EvaluationData>(`/api/runs/${id}/evaluation`)
+  return data
 }

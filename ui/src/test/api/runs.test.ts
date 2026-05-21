@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { listRuns, getRun, isRunActive, triggerRun, deleteRun } from '@/api/runs'
-import { MODEL_FIXTURE, RUN_FIXTURE } from '../msw/fixtures'
+import { listRuns, getRun, isRunActive, isRunCancellable, triggerRun, deleteRun, cancelRun, getRunEvaluation } from '@/api/runs'
+import { MODEL_FIXTURE, RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
 
 describe('listRuns', () => {
   it('returns array of RunRecords with id field', async () => {
@@ -50,5 +50,44 @@ describe('deleteRun', () => {
 
   it('throws for an unknown run id', async () => {
     await expect(deleteRun('does-not-exist')).rejects.toThrow()
+  })
+})
+
+describe('cancelRun', () => {
+  it('resolves for an active run id', async () => {
+    await expect(cancelRun(RUN_FIXTURE.id)).resolves.toBeUndefined()
+  })
+
+  it('throws for an unknown run id', async () => {
+    await expect(cancelRun('does-not-exist')).rejects.toThrow()
+  })
+})
+
+describe('isRunCancellable', () => {
+  it.each(['pending', 'generating', 'training', 'evaluating', 'exporting', 'running'] as const)(
+    'returns true for %s status',
+    (status) => {
+      expect(isRunCancellable({ ...RUN_FIXTURE, status })).toBe(true)
+    }
+  )
+
+  it.each(['completed', 'failed', 'cancelled'] as const)(
+    'returns false for %s status',
+    (status) => {
+      expect(isRunCancellable({ ...RUN_FIXTURE, status })).toBe(false)
+    }
+  )
+})
+
+describe('getRunEvaluation', () => {
+  it('returns EvaluationData for a known run', async () => {
+    const result = await getRunEvaluation(EVAL_DATA_FIXTURE.run_id)
+    expect(result.run_id).toBe(EVAL_DATA_FIXTURE.run_id)
+    expect(result.status).toBe('completed')
+    expect(result.eval_valid_pct).toBe(0.97)
+  })
+
+  it('throws for an unknown run id', async () => {
+    await expect(getRunEvaluation('does-not-exist')).rejects.toThrow()
   })
 })

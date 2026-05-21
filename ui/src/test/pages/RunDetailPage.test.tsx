@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { RunDetailPage } from '@/pages/RunDetailPage'
-import { RUN_FIXTURE } from '../msw/fixtures'
+import { RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
 import { server } from '../msw/server'
 
 function renderPage(runId: string) {
@@ -77,5 +77,105 @@ describe('RunDetailPage', () => {
     await waitFor(() =>
       expect(screen.getByText(/failed to delete run/i)).toBeInTheDocument()
     )
+  })
+
+  it('renders a Cancel run button for an active run', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /cancel run/i })).toBeInTheDocument()
+    )
+  })
+
+  it('does not render Cancel button for a completed run', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id)
+          return HttpResponse.json({ ...RUN_FIXTURE, status: 'completed', eval_valid_pct: 0.97 })
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      }),
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
+    expect(screen.queryByRole('button', { name: /cancel run/i })).not.toBeInTheDocument()
+  })
+
+  it('calls cancel API and refreshes run on confirm', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByRole('button', { name: /cancel run/i }))
+    await userEvent.click(screen.getByRole('button', { name: /cancel run/i }))
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /cancelling/i })).not.toBeInTheDocument()
+    )
+  })
+
+  it('does not cancel when confirm is dismissed', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByRole('button', { name: /cancel run/i }))
+    await userEvent.click(screen.getByRole('button', { name: /cancel run/i }))
+    // Button stays enabled — no mutation in flight
+    expect(screen.getByRole('button', { name: /cancel run/i })).not.toBeDisabled()
+  })
+
+  it('shows eval panel with quality report for completed run', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id) {
+          return HttpResponse.json({ ...RUN_FIXTURE, status: 'completed', eval_valid_pct: 0.97 })
+        }
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      }),
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText(/97\.0%/)).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('hunger')).toBeInTheDocument()
+    })
+  })
+
+  it('does not render eval panel for a running run', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
+    expect(screen.queryByText('hunger')).not.toBeInTheDocument()
+  })
+
+  it('shows eval score without quality report when report is null', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id) {
+          return HttpResponse.json({ ...RUN_FIXTURE, status: 'completed', eval_valid_pct: 0.95 })
+        }
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      }),
+      http.get('http://localhost:8000/api/runs/:id/evaluation', () =>
+        HttpResponse.json({ ...EVAL_DATA_FIXTURE, quality_report: null })
+      ),
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText(/95\.0%/)).toBeInTheDocument()
+    })
+    expect(screen.queryByText('hunger')).not.toBeInTheDocument()
+  })
+
+  it('shows error message when eval report fetch fails', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id) {
+          return HttpResponse.json({ ...RUN_FIXTURE, status: 'completed', eval_valid_pct: 0.97 })
+        }
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      }),
+      http.get('http://localhost:8000/api/runs/:id/evaluation', () =>
+        HttpResponse.json({ detail: 'Internal server error' }, { status: 500 })
+      ),
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText(/failed to load detailed report/i)).toBeInTheDocument()
+    })
   })
 })

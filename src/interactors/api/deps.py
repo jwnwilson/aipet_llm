@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from domain.ports import AuthPort, InferencePort, ModelStorePort, RunStorePort
+from domain.ports import AuthPort, InferencePort, ModelStorePort, RunStorePort, StoragePort
 
 # ---------------------------------------------------------------------------
 # Inference adapter
@@ -85,4 +85,26 @@ def clear_auth() -> None:
     global _auth_port
     _auth_port = None
 
+
+# ---------------------------------------------------------------------------
+# Storage port
+# ---------------------------------------------------------------------------
+
+_storage: StoragePort | None = None
+
+
+def get_storage() -> StoragePort:
+    if _storage is None:
+        raise RuntimeError("StoragePort has not been configured.")
+    return _storage
+
+
+def configure_storage(port: StoragePort) -> None:
+    global _storage
+    _storage = port
+
+
+def clear_storage() -> None:
+    global _storage
+    _storage = None
 

@@ -1,7 +1,7 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
 import type { TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
-import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE } from './fixtures'
+import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE } from './fixtures'
 
 const BASE = 'http://localhost:8000'
 
@@ -63,6 +63,24 @@ export const handlers = [
   http.delete(`${BASE}/api/runs/:id`, ({ params }) => {
     if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.post(`${BASE}/api/runs/:id/cancel`, ({ params }) => {
+    if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.get(`${BASE}/api/runs/:id/evaluation`, ({ params }) => {
+    if (params.id === EVAL_DATA_FIXTURE.run_id) return HttpResponse.json(EVAL_DATA_FIXTURE)
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.post(`${BASE}/api/datasets/train`, async () => {
+    return HttpResponse.json({ key: 'datasets/train.jsonl' }, { status: 201 })
+  }),
+
+  http.post(`${BASE}/api/datasets/eval`, async () => {
+    return HttpResponse.json({ key: 'datasets/eval.jsonl' }, { status: 201 })
   }),
 
   http.get(`${BASE}/api/admin/users`, ({ request }) => {

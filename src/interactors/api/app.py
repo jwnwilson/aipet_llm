@@ -47,10 +47,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from interactors.api.deps import (
         clear_adapter,
         clear_auth,
+        clear_storage,
         configure,
         configure_auth,
         configure_model_store,
         configure_run_store,
+        configure_storage as configure_api_storage,
     )
     from interactors.temporal.activities import (
         configure_run_store as configure_activity_run_store,
@@ -69,6 +71,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     storage = _make_storage_adapter()
     configure_storage(storage)
+    configure_api_storage(storage)
 
     auth_disabled = os.getenv("AUTH_DISABLED", "").lower() == "true"
     auth0_domain = os.environ.get("AUTH0_DOMAIN", "")
@@ -120,9 +123,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         clear_adapter()
         clear_auth()
+        clear_storage()
 
 
 from interactors.api.routes.admin import router as admin_router  # noqa: E402
+from interactors.api.routes.datasets import router as datasets_router  # noqa: E402
 from interactors.api.routes.inference import router as inference_router  # noqa: E402
 from interactors.api.routes.login import router as login_router  # noqa: E402
 from interactors.api.routes.models import router as models_router  # noqa: E402
@@ -160,6 +165,7 @@ app.add_middleware(
 )
 
 app.include_router(admin_router)
+app.include_router(datasets_router)
 app.include_router(inference_router)
 app.include_router(models_router)
 app.include_router(runs_router)

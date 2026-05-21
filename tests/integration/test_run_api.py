@@ -275,3 +275,77 @@ class TestGetRunEvaluation:
         assert body["quality_report"]["passed"] is True
         assert body["quality_report"]["per_stat_accuracy"]["hunger"]["correct"] == 38
         assert body["quality_report"]["action_distribution"]["EAT"] == 50
+
+
+class TestCancelRun:
+    def _cancel_mock(self):
+        mock_handle = AsyncMock()
+        mock_handle.cancel = AsyncMock()
+        mock_client = AsyncMock()
+        mock_client.get_workflow_handle = MagicMock(return_value=mock_handle)
+        return AsyncMock(return_value=mock_client), mock_client, mock_handle
+
+    @pytest.mark.asyncio
+    async def test_cancel_active_run_returns_204(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-cancel-1"))
+        run_store.update_status(run.id, RunStatus.RUNNING)
+        connect_mock, _, _ = self._cancel_mock()
+
+        with patch("temporalio.client.Client.connect", connect_mock):
+            resp = await c.post(f"/api/runs/{run.id}/cancel")
+
+        assert resp.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_cancel_updates_status_to_cancelled(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-cancel-2"))
+        run_store.update_status(run.id, RunStatus.TRAINING)
+        connect_mock, _, _ = self._cancel_mock()
+
+        with patch("temporalio.client.Client.connect", connect_mock):
+            await c.post(f"/api/runs/{run.id}/cancel")
+
+        updated = run_store.get(run.id)
+        assert updated.status == RunStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_cancel_calls_temporal_cancel(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-cancel-3"))
+        run_store.update_status(run.id, RunStatus.GENERATING)
+        connect_mock, mock_client, mock_handle = self._cancel_mock()
+
+        with patch("temporalio.client.Client.connect", connect_mock):
+            await c.post(f"/api/runs/{run.id}/cancel")
+
+        mock_client.get_workflow_handle.assert_called_once_with("wf-cancel-3")
+        mock_handle.cancel.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_cancel_unknown_run_returns_404(self, client):
+        c, _, _ = client
+        resp = await c.post("/api/runs/no-such-run/cancel")
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_cancel_completed_run_returns_409(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-cancel-5"))
+        run_store.update_status(run.id, RunStatus.COMPLETED)
+
+        resp = await c.post(f"/api/runs/{run.id}/cancel")
+
+        assert resp.status_code == 409
+        assert "cannot be cancelled" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
+    async def test_cancel_already_cancelled_run_returns_409(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-cancel-6"))
+        run_store.update_status(run.id, RunStatus.CANCELLED)
+
+        resp = await c.post(f"/api/runs/{run.id}/cancel")
+
+        assert resp.status_code == 409
