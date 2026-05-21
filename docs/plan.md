@@ -137,6 +137,18 @@ Wire the route in `App.tsx` / router config.
 
 **Outputs:** `ui/src/api/inferences.ts`, `ui/src/pages/InferencePage.tsx`, `ui/src/components/InferenceStatusBadge.tsx`, updated `ui/src/types/index.ts`, updated router/nav
 
+### TASK-13.7 — Docker containers: proxy API and inference worker
+
+Split the application into two purpose-built Docker images:
+
+**Proxy API container** (`docker/proxy/Dockerfile`): Lightweight image based on `python:3.12-slim`. Contains only the FastAPI app, SQLAlchemy, auth adapters, and management dependencies — no torch, no llama-cpp-python. Handles all REST API endpoints, inference state management, and K8s pod orchestration. Exposes port 8000. The K8s pod adapter, idle shutdown task, and all existing routes live here.
+
+**Inference worker container** (`docker/inference/Dockerfile`): Heavier image containing `llama-cpp-python` (and torch for future use). Exposes a minimal `POST /infer` HTTP API on port 8080 that the proxy forwards inference requests to. Uses BuildKit `--mount=type=cache,target=/root/.cache/uv` so pip/uv caches persist across rebuilds and heavy packages (torch, llama-cpp-python) are never re-downloaded unless their version changes. The K8s pod spec (TASK-13.4) references this image tag.
+
+Dependency groups in `pyproject.toml` separate proxy deps from inference deps so each Dockerfile installs only what it needs. Add `docker-compose.yml` for local development (proxy + inference + db).
+
+**Outputs:** `docker/proxy/Dockerfile`, `docker/inference/Dockerfile`, `docker/inference/server.py` (thin FastAPI inference HTTP wrapper), `docker-compose.yml`, updated `pyproject.toml` (dependency groups `proxy` / `inference`)
+
 ---
 
 ## Epic-14 - Per User data

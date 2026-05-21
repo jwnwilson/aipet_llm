@@ -4,6 +4,8 @@
 
 Epic-13 introduces a first-class **Inference Management** layer to the platform. Users gain a dedicated UI tab listing every inference instance derived from a trained model. Instances can be started (spawning a K8s pod for local models) or stopped, and idle instances auto-terminate after a configurable timeout.
 
+The platform is split into **two Docker containers**: a lightweight proxy API that manages state and routes requests, and a heavy inference worker that loads GGUF models and serves them. Heavy Python packages (torch, llama-cpp-python) are cached at the Docker layer level to avoid re-downloading on every rebuild.
+
 ---
 
 ## Architecture
@@ -12,234 +14,197 @@ Epic-13 introduces a first-class **Inference Management** layer to the platform.
 UI (InferencePage)
     │  GET/POST /api/inferences/*
     ▼
-FastAPI routes (inferences.py)
-    │  InferenceStorePort
-    ▼
-SQLAlchemyInferenceStore ──► inference_instances table
-    │  K8sPodAdapter (local models)
-    ▼
-Kubernetes API ──► llama-cpp-python HTTP pod
+┌─────────────────────────────────────────┐
+│  PROXY API CONTAINER  (port 8000)       │
+│  FastAPI + SQLAlchemy + K8sPodAdapter   │
+│  inference state management             │
+│  idle shutdown background task          │
+└────────────────┬────────────────────────┘
+                 │ forwards /infer to pod URL
+                 │ manages K8s pods via K8s API
+                 ▼
+┌─────────────────────────────────────────┐
+│  INFERENCE WORKER CONTAINER  (port 8080)│
+│  llama-cpp-python HTTP server           │
+│  POST /infer  →  InferenceResponse      │
+│  (one pod per InferenceInstance)        │
+└─────────────────────────────────────────┘
+         ▲  (running as K8s pod)
+         │
+Kubernetes API
 
 Temporal workflow
     └─ create_inference_activity  (auto-creates record on run completion)
 
-asyncio background task
+asyncio background task (in proxy)
     └─ idle shutdown loop  (stops instances unused > INFERENCE_IDLE_TIMEOUT_HOURS)
 ```
 
 ---
 
-## Data Model
+## Docker Container Design (TASK-13.7)
 
-### `InferenceStatus` (enum)
+### Container split rationale
 
-| Value          | Meaning                                      |
-|----------------|----------------------------------------------|
-| `unloaded`     | Record exists; no pod/process running        |
-| `initialising` | Pod is starting / GGUF loading               |
-| `ready`        | Serving inference requests                   |
-| `error`        | Start failed; pod in error state             |
-| `terminated`   | Explicitly stopped or timed out              |
+| Concern | Proxy API | Inference Worker |
+|---------|-----------|-----------------|
+| FastAPI routes + auth | ✅ | ❌ |
+| SQLAlchemy / DB access | ✅ | ❌ |
+| K8s pod orchestration | ✅ | ❌ |
+| llama-cpp-python | ❌ | ✅ |
+| torch (future) | ❌ | ✅ |
+| Typical image size | ~300 MB | ~3–5 GB |
+| Restarts on code change | Fast | Fast (deps cached) |
 
-### `InferenceConfig` (create/update payload)
+---
+
+### Proxy API — `docker/proxy/Dockerfile`
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+FROM python:3.12-slim AS builder
+RUN pip install uv
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+# Cache uv package downloads — persists across rebuilds
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --group proxy
+FROM python:3.12-slim AS runtime
+WORKDIR /app
+COPY --from=builder /app/.venv ./.venv
+COPY src/ ./src/
+COPY alembic.ini ./
+ENV PATH="/app/.venv/bin:$PATH"
+EXPOSE 8000
+HEALTHCHECK --interval=10s --timeout=3s \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+CMD ["uvicorn", "interactors.api.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Key points:**
+- Only installs the `proxy` dependency group — no torch, no llama-cpp-python
+- BuildKit `--mount=type=cache` on `/root/.cache/uv` persists the package cache across every rebuild
+- `--frozen` ensures reproducible installs from `uv.lock`
+
+---
+
+### Inference Worker — `docker/inference/Dockerfile`
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+FROM python:3.12-slim AS builder
+RUN pip install uv
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+# Heavy packages (torch, llama-cpp-python) downloaded once, reused on
+# every subsequent build as long as resolved versions do not change.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --group inference
+FROM python:3.12-slim AS runtime
+WORKDIR /app
+COPY --from=builder /app/.venv ./.venv
+COPY docker/inference/server.py ./server.py
+COPY src/adapters/inference.py ./adapters/inference.py
+COPY src/adapters/prompt.py ./adapters/prompt.py
+COPY src/domain/ ./domain/
+ENV PATH="/app/.venv/bin:$PATH"
+ENV GGUF_PATH=""
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+**Key points:**
+- Only installs the `inference` dependency group
+- `GGUF_PATH` env var injected by K8s at pod start; container loads that specific model
+- `server.py` is a thin FastAPI wrapper around `LlamaCppInferenceAdapter`
+
+---
+
+### Inference Worker HTTP server — `docker/inference/server.py`
 
 ```python
-class InferenceConfig(BaseModel):
-    model_id: str
-    run_id: str | None = None          # links to the originating run
-    backend: Literal["local", "openrouter"]
-    backend_model_id: str = ""         # OpenRouter model string, empty for local
-    gguf_path: str = ""                # storage key for the GGUF file
-    idle_timeout_hours: float = 2.0    # env: INFERENCE_IDLE_TIMEOUT_HOURS
-```
+import os
+from fastapi import FastAPI
+from domain.models import InferenceRequest, InferenceResponse
+from adapters.inference import LlamaCppInferenceAdapter
 
-### `InferenceInstance` (full record)
+app = FastAPI()
+_adapter: LlamaCppInferenceAdapter | None = None
 
-```python
-class InferenceInstance(InferenceConfig):
-    id: str
-    status: InferenceStatus = InferenceStatus.UNLOADED
-    pod_name: str | None = None        # K8s pod name (local only)
-    last_used_at: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
-```
+@app.on_event("startup")
+async def startup() -> None:
+    global _adapter
+    _adapter = LlamaCppInferenceAdapter(model_path=os.environ["GGUF_PATH"])
 
-### DB migration — `inference_instances` table
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ready", "model": os.environ.get("GGUF_PATH", "")}
 
-| Column               | Type      | Notes                                  |
-|----------------------|-----------|----------------------------------------|
-| `id`                 | UUID PK   |                                        |
-| `model_id`           | VARCHAR   | FK → training_models.id (soft ref)     |
-| `run_id`             | VARCHAR   | nullable; FK → training_runs.id        |
-| `backend`            | VARCHAR   | `local` or `openrouter`                |
-| `backend_model_id`   | VARCHAR   | OpenRouter model string                |
-| `gguf_path`          | VARCHAR   | storage key for GGUF                   |
-| `status`             | VARCHAR   | InferenceStatus value                  |
-| `pod_name`           | VARCHAR   | nullable                               |
-| `last_used_at`       | TIMESTAMP | nullable; stamped on each infer call   |
-| `idle_timeout_hours` | FLOAT     | default 2.0                            |
-| `created_at`         | TIMESTAMP |                                        |
-| `updated_at`         | TIMESTAMP |                                        |
-
----
-
-## API Contract
-
-```
-GET    /api/inferences              → list[InferenceInstance]
-POST   /api/inferences              → InferenceInstance          body: InferenceConfig
-GET    /api/inferences/{id}         → InferenceInstance
-POST   /api/inferences/{id}/start   → InferenceInstance
-POST   /api/inferences/{id}/stop    → InferenceInstance
-DELETE /api/inferences/{id}         → 204 (only if unloaded|terminated)
-```
-
-### State machine
-
-```
-unloaded ──/start──► initialising ──(pod ready)──► ready
-                                   └──(pod error)──► error
-ready    ──/stop───► terminated
-error    ──/stop───► terminated
-any      ──(idle timeout)──► terminated
-terminated ──/start──► initialising  (restart is allowed)
-```
-
-### OpenRouter shortcut
-
-For `backend=openrouter`, `/start` skips K8s and immediately sets `status=ready`.
-
----
-
-## Kubernetes Pod Design (TASK-13.4)
-
-### `K8sPodAdapter` interface
-
-```python
-class K8sPodAdapter:
-    def start(self, instance: InferenceInstance) -> str:
-        """Launch pod; return pod_name."""
-
-    def stop(self, pod_name: str) -> None:
-        """Delete pod."""
-
-    def pod_status(self, pod_name: str) -> Literal["pending", "running", "failed", "unknown"]:
-        """Non-blocking poll of pod phase."""
-```
-
-Pod spec: single container using `ghcr.io/ggerganov/llama.cpp:server`, GGUF mounted
-via an init-container that downloads from storage. `restartPolicy: Never`.
-
-### Configuration env vars
-
-| Var                            | Default          | Purpose                       |
-|--------------------------------|------------------|-------------------------------|
-| `KUBECONFIG`                   | `~/.kube/config` | K8s credentials               |
-| `K8S_NAMESPACE`                | `default`        | Namespace for inference pods  |
-| `INFERENCE_IDLE_TIMEOUT_HOURS` | `2`              | Idle shutdown threshold       |
-| `K8S_MOCK`                     | `false`          | Use fake adapter (local dev)  |
-
----
-
-## Idle Shutdown Design (TASK-13.5)
-
-```python
-async def idle_shutdown_loop(store: InferenceStorePort, k8s: K8sPodAdapter):
-    while True:
-        await asyncio.sleep(300)  # poll every 5 minutes
-        timeout_hours = float(os.getenv("INFERENCE_IDLE_TIMEOUT_HOURS", "2"))
-        cutoff = datetime.utcnow() - timedelta(hours=timeout_hours)
-        for instance in store.list_by_status(InferenceStatus.READY):
-            if instance.last_used_at and instance.last_used_at < cutoff:
-                await stop_instance(instance, store, k8s)
-```
-
-Started in `app.lifespan`. `last_used_at` is stamped inside inference routes after
-each successful infer call.
-
----
-
-## UI Design (TASK-13.6)
-
-### InferencePage layout
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  Inference Instances                          [+ New Instance]│
-├──────────────┬──────────────┬────────────┬────────────┬──────┤
-│  Model       │  Backend     │  Status    │  Last used │ Act. │
-├──────────────┼──────────────┼────────────┼────────────┼──────┤
-│  SmolLM-v2   │  local       │ ● ready    │  2 min ago │ Stop │
-│  Claude-haiku│  openrouter  │ ○ unloaded │  —         │Start │
-│  SmolLM-v1   │  local       │ ✕ error    │  1 hr ago  │Start │
-└──────────────┴──────────────┴────────────┴────────────┴──────┘
-```
-
-### Status badge colours
-
-| Status        | Colour  |
-|---------------|---------|
-| `unloaded`    | grey    |
-| `initialising`| yellow  |
-| `ready`       | green   |
-| `error`       | red     |
-| `terminated`  | slate   |
-
-### New files
-
-| File | Purpose |
-|------|---------|
-| `ui/src/api/inferences.ts` | API client with typed functions |
-| `ui/src/pages/InferencePage.tsx` | Main page: table + actions |
-| `ui/src/components/InferenceStatusBadge.tsx` | Reusable status chip |
-
-### Updated files
-
-| File | Change |
-|------|--------|
-| `ui/src/types/index.ts` | Add `InferenceStatus`, `InferenceInstance` |
-| `ui/src/App.tsx` | Add `/inferences` route |
-| Main nav component | Add **Inference** tab |
-
----
-
-## Task Dependencies & Build Order
-
-```
-TASK-13.1  (domain model + DB store)      ← start here
-    │
-    ├─► TASK-13.2  (REST API)             ┐
-    ├─► TASK-13.3  (auto-create activity) │ run in parallel
-    └─► TASK-13.4  (K8s adapter)          ┘
-                │
-                ▼
-        TASK-13.5  (idle shutdown)   ← needs 13.2 + 13.4
-        TASK-13.6  (UI)              ← needs 13.2 (API contract)
+@app.post("/infer", response_model=InferenceResponse)
+def infer(request: InferenceRequest) -> InferenceResponse:
+    assert _adapter is not None
+    return _adapter.infer(request)
 ```
 
 ---
 
-## Testing Strategy
+### Dependency groups — `pyproject.toml`
 
-| Task | Test file | What is tested |
-|------|-----------|----------------|
-| 13.1 | `tests/unit/test_inference_store.py` | CRUD, status transitions |
-| 13.2 | `tests/integration/test_inferences_api.py` | All 6 endpoints, auth, state guards |
-| 13.3 | `tests/unit/test_create_inference_activity.py` | Mock store, workflow hook |
-| 13.4 | `tests/unit/test_k8s_adapter.py` | Mock k8s client, pod phases |
-| 13.5 | `tests/unit/test_idle_shutdown.py` | Time travel via mock datetime |
-| 13.6 | MSW handlers + RTL page tests | Table render, start/stop flows |
-
-**Coverage gate: 80% minimum on all new files.**
+```toml
+[tool.uv.groups]
+proxy = [
+  "fastapi", "uvicorn[standard]", "sqlalchemy", "alembic",
+  "httpx", "pydantic", "kubernetes", "slowapi", "auth0-python",
+]
+inference = [
+  "llama-cpp-python", "fastapi", "uvicorn[standard]", "pydantic",
+  # torch added here when needed for quantisation/eval inside container
+]
+```
 
 ---
 
-## Open Questions / Risks
+### Local development — `docker-compose.yml`
 
-| # | Question | Risk | Mitigation |
-|---|----------|------|------------|
-| 1 | K8s cluster available in dev? | High | `K8S_MOCK=true` fake adapter |
-| 2 | GGUF download latency before pod ready? | Medium | `initialising` status + polling UI |
-| 3 | One pod per instance or shared? | Medium | One pod per instance; idle shutdown controls cost |
-| 4 | Epic-12 dataset IDs in instances? | Low | `run_id` optional; dataset info from run record |
+```yaml
+version: "3.9"
+services:
+  proxy:
+    build: { context: ., dockerfile: docker/proxy/Dockerfile }
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: postgresql://llm:llm@db:5432/llm
+      K8S_MOCK: "true"
+      INFERENCE_WORKER_URL: http://inference:8080
+    depends_on: [db]
+  inference:
+    build: { context: ., dockerfile: docker/inference/Dockerfile }
+    ports: ["8080:8080"]
+    volumes: ["./models:/models:ro"]
+    environment:
+      GGUF_PATH: /models/model.gguf
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: llm, POSTGRES_PASSWORD: llm, POSTGRES_DB: llm }
+    volumes: [pgdata:/var/lib/postgresql/data]
+volumes:
+  pgdata:
+```
+
+---
+
+### How the proxy forwards inference to the worker
+
+1. Receives `POST /api/inferences/{id}/infer`
+2. Looks up `InferenceInstance` — asserts `status=ready`
+3. Stamps `last_used_at = now()`
+4. Resolves worker URL: `http://{pod_name}.{K8S_NAMESPACE}.svc.cluster.local:8080/infer`
+   (or `INFERENCE_WORKER_URL` env var in local dev)
+5. Forwards request body via `httpx`; returns response
+
+The proxy is stateless with respect to model weights — all model loading lives in the worker.
+
+---
+
