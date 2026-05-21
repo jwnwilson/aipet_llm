@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/models",
     tags=["models"],
+    dependencies=[Depends(require_approved)],
 )
 
 

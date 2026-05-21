@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/runs",
     tags=["runs"],
+    dependencies=[Depends(require_approved)],
 )
 
 

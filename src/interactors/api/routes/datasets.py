@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/api/datasets",
     tags=["datasets"],
+    dependencies=[Depends(require_approved)],
 )
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
