@@ -12,13 +12,14 @@ const DEFAULT_REQUEST: InferenceRequest = {
       { type: 'bowl', id: 'bowl-1', distance: 2.5 },
       { type: 'toy', id: 'toy-1', distance: 4.0 },
     ],
-    pet_stats: {
-      hunger: 0.8,
-      tiredness: 0.2,
-      boredom: 0.3,
-      social: 0.1,
-      toilet: 0.0,
-    },
+    tick: 1,
+  },
+  pet_stats: {
+    hunger: 0.8,
+    tiredness: 0.2,
+    boredom: 0.3,
+    social: 0.1,
+    toilet: 0.0,
   },
 }
 

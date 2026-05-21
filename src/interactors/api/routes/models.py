@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -21,6 +22,10 @@ router = APIRouter(
 )
 
 
+class ModelWithStatus(TrainingModel):
+    inference_status: Literal["unloaded", "ready"] = "unloaded"
+
+
 @router.get("", response_model=list[TrainingModel])
 def list_models(store: ModelStorePort = Depends(get_model_store)) -> list[TrainingModel]:
     return store.list()
@@ -34,15 +39,17 @@ def create_model(
     return store.create(config)
 
 
-@router.get("/{model_id}", response_model=TrainingModel)
+@router.get("/{model_id}", response_model=ModelWithStatus)
 def get_model(
     model_id: str,
     store: ModelStorePort = Depends(get_model_store),
-) -> TrainingModel:
+) -> ModelWithStatus:
     model = store.get(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found")
-    return model
+    local_path = Path("models/cache") / model_id / "model.gguf"
+    status: Literal["unloaded", "ready"] = "ready" if local_path.exists() else "unloaded"
+    return ModelWithStatus(**model.model_dump(), inference_status=status)
 
 
 @router.put("/{model_id}", response_model=TrainingModel)

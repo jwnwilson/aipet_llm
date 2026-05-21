@@ -20,6 +20,7 @@ export interface TrainingModel extends TrainingModelConfig {
   id: string
   created_at: string
   updated_at: string
+  inference_status?: 'unloaded' | 'ready'
 }
 
 export type RunStatus =
@@ -74,14 +75,16 @@ export interface PetStats {
 
 export interface SceneData {
   objects: SceneObject[]
-  pet_stats: PetStats
+  tick: number
 }
 
 export interface InferenceRequest {
   scene: SceneData
+  pet_stats: PetStats
 }
 
 export interface InferenceResponse {
+  stat: string | null
   action: string
   target_object_id: string | null
   confidence: number | null

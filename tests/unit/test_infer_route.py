@@ -22,9 +22,12 @@ def _make_model(**kwargs) -> TrainingModel:
     return TrainingModel(**{**defaults, **kwargs})
 
 
-SCENE = {"objects": [], "pet_stats": {"hunger": 0.5, "tiredness": 0.2, "boredom": 0.3, "social": 0.1, "toilet": 0.0}}
+SCENE = {"objects": [], "tick": 1}
 IDLE = InferenceResponse(action=Action.IDLE)
-REQUEST_BODY = {"scene": SCENE}
+REQUEST_BODY = {
+    "scene": SCENE,
+    "pet_stats": {"hunger": 0.5, "tiredness": 0.2, "boredom": 0.3, "social": 0.1, "toilet": 0.0},
+}
 
 
 @pytest.fixture

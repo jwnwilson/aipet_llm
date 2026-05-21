@@ -1692,7 +1692,9 @@ inference = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
+    { name = "pytest-xdist" },
     { name = "types-tqdm" },
 ]
 
@@ -1728,7 +1730,9 @@ provides-extras = ["inference", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-tqdm", specifier = ">=4.67.3.20260508" },
 ]
 
