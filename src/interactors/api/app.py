@@ -41,15 +41,18 @@ def _resolve_model_path(storage) -> str:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from adapters.auth.auth0 import Auth0Adapter
     from adapters.database import init_db, make_engine
+    from adapters.database.dataset_store import SQLAlchemyDatasetStore
     from adapters.database.model_store import SQLAlchemyModelStore
     from adapters.database.run_store import SQLAlchemyRunStore
     from adapters.inference import LlamaCppInferenceAdapter
     from interactors.api.deps import (
         clear_adapter,
         clear_auth,
+        clear_dataset_store,
         clear_storage,
         configure,
         configure_auth,
+        configure_dataset_store,
         configure_model_store,
         configure_run_store,
         configure_storage as configure_api_storage,
@@ -68,6 +71,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     run_store = SQLAlchemyRunStore(engine)
     configure_run_store(run_store)
     configure_activity_run_store(run_store)
+
+    dataset_store = SQLAlchemyDatasetStore(engine)
+    configure_dataset_store(dataset_store)
 
     storage = _make_storage_adapter()
     configure_storage(storage)
@@ -111,18 +117,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         model_path = _resolve_model_path(storage)
 
     adapter = LlamaCppInferenceAdapter(model_path=model_path)
-    try:
-        adapter.load()
-        log.info("Model loaded into memory: %s", model_path)
-    except Exception as exc:
-        log.warning("Could not pre-load model — will load on first request: %s", exc)
     configure(adapter)
+    log.info("Inference adapter configured (model will load on first request): %s", model_path)
 
     try:
         yield
     finally:
         clear_adapter()
         clear_auth()
+        clear_dataset_store()
         clear_storage()
 
 

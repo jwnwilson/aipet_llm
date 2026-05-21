@@ -228,7 +228,7 @@ React/TypeScript frontend added as `ui/` sub-project (Vite + React + Tailwind). 
 
 ---
 
-## EPIC-8: LLM Training Pipeline (partial)
+## EPIC-8: LLM Training Pipeline
 
 > Improve reliability, observability, and user control over the training pipeline.
 
@@ -244,7 +244,11 @@ React/TypeScript frontend added as `ui/` sub-project (Vite + React + Tailwind). 
 `epochs`, `patience`, `warmup_ratio`, `remote_backend`, `base_model`, `num_train_samples`, and `num_eval_samples` all flow from API trigger → `RunConfig.training_config` (persisted as JSON blob) → `ExperimentConfig` → Temporal workflow activities. Override tests present in `test_remote_adapters.py` (epochs, remote_backend). `training_config` column added via migration `0006`.
 **Outputs:** Updated `src/interactors/api/routes/runs.py`, `src/domain/models.py`, `src/adapters/database/run_store.py`, `src/adapters/database/alembic/versions/0006_add_model_config_to_runs.py`, updated `ui/src/types/index.ts`, `ui/src/pages/RunDetailPage.tsx`
 
-### Feature 8.3 — User-controlled training via UI (partial)
+### Feature 8.3 — User-controlled training via UI
+
+#### TASK-8.3.1 — Upload training and eval datasets via UI
+`POST /api/datasets/train` and `POST /api/datasets/eval` endpoints accept multipart JSONL file uploads and store them via `StoragePort`. `write_stream()` added to `StoragePort`. `DatasetUpload` React component (file pickers + upload button + per-upload error display) placed on the Model detail page.
+**Outputs:** `src/interactors/api/routes/datasets.py`, updated `src/domain/ports.py`, `ui/src/components/DatasetUpload.tsx`, updated `ui/src/pages/ModelDetailPage.tsx`
 
 #### TASK-8.3.2 — Select base model via UI
 "Base model" free-text input added to the RunModal trigger form; value passed as `base_model` in the workflow trigger payload.
@@ -254,8 +258,12 @@ React/TypeScript frontend added as `ui/` sub-project (Vite + React + Tailwind). 
 "Remote backend" dropdown (local / kaggle / ssh / vastai / colab) added to RunModal; value passed as `remote_backend` in the trigger payload.
 **Outputs:** Updated `ui/src/components/RunModal.tsx`
 
-### Feature 8.4 — Eval improvements (partial)
+### Feature 8.4 — Eval improvements
 
 #### TASK-8.4.1 — Improve eval metrics and expose via API
 `QualityReport` Pydantic model captures per-stat accuracy, target-object accuracy, priority-conflict accuracy, fallback accuracy, and action distribution. Written to `data/workflow/{run_id}/quality_report.json` during `evaluate_activity`. `GET /api/runs/{run_id}/evaluation` returns `EvaluationData` (run status + eval score + quality report).
 **Outputs:** `src/domain/models.py` (`QualityReport`, `EvaluationData`), updated `src/interactors/temporal/activities.py`, `src/interactors/api/routes/runs.py`
+
+#### TASK-8.4.2 — Display eval results in UI
+Eval panel added to Run detail page: fetches `GET /api/runs/{run_id}/evaluation` (enabled only for terminal runs with `eval_valid_pct`), shows pass/fail badge, overall score, per-stat accuracy table, and action distribution. `EvalMetrics` component extended with `qualityReport` prop. Cancel-run button added (calls `POST /api/runs/{run_id}/cancel`); row-click navigation on Model list page.
+**Outputs:** Updated `ui/src/pages/RunDetailPage.tsx`, updated `ui/src/components/EvalMetrics.tsx`, `ui/src/api/runs.ts` (`cancelRun`, `isRunCancellable`), updated `src/interactors/api/routes/runs.py`

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from domain.models import TrainingModel, TrainingModelConfig
+from domain.models import InferenceRequest, InferenceResponse, TrainingModel, TrainingModelConfig
 from domain.ports import ModelStorePort
 from interactors.api.auth import require_approved
-from interactors.api.deps import get_model_store
+from interactors.api.deps import get_adapter, get_model_store
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +20,10 @@ router = APIRouter(
     tags=["models"],
     dependencies=[Depends(require_approved)],
 )
+
+
+class ModelWithStatus(TrainingModel):
+    inference_status: Literal["unloaded", "ready"] = "unloaded"
 
 
 @router.get("", response_model=list[TrainingModel])
@@ -34,15 +39,17 @@ def create_model(
     return store.create(config)
 
 
-@router.get("/{model_id}", response_model=TrainingModel)
+@router.get("/{model_id}", response_model=ModelWithStatus)
 def get_model(
     model_id: str,
     store: ModelStorePort = Depends(get_model_store),
-) -> TrainingModel:
+) -> ModelWithStatus:
     model = store.get(model_id)
     if model is None:
         raise HTTPException(status_code=404, detail="Model not found")
-    return model
+    local_path = Path("models/cache") / model_id / "model.gguf"
+    status: Literal["unloaded", "ready"] = "ready" if local_path.exists() else "unloaded"
+    return ModelWithStatus(**model.model_dump(), inference_status=status)
 
 
 @router.put("/{model_id}", response_model=TrainingModel)
@@ -117,3 +124,28 @@ def activate_model(
 
     log.info("Activated model %s — gguf_path=%s", model_id, model.gguf_path)
     return model
+
+
+@router.post("/{model_id}/infer", response_model=InferenceResponse)
+def infer(
+    model_id: str,
+    request: InferenceRequest,
+    store: ModelStorePort = Depends(get_model_store),
+) -> InferenceResponse:
+    model = store.get(model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    if model.backend == "openrouter":
+        from adapters.inference_openrouter import OpenRouterInferenceAdapter
+        adapter = OpenRouterInferenceAdapter(model_id=model.backend_model_id)
+    else:
+        try:
+            adapter = get_adapter()
+        except RuntimeError:
+            raise HTTPException(
+                status_code=503,
+                detail="Local inference model is not loaded — activate a model first",
+            )
+
+    return adapter.infer(request)

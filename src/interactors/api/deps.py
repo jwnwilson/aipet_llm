@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from domain.ports import AuthPort, InferencePort, ModelStorePort, RunStorePort, StoragePort
+from domain.ports import AuthPort, DatasetStorePort, InferencePort, ModelStorePort, RunStorePort, StoragePort
 
 # ---------------------------------------------------------------------------
 # Inference adapter
@@ -84,6 +84,29 @@ def configure_auth(port: AuthPort) -> None:
 def clear_auth() -> None:
     global _auth_port
     _auth_port = None
+
+
+# ---------------------------------------------------------------------------
+# Dataset store
+# ---------------------------------------------------------------------------
+
+_dataset_store: DatasetStorePort | None = None
+
+
+def get_dataset_store() -> DatasetStorePort:
+    if _dataset_store is None:
+        raise RuntimeError("DatasetStorePort has not been configured.")
+    return _dataset_store
+
+
+def configure_dataset_store(store: DatasetStorePort) -> None:
+    global _dataset_store
+    _dataset_store = store
+
+
+def clear_dataset_store() -> None:
+    global _dataset_store
+    _dataset_store = None
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
 from domain.models import (
+    DatasetConfig,
+    DatasetRecord,
     InferenceRequest,
     InferenceResponse,
     RemoteTrainConfig,
@@ -200,4 +202,11 @@ class AuthPort(ABC):
     def authenticate(self, token: str) -> UserContext | None:
         """Validate the JWT and return a UserContext, or None if invalid/expired."""
 
+
+class DatasetStorePort(StorePort["DatasetRecord", "DatasetConfig"]):
+    """Abstract interface for persisting dataset metadata records.
+
+    The actual file content lives in a ``StoragePort`` under ``key``.
+    This store tracks the metadata: name, type, storage key, timestamps.
+    """
 

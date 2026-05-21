@@ -4,22 +4,6 @@
 
 ---
 
-## EPIC-8: LLM Training Pipeline
-
-> Improve reliability, observability, and user control over the training pipeline.
-
-### TASK-8.1 — Upload training and eval data via UI
-Add API endpoints (`POST /api/datasets/train`, `POST /api/datasets/eval`) that accept JSONL file uploads and store them via `StoragePort`. Wire up a file-upload form in llm-ui.
-
-**Outputs:** `src/interactors/api/routes/datasets.py`, updated `src/domain/ports.py`, UI upload component
-
-### TASK-8.2 — Display eval results in llm-ui
-Add an eval results panel to the run detail page showing per-action accuracy and the overall pass/fail gate result. Use the existing `GET /api/runs/{run_id}/evaluation` endpoint and the `QualityReport` it returns. The current `EvalMetrics.tsx` only shows overall pass/fail — extend it to render `per_stat_accuracy` and `action_distribution`.
-
-**Outputs:** Updated `ui/src/pages/RunDetailPage.tsx`, updated `ui/src/components/EvalMetrics.tsx`
-
----
-
 ## EPIC-9: Inference Proxy
 
 > llm-api acts as a unified inference proxy, routing requests to either OpenRouter (cloud LLMs) or a locally-hosted GGUF model, selected by model ID at request time.
@@ -85,3 +69,25 @@ Add `.github/workflows/e2e.yml` triggered on `schedule: cron` (once daily at 02:
 Audit `tests/e2e/` and either fix broken tests or mark them `@pytest.mark.skip(reason="...")` with a tracking note. Ensure the suite passes cleanly in the scheduled run.
 
 **Outputs:** Updated `tests/e2e/` files
+
+---
+
+## Epic-12 - Improve dataset management
+Datasets have a 1-many relationship with models, ensure that we can support that in the API. Add a new tab in the UI for datasets.
+
+We want to ability to:
+- Upload a new training and eval dataset in the dataset tab
+- Select a dataset when starting a run with a model
+- Track which dataset has been used for a run and show that for the run on the ui
+
+---
+
+## Epic-13 - Add inference management to ui
+We want users to be able to test new models that they train on the platform. Add an inference tab that will show a list of trained models that are available. Create inference table and model in the API to store models + datasets + config to load for the user. A new record will be created for each successfully trained model and the model will track if the inference is available and laoded or needs to be initialised.
+
+For local models that are not using openrouter should be able to be started on our k8 cluster. Setup logic so that the backend can trigger a new pod for each desired inference to be avilable. We will also need to track the state of the pod so the user knows when it's available. We will need a cron job to shut down inference that have not been used for 2 hours. This timelimit should be configurable.
+
+---
+
+## Epic-14 - Per User data
+I want to filter models, datasets and runs by user so that users can have their own private models. Update the database so that all our data can have an owner, then add filters to the API to filter responses by the user. Ensure this is done from the auth data / jwt signature and automatically applied to avoid users from seeing other users data. 

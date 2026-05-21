@@ -1,17 +1,6 @@
 #TODO
 
-# Consolidate to llm-api
-- Rename this project to "llm-api" and make it a generic training platform. Remove legacy branding references [DONE - see EPIC-7]
-- Add llm-ui to this project
-
-## LLM training pipeline
-- Better error handling on the workflows to update runs to "error" with "error_msg" shown on llm-ui
-- Run overrides are not flowing to the pipeline investigate add tests then fix that
-- Allow user to upload training and eval data via ui
-- Select a model via ui
-- Select a platform to train on via ui
-- Improve eval for the training and make that data available via API
-- Report the eval for the model in a UI
+- Fix kaggle and verify vastai runpod training works
 
 ## Better llm-api architecture
 - Make the llm API load instantly by decoupling it from model loading.

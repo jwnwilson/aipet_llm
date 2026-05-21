@@ -16,8 +16,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
 from interactors.api.app import app
-from interactors.api.deps import get_model_store, get_run_store
+from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
 from adapters.database import Base, init_db
+from adapters.database.dataset_store import SQLAlchemyDatasetStore
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
 
@@ -49,8 +50,10 @@ async def client():
     init_db(engine)
     store = SQLAlchemyModelStore(engine)
     run_store = SQLAlchemyRunStore(engine)
+    dataset_store = SQLAlchemyDatasetStore(engine)
     app.dependency_overrides[get_model_store] = lambda: store
     app.dependency_overrides[get_run_store] = lambda: run_store
+    app.dependency_overrides[get_dataset_store] = lambda: dataset_store
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:

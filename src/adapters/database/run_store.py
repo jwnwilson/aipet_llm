@@ -26,6 +26,8 @@ class _RunRow(Base):
     progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     progress_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     training_config: Mapped[str | None] = mapped_column(Text, nullable=True)
+    train_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    eval_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
@@ -40,6 +42,8 @@ def _row_to_domain(row: _RunRow) -> RunRecord:
         progress=row.progress,
         progress_detail=row.progress_detail,
         training_config=json.loads(row.training_config) if row.training_config else None,
+        train_dataset_id=row.train_dataset_id,
+        eval_dataset_id=row.eval_dataset_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -60,6 +64,8 @@ class SQLAlchemyRunStore(RunStorePort):
             status=RunStatus.PENDING.value,
             eval_valid_pct=None,
             training_config=json.dumps(config.training_config) if config.training_config else None,
+            train_dataset_id=config.train_dataset_id,
+            eval_dataset_id=config.eval_dataset_id,
             created_at=now,
             updated_at=now,
         )

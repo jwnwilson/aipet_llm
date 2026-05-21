@@ -12,12 +12,15 @@ export interface TrainingModelConfig {
   skip_generate: boolean
   gguf_path?: string   // optional — backend defaults to ''
   is_active?: boolean  // optional — backend defaults to false
+  backend?: 'local' | 'openrouter'  // optional — backend defaults to 'local'
+  backend_model_id?: string  // optional — backend defaults to ''
 }
 
 export interface TrainingModel extends TrainingModelConfig {
   id: string
   created_at: string
   updated_at: string
+  inference_status?: 'unloaded' | 'ready'
 }
 
 export type RunStatus =
@@ -54,6 +57,37 @@ export interface TriggerRunRequest {
   base_model?: string | null
   num_train_samples?: number | null
   num_eval_samples?: number | null
+}
+
+export interface SceneObject {
+  type: 'bowl' | 'bed' | 'toy' | 'player' | 'pet'
+  id: string
+  distance: number
+}
+
+export interface PetStats {
+  hunger: number
+  tiredness: number
+  boredom: number
+  social: number
+  toilet: number
+}
+
+export interface SceneData {
+  objects: SceneObject[]
+  tick: number
+}
+
+export interface InferenceRequest {
+  scene: SceneData
+  pet_stats: PetStats
+}
+
+export interface InferenceResponse {
+  stat: string | null
+  action: string
+  target_object_id: string | null
+  confidence: number | null
 }
 
 export interface UserContext {

@@ -1,0 +1,189 @@
+"""Integration tests for named dataset CRUD endpoints."""
+
+from __future__ import annotations
+
+import io
+from unittest.mock import MagicMock
+
+import httpx
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport
+from sqlalchemy import create_engine
+from sqlalchemy.pool import StaticPool
+
+from adapters.database import Base, init_db
+from adapters.database.dataset_store import SQLAlchemyDatasetStore
+from interactors.api.app import app
+from interactors.api.deps import (
+    clear_dataset_store,
+    clear_storage,
+    configure_dataset_store,
+    configure_storage,
+)
+
+VALID_JSONL = b'{"prompt": "hello", "completion": "world"}\n'
+
+
+@pytest_asyncio.fixture
+async def client():
+    storage = MagicMock()
+    storage.upload = MagicMock()
+    storage.delete = MagicMock()
+    configure_storage(storage)
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    init_db(engine)
+    dataset_store = SQLAlchemyDatasetStore(engine)
+    configure_dataset_store(dataset_store)
+
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        yield c, storage, dataset_store
+
+    clear_storage()
+    clear_dataset_store()
+
+
+class TestListDatasets:
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_initially(self, client):
+        c, _, _ = client
+        resp = await c.get("/api/datasets")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_returns_created_datasets(self, client):
+        c, _, _ = client
+        await c.post(
+            "/api/datasets",
+            data={"name": "my-train", "dataset_type": "train"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        resp = await c.get("/api/datasets")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body) == 1
+        assert body[0]["name"] == "my-train"
+        assert body[0]["dataset_type"] == "train"
+
+
+class TestCreateDataset:
+    @pytest.mark.asyncio
+    async def test_creates_record_and_returns_201(self, client):
+        c, _, _ = client
+        resp = await c.post(
+            "/api/datasets",
+            data={"name": "train-v1", "dataset_type": "train", "description": "first version"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["name"] == "train-v1"
+        assert body["dataset_type"] == "train"
+        assert body["description"] == "first version"
+        assert body["id"]
+
+    @pytest.mark.asyncio
+    async def test_uploads_to_storage(self, client):
+        c, storage, _ = client
+        await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "eval"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        assert storage.upload.called
+
+    @pytest.mark.asyncio
+    async def test_storage_key_is_unique_uuid_path(self, client):
+        c, storage, _ = client
+        await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "eval"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        key = storage.upload.call_args[0][1]
+        assert key.startswith("datasets/")
+        assert key.endswith(".jsonl")
+
+    @pytest.mark.asyncio
+    async def test_empty_file_returns_400(self, client):
+        c, _, _ = client
+        resp = await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "train"},
+            files={"file": ("data.jsonl", io.BytesIO(b""), "application/octet-stream")},
+        )
+        assert resp.status_code == 400
+
+
+class TestGetDataset:
+    @pytest.mark.asyncio
+    async def test_returns_created_dataset(self, client):
+        c, _, _ = client
+        create_resp = await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "train"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        dataset_id = create_resp.json()["id"]
+        get_resp = await c.get(f"/api/datasets/{dataset_id}")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["id"] == dataset_id
+
+    @pytest.mark.asyncio
+    async def test_returns_404_for_unknown_id(self, client):
+        c, _, _ = client
+        resp = await c.get("/api/datasets/no-such-id")
+        assert resp.status_code == 404
+
+
+class TestDeleteDataset:
+    @pytest.mark.asyncio
+    async def test_returns_204(self, client):
+        c, _, _ = client
+        create_resp = await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "train"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        dataset_id = create_resp.json()["id"]
+        del_resp = await c.delete(f"/api/datasets/{dataset_id}")
+        assert del_resp.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_removes_from_store(self, client):
+        c, _, _ = client
+        create_resp = await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "train"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        dataset_id = create_resp.json()["id"]
+        await c.delete(f"/api/datasets/{dataset_id}")
+        get_resp = await c.get(f"/api/datasets/{dataset_id}")
+        assert get_resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_calls_storage_delete(self, client):
+        c, storage, _ = client
+        create_resp = await c.post(
+            "/api/datasets",
+            data={"name": "ds", "dataset_type": "train"},
+            files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
+        )
+        dataset_id = create_resp.json()["id"]
+        await c.delete(f"/api/datasets/{dataset_id}")
+        assert storage.delete.called
+
+    @pytest.mark.asyncio
+    async def test_returns_404_for_unknown_id(self, client):
+        c, _, _ = client
+        resp = await c.delete("/api/datasets/no-such-id")
+        assert resp.status_code == 404
