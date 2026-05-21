@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { RunDetailPage } from '@/pages/RunDetailPage'
-import { RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
+import { RUN_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE } from '../msw/fixtures'
 import { server } from '../msw/server'
 
 function renderPage(runId: string) {
@@ -159,6 +159,27 @@ describe('RunDetailPage', () => {
       expect(screen.getByText(/95\.0%/)).toBeInTheDocument()
     })
     expect(screen.queryByText('hunger')).not.toBeInTheDocument()
+  })
+
+  it('shows train dataset name when run has train_dataset_id', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id)
+          return HttpResponse.json({ ...RUN_FIXTURE, train_dataset_id: TRAIN_DATASET_FIXTURE.id })
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      })
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() =>
+      expect(screen.getByText(TRAIN_DATASET_FIXTURE.name)).toBeInTheDocument()
+    )
+  })
+
+  it('does not show dataset rows when train_dataset_id is null', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
+    expect(screen.queryByText(/train dataset/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/eval dataset/i)).not.toBeInTheDocument()
   })
 
   it('shows error message when eval report fetch fails', async () => {
