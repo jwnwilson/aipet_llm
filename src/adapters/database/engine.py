@@ -40,7 +40,7 @@ def init_db(engine: Engine) -> None:
     _engine = engine
     _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
-    if ":memory:" in str(engine.url):
+    if str(engine.url).startswith("sqlite"):
         Base.metadata.create_all(engine)
 
 
