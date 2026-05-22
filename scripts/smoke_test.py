@@ -30,7 +30,7 @@ def check(label: str, resp: httpx.Response, expected_status: int = 200) -> dict:
     return resp.json()
 
 
-def create_model(client: httpx.Client, api_url: str, headers: dict) -> dict:
+def create_model(client: httpx.Client, api_url: str, headers: dict[str, str]) -> dict:
     """POST /api/models — return created model record."""
     payload = {
         "name": "smoke-test-model",
@@ -43,13 +43,13 @@ def create_model(client: httpx.Client, api_url: str, headers: dict) -> dict:
     return check("POST /api/models", resp, expected_status=201)
 
 
-def upload_dataset(client: httpx.Client, api_url: str, headers: dict) -> dict:
+def upload_dataset(client: httpx.Client, api_url: str, headers: dict[str, str]) -> dict:
     """POST /api/datasets — upload a tiny synthetic JSONL; return dataset record."""
     lines = [
         json.dumps({"prompt": "scene tick=1 hunger=0.8", "completion": "EAT bowl1"}),
         json.dumps({"prompt": "scene tick=2 boredom=0.9", "completion": "PLAY toy1"}),
     ]
-    content = "\n".join(lines).encode()
+    content = ("\n".join(lines) + "\n").encode()
     resp = client.post(
         f"{api_url}/api/datasets",
         data={"name": "smoke-test-dataset", "dataset_type": "train", "description": "Smoke test"},
@@ -62,7 +62,7 @@ def upload_dataset(client: httpx.Client, api_url: str, headers: dict) -> dict:
 def trigger_run(
     client: httpx.Client,
     api_url: str,
-    headers: dict,
+    headers: dict[str, str],
     model_id: str,
     dataset_id: str,
 ) -> dict:
@@ -78,10 +78,13 @@ def trigger_run(
     return check("POST /api/runs/trigger", resp, expected_status=202)
 
 
+_TERMINAL_FAILURE_STATUSES = frozenset({"failed", "cancelled"})
+
+
 def poll_run_until_started(
     client: httpx.Client,
     api_url: str,
-    headers: dict,
+    headers: dict[str, str],
     run_id: str,
     timeout_seconds: int = 60,
     poll_interval: int = 5,
@@ -93,6 +96,12 @@ def poll_run_until_started(
         run = check(f"GET /api/runs/{run_id}", resp)
         status = run.get("status", "")
         if status != "pending":
+            if status in _TERMINAL_FAILURE_STATUSES:
+                print(
+                    f"ERROR: run {run_id} entered terminal status '{status}' — training failed",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             return run
         remaining = deadline - time.monotonic()
         if remaining <= 0:
