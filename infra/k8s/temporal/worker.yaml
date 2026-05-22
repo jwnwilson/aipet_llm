@@ -18,8 +18,8 @@ spec:
         - name: ecr-credentials
       containers:
         - name: temporal-worker
-          # Placeholder — overwritten by CI: kubectl set image deployment/temporal-worker temporal-worker=<ECR_URL>:<sha>
-          image: <ECR_REPOSITORY_URL>:latest
+          # Placeholder — stamped by CI deploy workflow with the proxy image ref
+          image: <ECR_PROXY_IMAGE>
           command: ["python", "-m", "interactors.temporal.worker"]
           env:
             - name: PYTHONPATH
