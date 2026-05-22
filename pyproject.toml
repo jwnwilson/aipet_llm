@@ -33,6 +33,7 @@ dependencies = [
     "alembic>=1.18.4",
     "tqdm>=4.67.3",
     "psycopg2-binary>=2.9.12",
+    "kubernetes>=31.0",
 ]
 
 [project.optional-dependencies]

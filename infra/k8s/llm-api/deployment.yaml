@@ -48,7 +48,7 @@ spec:
             - containerPort: 8000
           env:
             - name: INFERENCE_DISABLED
-              value: "false"
+              value: "true"
             - name: K8S_MOCK
               value: "false"
             - name: K8S_NAMESPACE

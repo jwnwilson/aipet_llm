@@ -99,27 +99,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "protected endpoints will return 500 until configured"
         )
 
-    from adapters.storage import download_model
-    active = store.active()
-    if active and active.gguf_path:
-        local_path = Path("models/cache") / active.id / "model.gguf"
-        try:
-            download_model(storage, active.gguf_path, local_path)
-            model_path = str(local_path)
-            log.info("Loading active model %s from storage key %s", active.id, active.gguf_path)
-        except Exception:
-            log.warning(
-                "Could not load active model %s from storage; falling back",
-                active.id,
-                exc_info=True,
-            )
-            model_path = _resolve_model_path(storage)
-    else:
-        model_path = _resolve_model_path(storage)
+    inference_disabled = os.getenv("INFERENCE_DISABLED", "false").lower() == "true"
 
-    adapter = LlamaCppInferenceAdapter(model_path=model_path)
-    configure(adapter)
-    log.info("Inference adapter configured (model will load on first request): %s", model_path)
+    if inference_disabled:
+        log.info("INFERENCE_DISABLED=true — skipping local model download and inference adapter")
+    else:
+        from adapters.storage import download_model
+        active = store.active()
+        if active and active.gguf_path:
+            local_path = Path("models/cache") / active.id / "model.gguf"
+            try:
+                download_model(storage, active.gguf_path, local_path)
+                model_path = str(local_path)
+                log.info("Loading active model %s from storage key %s", active.id, active.gguf_path)
+            except Exception:
+                log.warning(
+                    "Could not load active model %s from storage; falling back",
+                    active.id,
+                    exc_info=True,
+                )
+                model_path = _resolve_model_path(storage)
+        else:
+            model_path = _resolve_model_path(storage)
+
+        adapter = LlamaCppInferenceAdapter(model_path=model_path)
+        configure(adapter)
+        log.info("Inference adapter configured (model will load on first request): %s", model_path)
 
     from adapters.compute.k8s import K8sPodAdapter, MockPodAdapter
     from interactors.api.deps import clear_pod_adapter, configure_pod_adapter
