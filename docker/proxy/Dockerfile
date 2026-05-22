@@ -12,6 +12,7 @@ COPY --from=builder /app/.venv ./.venv
 COPY src/ ./src/
 COPY alembic.ini* ./
 ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONPATH=/app/src
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
