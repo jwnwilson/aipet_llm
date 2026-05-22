@@ -12,34 +12,41 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    # API / proxy / temporal-worker base — no ML frameworks
     "fastapi>=0.136.1",
     "httpx>=0.28.1",
     "pydantic>=2.13.3",
-    "PyJWT[cryptography]>=2.8",
+    "PyJWT>=2.8",
+    "cryptography>=42.0",
     "temporalio>=1.27.0",
     "uvicorn>=0.46.0",
-    "datasets>=4.8.5",
-    "transformers>=5.7.0",
-    "torch>=2.5",
-    "accelerate>=1.1.0",
-    "bitsandbytes>=0.43.0",
-    "peft>=0.9.0",
-    "sentencepiece>=0.2.0",
-    "kaggle>=1.6",
     "boto3>=1.35",
-    "runpod>=1.7",
-    "vastai>=1.0",
     "sqlalchemy>=2.0.49",
     "alembic>=1.18.4",
     "tqdm>=4.67.3",
     "psycopg2-binary>=2.9.12",
     "kubernetes>=31.0",
+    # Lightweight compute-backend clients (used by temporal worker activities)
+    "kaggle>=1.6",
+    "runpod>=1.7",
+    "vastai>=1.0",
 ]
 
 [project.optional-dependencies]
 inference = [
     # Requires C++ compilation — install locally for RPi inference, not on training instances.
     "llama-cpp-python>=0.3.22",
+]
+training = [
+    # Heavy ML frameworks — only needed when running local fine-tuning (domain/train/).
+    # Not installed in the proxy or inference images.
+    "torch>=2.5",
+    "transformers>=5.7.0",
+    "datasets>=4.8.5",
+    "accelerate>=1.1.0",
+    "bitsandbytes>=0.43.0",
+    "peft>=0.9.0",
+    "sentencepiece>=0.2.0",
 ]
 dev = [
     "pytest>=9.0.3",
