@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import subprocess
 import sys
+import time
 
 import httpx
 
@@ -25,6 +28,80 @@ def check(label: str, resp: httpx.Response, expected_status: int = 200) -> dict:
         print(resp.text, file=sys.stderr)
         sys.exit(1)
     return resp.json()
+
+
+def create_model(client: httpx.Client, api_url: str, headers: dict) -> dict:
+    """POST /api/models — return created model record."""
+    payload = {
+        "name": "smoke-test-model",
+        "description": "Created by smoke test — safe to delete",
+        "base_model": "HuggingFaceTB/SmolLM2-360M",
+        "remote_backend": "local",
+        "skip_generate": True,
+    }
+    resp = client.post(f"{api_url}/api/models", json=payload, headers=headers)
+    return check("POST /api/models", resp, expected_status=201)
+
+
+def upload_dataset(client: httpx.Client, api_url: str, headers: dict) -> dict:
+    """POST /api/datasets — upload a tiny synthetic JSONL; return dataset record."""
+    lines = [
+        json.dumps({"prompt": "scene tick=1 hunger=0.8", "completion": "EAT bowl1"}),
+        json.dumps({"prompt": "scene tick=2 boredom=0.9", "completion": "PLAY toy1"}),
+    ]
+    content = "\n".join(lines).encode()
+    resp = client.post(
+        f"{api_url}/api/datasets",
+        data={"name": "smoke-test-dataset", "dataset_type": "train", "description": "Smoke test"},
+        files={"file": ("smoke.jsonl", io.BytesIO(content), "application/x-ndjson")},
+        headers=headers,
+    )
+    return check("POST /api/datasets", resp, expected_status=201)
+
+
+def trigger_run(
+    client: httpx.Client,
+    api_url: str,
+    headers: dict,
+    model_id: str,
+    dataset_id: str,
+) -> dict:
+    """POST /api/runs/trigger — return {workflow_id, run_id}."""
+    payload = {
+        "model_id": model_id,
+        "train_dataset_id": dataset_id,
+        "skip_generate": True,
+        "num_train_samples": 2,
+        "num_eval_samples": 2,
+    }
+    resp = client.post(f"{api_url}/api/runs/trigger", json=payload, headers=headers)
+    return check("POST /api/runs/trigger", resp, expected_status=202)
+
+
+def poll_run_until_started(
+    client: httpx.Client,
+    api_url: str,
+    headers: dict,
+    run_id: str,
+    timeout_seconds: int = 60,
+    poll_interval: int = 5,
+) -> dict:
+    """Poll GET /api/runs/{run_id} until status moves past 'pending'. Return final run record."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
+        run = check(f"GET /api/runs/{run_id}", resp)
+        status = run.get("status", "")
+        if status != "pending":
+            return run
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            print(
+                f"ERROR: run {run_id} still 'pending' after {timeout_seconds}s",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        time.sleep(min(poll_interval, remaining))
 
 
 def main() -> None:
