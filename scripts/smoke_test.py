@@ -156,6 +156,7 @@ def main() -> None:
     # Resources created during the test — cleaned up in the finally block below
     model_id: str | None = None
     dataset_id: str | None = None
+    run_id: str | None = None
 
     try:
         # 3. Create a model
@@ -261,29 +262,51 @@ def main() -> None:
         # 10. Cleanup — always runs, even on test failure
         if dataset_id:
             print(f"-- Cleanup: DELETE /api/datasets/{dataset_id}...")
-            del_resp = client.delete(
-                f"{api_url}/api/datasets/{dataset_id}", headers=auth_headers
-            )
-            if del_resp.status_code == 204:
-                print("OK — dataset deleted\n")
-            else:
-                print(
-                    f"WARN: dataset delete returned {del_resp.status_code} — manual cleanup may be needed",
-                    file=sys.stderr,
+            try:
+                del_resp = client.delete(
+                    f"{api_url}/api/datasets/{dataset_id}", headers=auth_headers
                 )
+                if del_resp.status_code == 204:
+                    print("OK — dataset deleted\n")
+                else:
+                    print(
+                        f"WARN: dataset delete returned {del_resp.status_code} — manual cleanup may be needed",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(f"WARN: dataset cleanup raised {exc} — manual cleanup may be needed", file=sys.stderr)
+
+        if run_id:
+            print(f"-- Cleanup: DELETE /api/runs/{run_id}...")
+            try:
+                del_resp = client.delete(
+                    f"{api_url}/api/runs/{run_id}", headers=auth_headers
+                )
+                if del_resp.status_code == 204:
+                    print("OK — run deleted\n")
+                else:
+                    print(
+                        f"WARN: run delete returned {del_resp.status_code} — manual cleanup may be needed",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(f"WARN: run cleanup raised {exc} — manual cleanup may be needed", file=sys.stderr)
 
         if model_id:
             print(f"-- Cleanup: DELETE /api/models/{model_id}...")
-            del_resp = client.delete(
-                f"{api_url}/api/models/{model_id}", headers=auth_headers
-            )
-            if del_resp.status_code == 204:
-                print("OK — model deleted\n")
-            else:
-                print(
-                    f"WARN: model delete returned {del_resp.status_code} — manual cleanup may be needed",
-                    file=sys.stderr,
+            try:
+                del_resp = client.delete(
+                    f"{api_url}/api/models/{model_id}", headers=auth_headers
                 )
+                if del_resp.status_code == 204:
+                    print("OK — model deleted\n")
+                else:
+                    print(
+                        f"WARN: model delete returned {del_resp.status_code} — manual cleanup may be needed",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(f"WARN: model cleanup raised {exc} — manual cleanup may be needed", file=sys.stderr)
 
     print("=== Smoke tests passed ===")
 
