@@ -14,6 +14,18 @@ module "ecr_temporal_ui" {
   image_retention_count = var.image_retention_count
 }
 
+module "ecr_proxy" {
+  source                = "./modules/ecr"
+  repo_name             = "llm-api-proxy"
+  image_retention_count = var.image_retention_count
+}
+
+module "ecr_inference" {
+  source                = "./modules/ecr"
+  repo_name             = "llm-api-inference"
+  image_retention_count = var.image_retention_count
+}
+
 module "acm_ui" {
   source = "./modules/acm"
   domain = "llm.jwnwilson.co.uk"
@@ -32,8 +44,17 @@ module "iam" {
   github_repo                = var.github_repo
   s3_bucket                  = var.s3_bucket
   ecr_push_policy_arn        = module.ecr.ecr_push_policy_arn
-  extra_ecr_push_policy_arns = [module.ecr_temporal_ui.ecr_push_policy_arn]
-  ecr_pull_repo_arns         = [module.ecr.repository_arn, module.ecr_temporal_ui.repository_arn]
+  extra_ecr_push_policy_arns = [
+    module.ecr_temporal_ui.ecr_push_policy_arn,
+    module.ecr_proxy.ecr_push_policy_arn,
+    module.ecr_inference.ecr_push_policy_arn,
+  ]
+  ecr_pull_repo_arns = [
+    module.ecr.repository_arn,
+    module.ecr_temporal_ui.repository_arn,
+    module.ecr_proxy.repository_arn,
+    module.ecr_inference.repository_arn,
+  ]
   ui_bucket_arn              = module.s3_ui.bucket_arn
   ui_distribution_arn        = module.s3_ui.distribution_arn
   create_ui_resources        = true

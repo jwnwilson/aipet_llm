@@ -1,0 +1,28 @@
+# ServiceAccount, Role, and RoleBinding that allow the llm-api proxy to
+# create and delete inference worker pods in its own namespace.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llm-api
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llm-api-inference-pod-manager
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: llm-api-inference-pod-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: llm-api-inference-pod-manager
+subjects:
+  - kind: ServiceAccount
+    name: llm-api
