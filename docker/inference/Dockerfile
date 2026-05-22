@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1.7
 FROM python:3.12-slim AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install uv
 WORKDIR /app
 COPY pyproject.toml uv.lock* ./
