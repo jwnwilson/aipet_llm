@@ -5,7 +5,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock* ./
 # Cache mount: llama-cpp-python and heavy deps downloaded once, reused every build
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --no-install-project --extra inference
 FROM python:3.12-slim AS runtime
 WORKDIR /app
 COPY --from=builder /app/.venv ./.venv
