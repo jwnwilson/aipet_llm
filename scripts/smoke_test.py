@@ -127,7 +127,7 @@ def main() -> None:
     # 1. Authenticate via Auth0 M2M client credentials
     token_url = f"https://{auth0_domain}/oauth/token"
     client_id_hint = auth0_client_id[:6] + "..." if len(auth0_client_id) > 6 else auth0_client_id
-    print(f"-- Authenticating via Auth0...")
+    print("-- Authenticating via Auth0...")
     print(f"   token_url : {token_url}")
     print(f"   client_id : {client_id_hint}")
     print(f"   audience  : {auth0_audience}")
@@ -153,57 +153,137 @@ def main() -> None:
     health = check("GET /health", client.get(f"{api_url}/health"))
     print(f"OK — status={health.get('status')}\n")
 
-    # 3. Model listing
-    models = check("GET /api/models", client.get(f"{api_url}/api/models", headers=auth_headers))
-    print(f"OK — {len(models)} model(s) returned\n")
+    # Resources created during the test — cleaned up in the finally block below
+    model_id: str | None = None
+    dataset_id: str | None = None
 
-    # 4. Run listing
-    runs = check("GET /api/runs", client.get(f"{api_url}/api/runs", headers=auth_headers))
-    print(f"OK — {len(runs)} run(s) returned\n")
+    try:
+        # 3. Create a model
+        model = create_model(client, api_url, auth_headers)
+        model_id = model["id"]
+        print(f"OK — model_id={model_id}\n")
 
-    # 5. Inference — minimal scene with a bowl so EAT is a valid candidate
-    infer_payload = {
-        "scene": {
-            "objects": [{"id": "bowl1", "type": "bowl", "distance": 1.5}],
-            "tick": 1,
-        },
-        "pet_stats": {
-            "hunger": 0.8,
-            "boredom": 0.3,
-            "social": 0.2,
-            "toilet": 0.1,
-            "tiredness": 0.4,
-        },
-    }
-    infer_resp = client.post(f"{api_url}/infer", json=infer_payload, headers=auth_headers, timeout=120)
-    print(f"-- POST /infer...")
-    if infer_resp.status_code == 503 and infer_resp.json().get("detail", {}).get("error") == "inference_disabled":
-        print("OK — inference disabled (no model loaded)\n")
-    else:
-        infer = check("POST /infer", infer_resp)
-        print(f"OK — action={infer['action']}\n")
-
-    # 6. Database tables via kubectl
-    print("-- Checking database tables...")
-    result = subprocess.run(
-        [
-            "kubectl", "exec", "llm-api-db-0", "--",
-            "psql", "-U", "aipet", "-d", "aipet", "-t", "-c",
-            "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        print(f"ERROR: kubectl exec failed: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    tables = result.stdout
-    print(tables)
-    for table in ("alembic_version", "training_models", "training_runs"):
-        if table not in tables:
-            print(f"ERROR: expected table '{table}' not found in database", file=sys.stderr)
+        # 4. Verify the model appears in the listing
+        models = check("GET /api/models", client.get(f"{api_url}/api/models", headers=auth_headers))
+        model_ids = [m["id"] for m in models]
+        if model_id not in model_ids:
+            print(
+                f"ERROR: created model {model_id} not found in GET /api/models listing",
+                file=sys.stderr,
+            )
             sys.exit(1)
-    print("OK — all required tables present\n")
+        print(f"OK — {len(models)} model(s) returned, created model present\n")
+
+        # 5. Upload a training dataset
+        dataset = upload_dataset(client, api_url, auth_headers)
+        dataset_id = dataset["id"]
+        print(f"OK — dataset_id={dataset_id}\n")
+
+        # 6. Verify the dataset appears in the listing
+        datasets = check(
+            "GET /api/datasets",
+            client.get(f"{api_url}/api/datasets", headers=auth_headers),
+        )
+        dataset_ids = [d["id"] for d in datasets]
+        if dataset_id not in dataset_ids:
+            print(
+                f"ERROR: created dataset {dataset_id} not found in GET /api/datasets listing",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"OK — {len(datasets)} dataset(s) returned, created dataset present\n")
+
+        # 7. Trigger a training run and poll until it moves past 'pending'
+        run_trigger = trigger_run(client, api_url, auth_headers, model_id, dataset_id)
+        run_id = run_trigger["run_id"]
+        workflow_id = run_trigger["workflow_id"]
+        print(f"OK — run_id={run_id} workflow_id={workflow_id}")
+        print("   Polling until run status moves past 'pending'...")
+        run = poll_run_until_started(client, api_url, auth_headers, run_id)
+        print(f"OK — run status={run['status']}\n")
+
+        # 8. Inference — minimal scene with a bowl so EAT is a valid candidate
+        infer_payload = {
+            "scene": {
+                "objects": [{"id": "bowl1", "type": "bowl", "distance": 1.5}],
+                "tick": 1,
+            },
+            "pet_stats": {
+                "hunger": 0.8,
+                "boredom": 0.3,
+                "social": 0.2,
+                "toilet": 0.1,
+                "tiredness": 0.4,
+            },
+        }
+        infer_resp = client.post(
+            f"{api_url}/infer", json=infer_payload, headers=auth_headers, timeout=120
+        )
+        print("-- POST /infer...")
+        if (
+            infer_resp.status_code == 503
+            and infer_resp.json().get("detail", {}).get("error") == "inference_disabled"
+        ):
+            print("OK — inference disabled (no model loaded)\n")
+        else:
+            infer = check("POST /infer", infer_resp)
+            print(f"OK — action={infer['action']}\n")
+
+        # 9. Database tables via kubectl
+        print("-- Checking database tables...")
+        result = subprocess.run(
+            [
+                "kubectl", "exec", "llm-api-db-0", "--",
+                "psql", "-U", "aipet", "-d", "aipet", "-t", "-c",
+                "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"ERROR: kubectl exec failed: {result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        tables = result.stdout
+        print(tables)
+        for table in (
+            "alembic_version",
+            "datasets",
+            "inference_instances",
+            "training_models",
+            "training_runs",
+        ):
+            if table not in tables:
+                print(f"ERROR: expected table '{table}' not found in database", file=sys.stderr)
+                sys.exit(1)
+        print("OK — all required tables present\n")
+
+    finally:
+        # 10. Cleanup — always runs, even on test failure
+        if dataset_id:
+            print(f"-- Cleanup: DELETE /api/datasets/{dataset_id}...")
+            del_resp = client.delete(
+                f"{api_url}/api/datasets/{dataset_id}", headers=auth_headers
+            )
+            if del_resp.status_code == 204:
+                print("OK — dataset deleted\n")
+            else:
+                print(
+                    f"WARN: dataset delete returned {del_resp.status_code} — manual cleanup may be needed",
+                    file=sys.stderr,
+                )
+
+        if model_id:
+            print(f"-- Cleanup: DELETE /api/models/{model_id}...")
+            del_resp = client.delete(
+                f"{api_url}/api/models/{model_id}", headers=auth_headers
+            )
+            if del_resp.status_code == 204:
+                print("OK — model deleted\n")
+            else:
+                print(
+                    f"WARN: model delete returned {del_resp.status_code} — manual cleanup may be needed",
+                    file=sys.stderr,
+                )
 
     print("=== Smoke tests passed ===")
 
