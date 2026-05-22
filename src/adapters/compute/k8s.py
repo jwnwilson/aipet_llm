@@ -43,6 +43,7 @@ class K8sPodAdapter(PodLifecyclePort):
     ) -> str:
         """Create inference pod. Return pod_name."""
         image = os.environ.get("INFERENCE_WORKER_IMAGE", "llm-inference:latest")
+        image_pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
         pod = k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(
                 name=pod_name,
@@ -50,6 +51,9 @@ class K8sPodAdapter(PodLifecyclePort):
             ),
             spec=k8s_client.V1PodSpec(
                 restart_policy="Never",
+                image_pull_secrets=[
+                    k8s_client.V1LocalObjectReference(name=image_pull_secret)
+                ],
                 containers=[
                     k8s_client.V1Container(
                         name="inference-worker",
