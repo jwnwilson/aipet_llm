@@ -18,6 +18,16 @@ output "docker_login_command" {
   value       = "aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${module.ecr.repository_url}"
 }
 
+output "proxy_repository_url" {
+  description = "ECR URL for the proxy API image — use as ECR_PROXY_REPOSITORY in deploy.yml"
+  value       = module.ecr_proxy.repository_url
+}
+
+output "inference_repository_url" {
+  description = "ECR URL for the inference worker image — use as ECR_INFERENCE_REPOSITORY in deploy.yml"
+  value       = module.ecr_inference.repository_url
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC — set this as the AWS_ROLE_ARN repository secret"
   value       = module.iam.github_actions_role_arn
