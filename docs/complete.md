@@ -4,6 +4,71 @@
 
 ---
 
+## Epic-12 — Improve dataset management
+
+Datasets have a 1-many relationship with models. Users can upload training/eval datasets, select a dataset when starting a run, and see which dataset was used for each run.
+
+### Completed tasks
+- Upload training and eval dataset via the Datasets tab in the UI
+- Select a dataset when triggering a run
+- Dataset linked to run record and displayed on the Run detail page
+
+**Key outputs:** `src/interactors/api/routes/datasets.py`, `src/adapters/database/dataset_store.py`, UI datasets tab, dataset selector in RunModal
+
+---
+
+## Epic-13 — Inference management UI
+
+Users can browse trained models in a dedicated Inference tab, start/stop inference instances, and track status. Local models run as K8s pods; OpenRouter models go live immediately. Idle instances auto-terminate after a configurable timeout.
+
+### TASK-13.1 — Inference instance domain model & database store
+`InferenceStatus` enum, `InferenceConfig` / `InferenceInstance` Pydantic models, `InferenceStorePort` port, `SQLAlchemyInferenceStore` adapter, and `inference_instances` Alembic migration.
+**Outputs:** `src/domain/models.py`, `src/domain/ports.py`, `src/adapters/database/inference_store.py`, Alembic migration `0010`, `tests/unit/test_inference_store.py`
+
+### TASK-13.2 — Inference management REST API
+`src/interactors/api/routes/inferences.py` with list, create, get, start, stop, and delete endpoints. Router registered in `app.py`. Integration tests added.
+**Outputs:** `src/interactors/api/routes/inferences.py`, updated `src/interactors/api/app.py`, `tests/integration/test_inferences_api.py`
+
+### TASK-13.3 — Auto-create inference instance on run completion
+`create_inference_activity` added after the export activity succeeds; auto-creates an `InferenceInstance` record (`status=unloaded`) linked to the completed run.
+**Outputs:** Updated `src/interactors/temporal/activities.py`, updated `src/interactors/temporal/workflows.py`, `tests/unit/test_create_inference_activity.py`
+
+### TASK-13.4 — Kubernetes pod adapter for local model serving
+`K8sPodAdapter` in `src/adapters/compute/k8s.py` with `start()` / `stop()`. Polls K8s API for pod phase; `openrouter` backend skips K8s and immediately sets `status=ready`. Configured via `KUBECONFIG` / `K8S_NAMESPACE`.
+**Outputs:** `src/adapters/compute/k8s.py`, updated inference routes, `tests/unit/test_k8s_adapter.py`
+
+### TASK-13.5 — Idle inference shutdown background task
+`asyncio` background task polls all `ready` instances every 5 minutes; stops any whose `last_used_at` exceeds `INFERENCE_IDLE_TIMEOUT_HOURS` (default `2`). `last_used_at` stamped on every successful `/infer` call.
+**Outputs:** Updated `src/interactors/api/app.py`, updated inference routes, `tests/unit/test_idle_shutdown.py`
+
+### TASK-13.6 — Inference management UI tab
+New **Inference** tab with table of all instances (Model name, Backend, Status badge, Last used, Actions). `InferenceStatusBadge` component. Typed API client.
+**Outputs:** `ui/src/api/inferences.ts`, `ui/src/pages/InferencePage.tsx`, `ui/src/components/InferenceStatusBadge.tsx`, updated `ui/src/types/index.ts`, updated router/nav
+
+### TASK-13.7 — Docker containers: proxy API and inference worker
+**Proxy API** (`docker/proxy/Dockerfile`): lightweight `python:3.12-slim` — FastAPI, SQLAlchemy, auth, no torch/llama-cpp. **Inference worker** (`docker/inference/Dockerfile`): heavier image with `llama-cpp-python`; thin `POST /infer` on port 8080. BuildKit uv cache mount. Separate dependency groups in `pyproject.toml`. ECR repos and CI build+deploy steps added.
+**Outputs:** `docker/proxy/Dockerfile`, `docker/inference/Dockerfile`, `docker/inference/server.py`, `docker-compose.yml`, updated `pyproject.toml`, ECR infra
+
+---
+
+## Epic-14 — Per-user data
+
+All models, runs, and datasets are scoped to their owner. `owner_id` is set automatically from the JWT on create; list endpoints filter by the authenticated user; single-resource endpoints return 404 (not 403) for cross-user access.
+
+### TASK-14.1 — Add owner_id to models
+Alembic migration; `_TrainingModelRow` updated; `SQLAlchemyModelStore.list()` filters by `owner_id`; `routes/models.py` extracts user from `require_approved`.
+**Outputs:** New Alembic migration, updated `src/adapters/database/model_store.py`, updated `src/interactors/api/routes/models.py`, `tests/unit/test_model_store_owner.py`
+
+### TASK-14.2 — Add owner_id to runs
+Alembic migration; `_RunRow` updated; `SQLAlchemyRunStore.list()` filters by `owner_id`; `routes/runs.py` enforces ownership.
+**Outputs:** New Alembic migration, updated `src/adapters/database/run_store.py`, updated `src/interactors/api/routes/runs.py`, `tests/unit/test_run_store_owner.py`
+
+### TASK-14.3 — Add owner_id to datasets
+Alembic migration; `_DatasetRow` updated; `SQLAlchemyDatasetStore.list()` filters by `owner_id`; `routes/datasets.py` enforces ownership.
+**Outputs:** New Alembic migration, updated `src/adapters/database/dataset_store.py`, updated `src/interactors/api/routes/datasets.py`, `tests/unit/test_dataset_store_owner.py`
+
+---
+
 ## Phase 1: Foundation
 
 ### Task 1.1 — Project structure & dependencies

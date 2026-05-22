@@ -1,10 +1,24 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { DatasetUpload } from '@/components/DatasetUpload'
-import { server } from '../msw/server'
+
+// Mock the API module so JSDOM FormData never reaches the MSW/undici stack.
+// (JSDOM's FormData is incompatible with undici's Request constructor used
+// internally by the MSW XHR interceptor, causing requests to hang.)
+vi.mock('@/api/datasets', () => ({
+  uploadTrainDataset: vi.fn(),
+  uploadEvalDataset: vi.fn(),
+  createDataset: vi.fn(),
+  listDatasets: vi.fn().mockResolvedValue([]),
+  deleteDataset: vi.fn(),
+}))
+
+import {
+  uploadTrainDataset,
+  uploadEvalDataset,
+} from '@/api/datasets'
 
 function renderComponent() {
   const client = new QueryClient({
@@ -22,6 +36,11 @@ function makeJsonlFile(name: string): File {
     type: 'application/octet-stream',
   })
 }
+
+beforeEach(() => {
+  vi.mocked(uploadTrainDataset).mockResolvedValue({ key: 'datasets/train.jsonl' })
+  vi.mocked(uploadEvalDataset).mockResolvedValue({ key: 'datasets/eval.jsonl' })
+})
 
 describe('DatasetUpload', () => {
   it('renders train and eval file inputs', () => {
@@ -64,10 +83,8 @@ describe('DatasetUpload', () => {
   })
 
   it('shows error message with which upload failed when server returns 500', async () => {
-    server.use(
-      http.post('http://localhost:8000/api/datasets/train', () =>
-        HttpResponse.json({ detail: 'Internal server error' }, { status: 500 })
-      )
+    vi.mocked(uploadTrainDataset).mockRejectedValueOnce(
+      new Error('Request failed with status code 500')
     )
     renderComponent()
     const trainInput = screen.getByLabelText(/training dataset/i)

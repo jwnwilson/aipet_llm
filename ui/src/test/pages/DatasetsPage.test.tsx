@@ -7,6 +7,21 @@ import { DatasetsPage } from '@/pages/DatasetsPage'
 import { TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE } from '../msw/fixtures'
 import { server } from '../msw/server'
 import { resetHandlerState } from '../msw/handlers'
+import type { Dataset } from '@/types'
+
+// We need to mock createDataset because JSDOM's FormData is incompatible with
+// undici's Request constructor used by the MSW XHR interceptor — the request
+// hangs before the handler is ever reached.  GET / DELETE endpoints use JSON
+// bodies and continue to run through MSW as normal.
+vi.mock('@/api/datasets', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/datasets')>()
+  return {
+    ...actual,
+    createDataset: vi.fn(),
+  }
+})
+
+import { createDataset } from '@/api/datasets'
 
 function renderPage() {
   const client = new QueryClient({
@@ -19,10 +34,24 @@ function renderPage() {
   )
 }
 
+const CREATED_DATASET: Dataset = {
+  id: 'ds-new-1',
+  name: 'my-dataset',
+  description: '',
+  dataset_type: 'train',
+  key: 'datasets/ds-new-1.jsonl',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}
+
 describe('DatasetsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     resetHandlerState()
+  })
+
+  beforeEach(() => {
+    vi.mocked(createDataset).mockResolvedValue(CREATED_DATASET)
   })
 
   describe('dataset list', () => {

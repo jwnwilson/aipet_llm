@@ -6,9 +6,13 @@ export function setTokenGetter(fn: (() => Promise<string>) | null): void {
   _tokenGetter = fn
 }
 
+// Do NOT set a default Content-Type here.
+// Axios sets 'application/json' automatically for plain-object bodies.
+// For FormData bodies (file uploads), axios auto-sets 'multipart/form-data'
+// with the correct boundary — a hardcoded default would override that and
+// cause FastAPI to reject uploads with a 422 (all form fields null).
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000',
-  headers: { 'Content-Type': 'application/json' },
 })
 
 apiClient.interceptors.request.use(async (config) => {
