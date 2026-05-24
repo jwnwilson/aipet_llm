@@ -34,6 +34,7 @@ class TriggerRunRequest(BaseModel):
     patience: int | None = None
     warmup_ratio: float | None = None
     skip_generate: bool | None = None
+    dry_run: bool | None = None
     remote_backend: str | None = None
     base_model: str | None = None
     num_train_samples: int | None = None
@@ -199,6 +200,7 @@ async def trigger_run(
     patience = body.patience if body.patience is not None else model.patience
     warmup_ratio = body.warmup_ratio if body.warmup_ratio is not None else model.warmup_ratio
     skip_generate = body.skip_generate if body.skip_generate is not None else model.skip_generate
+    dry_run = body.dry_run if body.dry_run is not None else False
     remote_backend = body.remote_backend if body.remote_backend is not None else model.remote_backend
     base_model = body.base_model if body.base_model is not None else model.base_model
     num_train_samples = body.num_train_samples
@@ -208,10 +210,10 @@ async def trigger_run(
 
     log.info(
         "Trigger run: model=%s epochs=%s patience=%s warmup_ratio=%s "
-        "skip_generate=%s remote_backend=%s base_model=%s "
+        "skip_generate=%s dry_run=%s remote_backend=%s base_model=%s "
         "num_train_samples=%s num_eval_samples=%s",
         body.model_id, epochs, patience, warmup_ratio,
-        skip_generate, remote_backend, base_model,
+        skip_generate, dry_run, remote_backend, base_model,
         num_train_samples, num_eval_samples,
     )
 
@@ -221,6 +223,7 @@ async def trigger_run(
         "patience": patience,
         "warmup_ratio": warmup_ratio,
         "skip_generate": skip_generate,
+        "dry_run": dry_run,
         "remote_backend": remote_backend or "local",
         "base_model": base_model,
         "num_train_samples": num_train_samples,
@@ -259,6 +262,7 @@ async def trigger_run(
             patience=patience,
             warmup_ratio=warmup_ratio,
             skip_generate=skip_generate,
+            dry_run=dry_run,
             remote_backend=remote_backend,
             model=base_model,
             data_dir=f"data/workflow/{run_id}",

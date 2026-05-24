@@ -66,51 +66,85 @@ def trigger_run(
     model_id: str,
     dataset_id: str,
 ) -> dict:
-    """POST /api/runs/trigger — return {workflow_id, run_id}."""
+    """POST /api/runs/trigger — return {workflow_id, run_id}.
+
+    dry_run=True limits training to 1 step so the full pipeline (generate →
+    train → eval) completes in under a minute even on CPU-only nodes.
+    skip_generate=True reuses the uploaded dataset instead of synthesising
+    5000 examples.
+    """
     payload = {
         "model_id": model_id,
         "train_dataset_id": dataset_id,
         "skip_generate": True,
-        "num_train_samples": 2,
-        "num_eval_samples": 2,
+        "dry_run": True,
+        "num_train_samples": 8,
+        "num_eval_samples": 4,
     }
     resp = client.post(f"{api_url}/api/runs/trigger", json=payload, headers=headers)
     return check("POST /api/runs/trigger", resp, expected_status=202)
 
 
-_TRAINING_FAILURE_STATUSES = frozenset({"failed", "cancelled"})
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
 
-def poll_run_until_started(
+def poll_run_to_completion(
     client: httpx.Client,
     api_url: str,
     headers: dict[str, str],
     run_id: str,
-    timeout_seconds: int = 60,
+    start_timeout_seconds: int = 60,
+    completion_timeout_seconds: int = 300,
     poll_interval: int = 5,
 ) -> dict:
-    """Poll GET /api/runs/{run_id} until status moves past 'pending'. Return final run record.
+    """Poll GET /api/runs/{run_id} until the run reaches a terminal status.
 
-    A 'failed' or 'cancelled' status is a warning, not an API failure — it proves the Temporal
-    worker processed the run. Training failures are a separate infrastructure concern.
-    The only hard failure here is the run staying 'pending' (Temporal worker may be down).
+    Two-phase timeout:
+      Phase 1 (start_timeout_seconds): wait for the run to leave 'pending'
+        — proves the Temporal worker picked it up.
+      Phase 2 (completion_timeout_seconds): wait for a terminal status
+        — covers training + eval time with dry_run=True.
+
+    Exits 1 on timeout. Returns the final run record for the caller to assert
+    on status.
     """
-    deadline = time.monotonic() + timeout_seconds
+    # Phase 1: wait for the run to leave 'pending'
+    deadline = time.monotonic() + start_timeout_seconds
     while True:
         resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
         run = check(f"GET /api/runs/{run_id}", resp)
         status = run.get("status", "")
         if status != "pending":
-            return run
+            break
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(
-                f"ERROR: run {run_id} still 'pending' after {timeout_seconds}s"
+                f"ERROR: run {run_id} still 'pending' after {start_timeout_seconds}s"
                 " — Temporal worker may be down",
                 file=sys.stderr,
             )
             sys.exit(1)
         time.sleep(min(poll_interval, remaining))
+
+    # Phase 2: wait for a terminal status
+    deadline = time.monotonic() + completion_timeout_seconds
+    while status not in _TERMINAL_STATUSES:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            print(
+                f"ERROR: run {run_id} still '{status}' after "
+                f"{start_timeout_seconds + completion_timeout_seconds}s total"
+                " — pipeline may be hung",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        time.sleep(min(poll_interval, remaining))
+        resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
+        run = check(f"GET /api/runs/{run_id}", resp)
+        status = run.get("status", "")
+        print(f"   status={status}", flush=True)
+
+    return run
 
 
 def main() -> None:
@@ -194,22 +228,23 @@ def main() -> None:
             sys.exit(1)
         print(f"OK — {len(datasets)} dataset(s) returned, created dataset present\n")
 
-        # 7. Trigger a training run and poll until it moves past 'pending'
+        # 7. Trigger a training run and poll until it completes
         run_trigger = trigger_run(client, api_url, auth_headers, model_id, dataset_id)
         run_id = run_trigger["run_id"]
         workflow_id = run_trigger["workflow_id"]
         print(f"OK — run_id={run_id} workflow_id={workflow_id}")
-        print("   Polling until run status moves past 'pending'...")
-        run = poll_run_until_started(client, api_url, auth_headers, run_id)
+        print("   Polling until run completes (dry_run=True: ~1 step of training)...")
+        run = poll_run_to_completion(client, api_url, auth_headers, run_id)
         run_status = run.get("status", "unknown")
-        if run_status in _TRAINING_FAILURE_STATUSES:
-            detail = run.get("progress_detail") or ""
+        if run_status != "completed":
+            detail = run.get("progress_detail") or "(no detail)"
             print(
-                f"WARN — run moved past 'pending' to '{run_status}'"
-                f" (training env issue, not an API failure){': ' + detail if detail else ''}\n"
+                f"ERROR: run ended with status='{run_status}' — expected 'completed'\n"
+                f"  detail: {detail}",
+                file=sys.stderr,
             )
-        else:
-            print(f"OK — run status={run_status}\n")
+            sys.exit(1)
+        print(f"OK — run status={run_status}\n")
 
         # 8. Inference — minimal scene with a bowl so EAT is a valid candidate
         infer_payload = {
