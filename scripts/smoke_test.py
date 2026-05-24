@@ -237,7 +237,11 @@ def main() -> None:
     print(f"   status    : {token_resp.status_code}")
     if token_resp.status_code != 200:
         print(f"ERROR: Auth0 token exchange failed ({token_resp.status_code})", file=sys.stderr)
-        print(f"   response  : {token_resp.text}", file=sys.stderr)
+        try:
+            err_desc = token_resp.json().get("error_description", token_resp.json().get("error", "unknown"))
+        except Exception:
+            err_desc = "could not parse error response"
+        print(f"   error     : {err_desc}", file=sys.stderr)
         sys.exit(1)
     access_token = token_resp.json()["access_token"]
     auth_headers = {"Authorization": f"Bearer {access_token}"}
@@ -341,12 +345,18 @@ def main() -> None:
         print(f"OK — action={action}\n")
 
         # 11. Database tables via kubectl
-        print("-- Checking database tables...")
+        db_pod = os.environ.get("DB_POD_NAME", "llm-api-db-0")
+        db_ns  = os.environ.get("DB_NAMESPACE", "default")
+        db_user = os.environ.get("DB_USER", "aipet")
+        db_name = os.environ.get("DB_NAME", "aipet")
+        print(f"-- Checking database tables (pod={db_pod}, ns={db_ns})...")
         result = subprocess.run(
             [
-                "kubectl", "exec", "llm-api-db-0", "--",
-                "psql", "-U", "aipet", "-d", "aipet", "-t", "-c",
-                "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;",
+                "kubectl", "exec", db_pod,
+                "--namespace", db_ns,
+                "--",
+                "psql", "-U", db_user, "-d", db_name, "-t", "-c",
+                "SELECT tablename FROM pg_tables WHERE schemaname=\'public\' ORDER BY tablename;",
             ],
             capture_output=True,
             text=True,

@@ -105,14 +105,16 @@ class K8sPodAdapter(PodLifecyclePort):
 
     def delete_pod(self, pod_name: str, namespace: str = "default") -> None:
         """Delete pod and its paired ClusterIP Service. No-op if already gone."""
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
         try:
             self._core.delete_namespaced_pod(name=pod_name, namespace=namespace)
-        except Exception:
-            pass  # already gone or not found
+        except Exception as exc:
+            _log.debug("delete_namespaced_pod %s: %s (may already be gone)", pod_name, exc)
         try:
             self._core.delete_namespaced_service(name=pod_name, namespace=namespace)
-        except Exception:
-            pass  # already gone or not found
+        except Exception as exc:
+            _log.warning("Could not delete Service %s: %s", pod_name, exc)
 
     def pod_service_url(self, pod_name: str, namespace: str = "default") -> str:
         """Return ClusterIP HTTP URL. Overridable via INFERENCE_WORKER_URL for local dev."""

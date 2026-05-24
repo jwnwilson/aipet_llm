@@ -66,6 +66,11 @@ class S3StorageAdapter(StoragePort):
                 relative = key[len(prefix):]
                 if not relative:
                     continue
-                local = dest / relative
+                local = (dest / relative).resolve()
+                # Guard against path traversal (e.g. S3 keys containing "../")
+                if not str(local).startswith(str(dest.resolve())):
+                    raise ValueError(
+                        f"S3 key {key!r} would escape the destination directory"
+                    )
                 local.parent.mkdir(parents=True, exist_ok=True)
                 self._s3.download_file(self._bucket, key, str(local))

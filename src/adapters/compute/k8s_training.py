@@ -56,7 +56,15 @@ class K8sTrainingAdapter(RemoteTrainingPort):
             k8s_config.load_kube_config()
         self._batch = k8s_client.BatchV1Api()
         self._core = k8s_client.CoreV1Api()
-        self._image = training_image or os.environ["TRAINING_WORKER_IMAGE"]
+        if training_image:
+            self._image = training_image
+        else:
+            self._image = os.environ.get("TRAINING_WORKER_IMAGE", "")
+            if not self._image:
+                raise RuntimeError(
+                    "TRAINING_WORKER_IMAGE env var is required for K8sTrainingAdapter. "
+                    "Set it to the ECR URI of the training image."
+                )
         self._namespace = namespace
         # Defer S3StorageAdapter import so the class is importable without boto3
         if storage is not None:
@@ -76,11 +84,17 @@ class K8sTrainingAdapter(RemoteTrainingPort):
 
         pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
         region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-        bucket = os.environ.get("AWS_S3_BUCKET", "")
 
         env = [
             k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
-            k8s_client.V1EnvVar(name="AWS_S3_BUCKET", value=bucket),
+            k8s_client.V1EnvVar(
+                name="AWS_S3_BUCKET",
+                value_from=k8s_client.V1EnvVarSource(
+                    secret_key_ref=k8s_client.V1SecretKeySelector(
+                        name="llm-api-secrets", key="aws-s3-bucket"
+                    )
+                ),
+            ),
             k8s_client.V1EnvVar(name="TRAIN_DATA_KEY", value=config.train_data),
             k8s_client.V1EnvVar(name="EVAL_DATA_KEY", value=config.eval_data),
             k8s_client.V1EnvVar(name="MODEL", value=config.model),
@@ -202,4 +216,10 @@ class K8sTrainingAdapter(RemoteTrainingPort):
         job = self._batch.read_namespaced_job(
             name=job_name, namespace=self._namespace
         )
-        return job.metadata.annotations.get(_JOB_ANNOTATION, job_name)
+        annotations = job.metadata.annotations or {}
+        if _JOB_ANNOTATION not in annotations:
+            raise RuntimeError(
+                f"Job {job_name!r} is missing annotation {_JOB_ANNOTATION!r}. "
+                "It may not have been created by K8sTrainingAdapter."
+            )
+        return annotations[_JOB_ANNOTATION]

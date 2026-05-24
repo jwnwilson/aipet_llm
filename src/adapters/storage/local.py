@@ -38,3 +38,31 @@ class LocalStorageAdapter(StoragePort):
 
     def delete(self, key: str) -> None:
         self._resolve(key).unlink(missing_ok=True)
+
+    def write_bytes(self, key: str, content: bytes) -> None:
+        """Write raw bytes to a file under the local base directory."""
+        dest = self._resolve(key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(content)
+
+    def read_text(self, key: str, *, encoding: str = "utf-8") -> str:
+        """Read a file and return its text; return "" if the file is absent."""
+        path = self._resolve(key)
+        if not path.exists():
+            return ""
+        return path.read_text(encoding=encoding)
+
+    def download_directory(self, prefix: str, dest) -> None:
+        """Copy all files under base/prefix into dest, preserving relative paths."""
+        import shutil
+        src_dir = self._resolve(prefix.rstrip("/"))
+        dest = __import__("pathlib").Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        if not src_dir.exists():
+            return
+        for src_file in src_dir.rglob("*"):
+            if src_file.is_file():
+                rel = src_file.relative_to(src_dir)
+                out = dest / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, out)

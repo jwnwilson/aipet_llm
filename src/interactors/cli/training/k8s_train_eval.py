@@ -38,8 +38,17 @@ def _require(name: str) -> str:
     return val
 
 
+def _validate_run_id(run_id: str) -> None:
+    """Reject RUN_IDs that could escape the /tmp/run/{run_id} path."""
+    import re
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", run_id):
+        print(f"ERROR: RUN_ID contains invalid characters: {run_id!r}", file=sys.stderr)
+        sys.exit(1)
+
+
 def run() -> None:
     run_id = _require("RUN_ID")
+    _validate_run_id(run_id)
     train_key = _require("TRAIN_DATA_KEY")
     eval_key = _require("EVAL_DATA_KEY")
     model = _require("MODEL")
