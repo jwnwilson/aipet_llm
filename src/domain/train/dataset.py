@@ -236,15 +236,17 @@ def generate_examples(n: int, rng: random.Random) -> list[dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-_DISTRIBUTION_MIN_SAMPLES = 50
+_DISTRIBUTION_MIN_SAMPLES = 1000
 
 
 def check_dataset_distribution(path: Path) -> None:
     """Print per-action counts and raise AssertionError if any action is under/over represented.
 
     Thresholds: no action < 5% or > 25% of total labelled examples.
-    Skipped when the dataset has fewer than _DISTRIBUTION_MIN_SAMPLES examples — the bounds
-    are statistically meaningless at tiny sizes (e.g. 2/5 = 40% with just 5 samples).
+    Skipped when the dataset has fewer than _DISTRIBUTION_MIN_SAMPLES examples.
+    With 10 actions and random 50/50 splits between action pairs (EAT/DRINK, PLAY/FETCH),
+    datasets under ~1000 samples have too much variance for a 5% lower bound to be reliable.
+    The default eval set (500 samples) is intentionally skipped; the train set (5000) is checked.
     """
     counts: Counter[str] = Counter()
     total = 0
