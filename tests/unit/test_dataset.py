@@ -12,8 +12,10 @@ import pytest
 from domain.actions import Action
 from domain.models import InferenceRequest, PetStats, SceneData, SceneObject
 from domain.train.dataset import (
+    _DISTRIBUTION_MIN_SAMPLES,
     STAT_NAMES,
     check_dataset_distribution,
+    generate,
     generate_examples,
     label,
     make_example,
@@ -248,7 +250,8 @@ class TestCheckDatasetDistribution:
         check_dataset_distribution(path)  # should not raise
 
     def test_overrepresented_action_raises(self, tmp_path):
-        counts = {"EAT": 900, "SLEEP": 10, "PLAY": 10, "TOILET": 10, "IDLE": 10}
+        # Total must be >= _DISTRIBUTION_MIN_SAMPLES (1000) for the check to run.
+        counts = {"EAT": 950, "SLEEP": 25, "PLAY": 25, "TOILET": 25, "IDLE": 25}
         path = self._write_examples(tmp_path, counts)
         with pytest.raises(AssertionError, match="overrepresented"):
             check_dataset_distribution(path)
@@ -259,3 +262,103 @@ class TestCheckDatasetDistribution:
         path = self._write_examples(tmp_path, counts)
         with pytest.raises(AssertionError, match="underrepresented"):
             check_dataset_distribution(path)
+
+
+# ---------------------------------------------------------------------------
+# Regression: distribution check threshold (_DISTRIBUTION_MIN_SAMPLES = 1000)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckDatasetDistributionThreshold:
+    """Verify the skip-threshold prevents false failures on small eval sets.
+
+    Bug: _DISTRIBUTION_MIN_SAMPLES was 50, so the 5% lower bound ran on the
+    500-sample eval set.  With 10 actions and 50/50 random splits between
+    action pairs (EAT/DRINK, PLAY/FETCH), some actions fall below 5% by
+    chance, causing 'Dataset generation failed' in Temporal.
+
+    Fix: threshold raised to 1000 so the eval set (≤500) is skipped.
+    """
+
+    def _write_examples(self, tmp_path: Path, action_counts: dict[str, int]) -> Path:
+        path = tmp_path / "test.jsonl"
+        examples = [
+            {"prompt": "test", "completion": json.dumps({"action": action})}
+            for action, count in action_counts.items()
+            for _ in range(count)
+        ]
+        write_jsonl(path, examples)
+        return path
+
+    def test_threshold_constant_is_1000(self):
+        """Guard against accidentally lowering the threshold back to 50."""
+        assert _DISTRIBUTION_MIN_SAMPLES == 1000
+
+    def test_skips_check_when_below_threshold(self, tmp_path):
+        """A dataset with fewer than _DISTRIBUTION_MIN_SAMPLES rows must not
+        raise even when an action is well below 5% — this is the eval-set case."""
+        below_threshold = _DISTRIBUTION_MIN_SAMPLES - 1  # 999 total
+        # Give DRINK only 4% (~40 examples) — would have raised with the old threshold.
+        drink_count = int(below_threshold * 0.04)
+        other_count = below_threshold - drink_count
+        counts = {"DRINK": drink_count, "EAT": other_count}
+        path = self._write_examples(tmp_path, counts)
+        check_dataset_distribution(path)  # must not raise
+
+    def test_runs_check_when_at_or_above_threshold(self, tmp_path):
+        """Once the dataset reaches _DISTRIBUTION_MIN_SAMPLES, violations are caught."""
+        at_threshold = _DISTRIBUTION_MIN_SAMPLES  # exactly 1000
+        drink_count = int(at_threshold * 0.03)   # 3% — clearly under the 5% bound
+        other_count = at_threshold - drink_count
+        counts = {"DRINK": drink_count, "EAT": other_count}
+        path = self._write_examples(tmp_path, counts)
+        with pytest.raises(AssertionError, match="underrepresented"):
+            check_dataset_distribution(path)
+
+
+# ---------------------------------------------------------------------------
+# Regression: generate() must not fail at the default eval size across seeds
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateEndToEnd:
+    """End-to-end regression for the 'Dataset generation failed: distribution
+    out of bounds' Temporal error.
+
+    Before the fix, certain seeds caused the eval-set distribution check to
+    fail because action-pair members (e.g. DRINK=4%) fell below the 5% bound
+    at 500 samples.  After the fix the check is skipped for small sets, so
+    generate() must return True for any seed.
+    """
+
+    SEEDS = [0, 1, 7, 42, 99, 123, 456, 789, 1000, 2024]
+
+    def test_generate_passes_at_default_eval_size_across_seeds(self, tmp_path):
+        """generate() must return True for the default eval_size=500 at every seed.
+
+        Runs 10 seeds — enough to hit the edge cases that historically failed
+        without being slow (500 train + 500 eval = 1 000 examples per seed).
+        """
+        for seed in self.SEEDS:
+            data_dir = tmp_path / f"seed_{seed}"
+            result = generate(
+                data_dir=data_dir,
+                train_size=500,   # smaller than default for test speed
+                eval_size=500,    # default eval size — the size that was failing
+                seed=seed,
+            )
+            assert result is True, (
+                f"generate() returned False for seed={seed}. "
+                "The distribution check may have regressed."
+            )
+
+    def test_generate_skips_distribution_check_for_tiny_datasets(self, tmp_path):
+        """generate() must return True even when both train and eval are below
+        the threshold (e.g. 50 examples each — as used in smoke-test triggers)."""
+        result = generate(
+            data_dir=tmp_path / "tiny",
+            train_size=50,
+            eval_size=50,
+            seed=42,
+        )
+        assert result is True
