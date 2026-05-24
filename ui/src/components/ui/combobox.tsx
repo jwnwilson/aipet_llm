@@ -85,14 +85,16 @@ export function Combobox({ value, onChange, options, placeholder, disabled, clas
         onFocus={() => setOpen(true)}
         onKeyDown={handleKeyDown}
         className={cn(
-          'flex h-9 w-full rounded-md border border-gray-300 bg-white px-3 py-1 pr-8 text-sm text-gray-900 shadow-sm transition-colors',
-          'placeholder:text-gray-400',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
-          'disabled:cursor-not-allowed disabled:opacity-50'
+          "flex h-10 w-full bg-white px-3 py-2 pr-9 text-[0.92rem] text-[#1a1a1a]",
+          "font-['Outfit'] rounded-[3px] border-[1.5px] border-[#d0d0c8]",
+          'transition-colors duration-150',
+          'placeholder:text-[#b3b1a6]',
+          'focus-visible:outline-none focus-visible:border-[#1a1a1a]',
+          'disabled:cursor-not-allowed disabled:opacity-50',
         )}
       />
       <ChevronDown
-        className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500"
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888888]"
         aria-hidden
       />
       {open && filtered.length > 0 && (
@@ -100,7 +102,7 @@ export function Combobox({ value, onChange, options, placeholder, disabled, clas
           id="combobox-listbox"
           role="listbox"
           ref={listRef}
-          className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-md text-sm text-gray-900"
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-auto bg-white border border-[#d0d0c8] rounded-[3px] py-1 shadow-[0_4px_14px_rgba(0,0,0,0.10)] text-[0.9rem] text-[#1a1a1a] font-['Outfit']"
         >
           {filtered.map((opt, i) => (
             <li
@@ -115,7 +117,7 @@ export function Combobox({ value, onChange, options, placeholder, disabled, clas
               onMouseEnter={() => setActiveIndex(i)}
               className={cn(
                 'cursor-pointer select-none px-3 py-1.5',
-                i === activeIndex && 'bg-blue-50 text-blue-900',
+                i === activeIndex && 'bg-[#f3f2ec] text-[#1a1a1a]',
                 opt === value && i !== activeIndex && 'font-medium'
               )}
             >

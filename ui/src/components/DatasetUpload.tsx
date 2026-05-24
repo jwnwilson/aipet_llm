@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { UploadCloud } from 'lucide-react'
 import { uploadTrainDataset, uploadEvalDataset } from '@/api/datasets'
 import { Button } from './ui/button'
 import { Label } from './ui/label'
@@ -54,8 +55,18 @@ export function DatasetUpload() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <div className="border-[1.5px] border-dashed border-[#1a1a1a] rounded-[4px] px-6 py-8 text-center bg-[#fafaf7]">
+        <UploadCloud className="h-7 w-7 text-[#1a1a1a] mx-auto mb-3" />
+        <p className="font-['DM_Serif_Display'] text-[1.2rem] text-[#1a1a1a] mb-1">
+          Drop your dataset here
+        </p>
+        <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888]">
+          Accepted format · .jsonl
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-2">
         <Label htmlFor="train-file">Training dataset</Label>
         <Input
           id="train-file"
@@ -66,7 +77,7 @@ export function DatasetUpload() {
           disabled={uploading}
         />
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="eval-file">Eval dataset</Label>
         <Input
           id="eval-file"
@@ -78,13 +89,28 @@ export function DatasetUpload() {
         />
       </div>
       {message && (
-        <p className={`text-sm ${message.error ? 'text-red-600' : 'text-green-600'}`}>
-          {message.text}
-        </p>
+        <div
+          className={`border-l-[3px] px-3 py-2 ${
+            message.error
+              ? 'border-[#7f1d1d] bg-[#f1e2e0]'
+              : 'border-[#2d6a4f] bg-[#e8efe9]'
+          }`}
+        >
+          <p
+            className={`font-['IBM_Plex_Mono'] text-[0.76rem] ${
+              message.error ? 'text-[#7f1d1d]' : 'text-[#2d6a4f]'
+            }`}
+          >
+            {message.text}
+          </p>
+        </div>
       )}
-      <Button type="submit" disabled={uploading} className="self-start">
-        {uploading ? 'Uploading…' : 'Upload'}
-      </Button>
+      <div>
+        <Button type="submit" disabled={uploading}>
+          <UploadCloud className="h-3.5 w-3.5" />
+          {uploading ? 'Uploading' : 'Upload'}
+        </Button>
+      </div>
     </form>
   )
 }

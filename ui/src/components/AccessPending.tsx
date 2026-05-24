@@ -1,14 +1,23 @@
+import { Button } from './ui/button'
+
 export function AccessPending() {
   return (
-    <div className="flex flex-col items-center justify-center h-screen gap-3 text-gray-600">
-      <h1 className="text-2xl font-semibold">Access Pending</h1>
-      <p className="text-sm">Your account has not been approved yet. Contact an administrator.</p>
-      <button
-        onClick={() => window.location.reload()}
-        className="mt-2 px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded"
-      >
-        Refresh
-      </button>
+    <div className="flex flex-col items-center justify-center h-screen gap-5 px-6 text-center">
+      <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888]">
+        Access pending
+      </div>
+      <h1 className="font-['DM_Serif_Display'] text-[2.5rem] leading-tight text-[#1a1a1a] max-w-md">
+        Awaiting approval
+      </h1>
+      <p className="font-['Outfit'] text-[0.95rem] text-[#3a3a36] max-w-md leading-relaxed">
+        Your account has not been approved yet. Contact an administrator to gain access
+        to the training dashboard.
+      </p>
+      <div className="pt-3">
+        <Button variant="outline" onClick={() => window.location.reload()}>
+          Refresh
+        </Button>
+      </div>
     </div>
   )
 }

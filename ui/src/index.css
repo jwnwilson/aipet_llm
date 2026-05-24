@@ -1,14 +1,354 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------
+   Editorial Scientific — Design Tokens
+   Aesthetic: Nature journal x research dashboard.
+   Warm paper, ink black, no saturated colors, rigorous typography.
+   --------------------------------------------------------------- */
 :root {
   color-scheme: light;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* Color palette */
+  --color-paper:        #fafaf7;
+  --color-paper-deep:   #f3f2ec;
+  --color-surface:      #ffffff;
+  --color-surface-alt:  #f6f5ef;
+  --color-border:       #d0d0c8;
+  --color-border-soft:  #e5e3d8;
+  --color-ink:          #1a1a1a;
+  --color-ink-soft:     #3a3a36;
+  --color-muted:        #888888;
+  --color-muted-light:  #b3b1a6;
+  --color-success:      #2d6a4f;
+  --color-success-bg:   #e8efe9;
+  --color-warning:      #92400e;
+  --color-warning-bg:   #f4ecd8;
+  --color-danger:       #7f1d1d;
+  --color-danger-bg:    #f1e2e0;
+
+  /* Typography */
+  --font-display: 'DM Serif Display', 'Georgia', serif;
+  --font-body:    'Outfit', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+
+  /* Radius — minimal, no candy rounding */
+  --radius-sm: 2px;
+  --radius:    3px;
+  --radius-md: 4px;
+
+  /* Letter spacing */
+  --tracking-wide:  0.12em;
+  --tracking-wider: 0.18em;
+
+  /* Shadow — subtle paper lift */
+  --shadow-paper: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-lift:  0 4px 14px rgba(0, 0, 0, 0.10);
+}
+
+/* ---------------------------------------------------------------
+   Base
+   --------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  background-color: #f9fafb;
-  color: #111827;
+  font-family: var(--font-body);
+  font-weight: 400;
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  /* Dot-grid signature — subtle ink-on-paper */
+  background-image: radial-gradient(circle, #d0d0c8 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+  letter-spacing: 0.005em;
+}
+
+/* ---------------------------------------------------------------
+   Typography
+   --------------------------------------------------------------- */
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--color-ink);
+  font-weight: 400; /* DM Serif Display is naturally heavy */
+  letter-spacing: -0.005em;
+  margin: 0;
+  line-height: 1.15;
+}
+
+h1 { font-size: 2.25rem; }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.25rem; }
+
+p {
+  margin: 0;
+}
+
+code, pre, kbd, samp {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+/* ---------------------------------------------------------------
+   Editorial utilities (reusable visual primitives)
+   --------------------------------------------------------------- */
+
+/* Eyebrow / kicker label */
+.ed-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+/* Section heading — Outfit semibold uppercase */
+.ed-section-heading {
+  font-family: var(--font-body);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  font-size: 0.78rem;
+  color: var(--color-ink);
+}
+
+/* Full-bleed horizontal rule */
+.ed-rule {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}
+
+.ed-rule-ink {
+  border: 0;
+  border-top: 2px solid var(--color-ink);
+  margin: 0;
+}
+
+/* Page container — content max width */
+.ed-page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 2.5rem 2rem 4rem;
+}
+
+/* Card-like clean surface (utility – also see Card component) */
+.ed-surface {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-paper);
+}
+
+/* Mono data display */
+.ed-mono {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0;
+}
+
+/* Drop cap (used sparingly on serif headers) */
+.ed-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Step circle (numbered stage indicator) */
+.ed-step-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+.ed-step-circle--active {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+.ed-step-circle--done {
+  background: var(--color-surface-alt);
+  border-color: var(--color-muted-light);
+  color: var(--color-muted);
+}
+
+.ed-step-circle--pending {
+  border-color: var(--color-border);
+  color: var(--color-muted-light);
+}
+
+.ed-step-circle--failed {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-paper);
+}
+
+/* Connecting rule between steps */
+.ed-step-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+  min-width: 2rem;
+}
+
+.ed-step-rule--done {
+  background: var(--color-ink);
+}
+
+/* Nav link styling */
+.ed-nav-link {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-ink-soft);
+  padding: 0.25rem 0;
+  border-bottom: 1.5px solid transparent;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.ed-nav-link:hover {
+  color: var(--color-ink);
+}
+
+.ed-nav-link--active {
+  color: var(--color-ink);
+  border-bottom-color: var(--color-ink);
+}
+
+/* Focus ring — ink not blue */
+*:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+/* Scrollbar - thin, ink */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-paper);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+  border: 2px solid var(--color-paper);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-light);
+}
+
+/* Table reset for editorial tables */
+.ed-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ed-table thead th {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-muted);
+  font-weight: 500;
+  text-align: left;
+  padding: 0.85rem 1rem;
+  border-bottom: 1.5px solid var(--color-ink);
+  background: var(--color-surface);
+}
+
+.ed-table tbody td {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--color-border-soft);
+  font-size: 0.92rem;
+  color: var(--color-ink);
+}
+
+.ed-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.ed-table tbody tr:hover {
+  background: var(--color-surface-alt);
+}
+
+/* Subtle ink underline link */
+.ed-link {
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--color-muted-light);
+}
+
+.ed-link:hover {
+  text-decoration-color: var(--color-ink);
+}
+
+/* Badge — academic muted */
+.ed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  font-weight: 500;
+  padding: 0.18rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+}
+
+.ed-badge--success {
+  border-color: var(--color-success);
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.ed-badge--warning {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+}
+
+.ed-badge--danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.ed-badge--ink {
+  border-color: var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-paper);
 }

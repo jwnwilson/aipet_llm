@@ -45,56 +45,99 @@ export function InferencePage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inferences'] }),
   })
 
-  if (isLoading) return <p className="p-8 text-gray-500">Loading…</p>
-  if (isError) return <div className="p-8 text-red-500">Failed to load inference instances.</div>
+  if (isLoading) {
+    return (
+      <div className="ed-page">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+          Loading instances
+        </span>
+      </div>
+    )
+  }
+  if (isError) {
+    return (
+      <div className="ed-page">
+        <div className="border-l-[3px] border-[#7f1d1d] bg-[#f1e2e0] px-4 py-3 inline-block">
+          <p className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#7f1d1d]">
+            Failed to load inference instances.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-semibold mb-6">Inference Instances</h1>
+    <div className="ed-page">
+      <header className="mb-10">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+          Vol. 4 · Runtime
+        </div>
+        <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-3">
+          Inference instances
+        </h1>
+        <p className="font-['Outfit'] text-[1rem] text-[#3a3a36] max-w-2xl leading-relaxed">
+          Inference pods host trained models for serving. Start an instance to make a model available
+          for live inference; stop it to release compute.
+        </p>
+        <hr className="ed-rule mt-7 mb-0" />
+      </header>
 
       {instances.length === 0 ? (
-        <div className="text-center py-16 text-gray-500">
-          <p>No inference instances. Train a model to get started.</p>
+        <div className="border border-dashed border-[#d0d0c8] bg-white/40 rounded-[4px] py-16 text-center">
+          <p className="font-['DM_Serif_Display'] italic text-[1.4rem] text-[#3a3a36] mb-1">
+            No inference instances.
+          </p>
+          <p className="font-['Outfit'] text-[0.9rem] text-[#888888]">
+            Train a model to provision a serving instance.
+          </p>
         </div>
       ) : (
-        <div className="rounded-md border bg-white overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
+          <table className="ed-table">
             <thead>
-              <tr className="border-b bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
-                <th className="text-left px-4 py-3 font-semibold">Model ID</th>
-                <th className="text-left px-4 py-3 font-semibold">Pod Name</th>
-                <th className="text-left px-4 py-3 font-semibold">Status</th>
-                <th className="text-left px-4 py-3 font-semibold">Last Used</th>
-                <th className="text-left px-4 py-3 font-semibold">Timeout (min)</th>
-                <th className="text-left px-4 py-3 font-semibold">Actions</th>
+              <tr>
+                <th>Model ID</th>
+                <th>Pod name</th>
+                <th>Status</th>
+                <th>Last used</th>
+                <th>Timeout (min)</th>
+                <th style={{ width: '18rem' }}></th>
               </tr>
             </thead>
             <tbody>
               {instances.map((instance: InferenceInstance) => (
-                <tr key={instance.id} className="border-b last:border-0 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-gray-700 text-xs">{instance.model_id}</td>
-                  <td className="px-4 py-3 text-gray-700">{instance.pod_name || '—'}</td>
-                  <td className="px-4 py-3"><InferenceStatusBadge status={instance.status} /></td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{formatDate(instance.last_used_at)}</td>
-                  <td className="px-4 py-3 text-gray-700">{instance.idle_timeout_minutes}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
+                <tr key={instance.id}>
+                  <td className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#1a1a1a]">
+                    {instance.model_id}
+                  </td>
+                  <td className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#3a3a36]">
+                    {instance.pod_name || '—'}
+                  </td>
+                  <td><InferenceStatusBadge status={instance.status} /></td>
+                  <td className="font-['IBM_Plex_Mono'] text-[0.74rem] text-[#888888]">
+                    {formatDate(instance.last_used_at)}
+                  </td>
+                  <td className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a]">
+                    {instance.idle_timeout_minutes}
+                  </td>
+                  <td>
+                    <div className="flex gap-2 justify-end">
                       {CAN_START.includes(instance.status) && (
                         <Button size="sm" onClick={() => startMutation.mutate(instance.id)}
                           aria-label={`Start ${instance.id}`}>
-                          <Play className="h-3.5 w-3.5 mr-1" />Start
+                          <Play className="h-3 w-3" />Start
                         </Button>
                       )}
                       {CAN_STOP.includes(instance.status) && (
                         <Button size="sm" variant="outline" onClick={() => stopMutation.mutate(instance.id)}
                           aria-label={`Stop ${instance.id}`}>
-                          <Square className="h-3.5 w-3.5 mr-1" />Stop
+                          <Square className="h-3 w-3" />Stop
                         </Button>
                       )}
                       {CAN_DELETE.includes(instance.status) && (
                         <Button size="sm" variant="destructive" onClick={() => deleteMutation.mutate(instance.id)}
                           aria-label={`Delete ${instance.id}`}>
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                       )}
                     </div>
