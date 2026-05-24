@@ -72,3 +72,59 @@ async def idle_shutdown_loop(store: InferenceStorePort, pod_adapter: PodLifecycl
                 log.info("Idle shutdown sweep stopped %d instance(s)", stopped)
         except Exception:
             log.exception("Idle shutdown sweep encountered an unexpected error")
+
+
+_READINESS_POLL_SECONDS = 10
+
+
+def check_initializing_instances(
+    store: InferenceStorePort, pod_adapter: PodLifecyclePort
+) -> int:
+    """Promote INITIALIZING inference instances to AVAILABLE once their pod is Running.
+
+    Returns the count of instances promoted to AVAILABLE.
+    Per-instance errors are logged but do not propagate — the sweep continues.
+    """
+    promoted = 0
+    for instance in store.list_active():
+        if instance.status != InferenceStatus.INITIALIZING:
+            continue
+        try:
+            phase = pod_adapter.pod_status(
+                pod_name=instance.pod_name,
+                namespace=instance.pod_namespace,
+            )
+        except Exception:
+            log.exception("Failed to poll pod status for instance %s", instance.id)
+            continue
+
+        if phase == "running":
+            store.update_status(instance.id, InferenceStatus.AVAILABLE)
+            log.info("Instance %s pod running — marked AVAILABLE", instance.id)
+            promoted += 1
+        elif phase == "failed":
+            store.update_status(instance.id, InferenceStatus.FAILED)
+            log.warning("Instance %s pod failed — marked FAILED", instance.id)
+
+    return promoted
+
+
+async def readiness_watch_loop(
+    store: InferenceStorePort, pod_adapter: PodLifecyclePort
+) -> None:
+    """Periodically promote INITIALIZING instances to AVAILABLE.
+
+    Runs every INFERENCE_READINESS_POLL_SECONDS (default 10 s) so inference
+    pods become usable within one poll cycle of their readiness probe passing.
+    """
+    poll_interval = int(
+        os.environ.get("INFERENCE_READINESS_POLL_SECONDS", _READINESS_POLL_SECONDS)
+    )
+    while True:
+        await asyncio.sleep(poll_interval)
+        try:
+            promoted = check_initializing_instances(store, pod_adapter)
+            if promoted:
+                log.info("Readiness sweep promoted %d instance(s) to AVAILABLE", promoted)
+        except Exception:
+            log.exception("Readiness watch loop encountered an unexpected error")

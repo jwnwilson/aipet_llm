@@ -203,6 +203,9 @@ async def generate_dataset_activity(config: DatasetConfig) -> DatasetPaths:
 
 
 def _make_remote_adapter(backend: str) -> RemoteTrainingPort:
+    if backend == "k8s":
+        from adapters.compute.k8s_training import K8sTrainingAdapter
+        return K8sTrainingAdapter()
     if backend == "kaggle":
         from adapters.compute.kaggle import KaggleTrainingAdapter
         return KaggleTrainingAdapter()

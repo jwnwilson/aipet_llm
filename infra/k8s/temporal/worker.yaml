@@ -14,6 +14,7 @@ spec:
       labels:
         app: temporal-worker
     spec:
+      serviceAccountName: temporal-worker
       imagePullSecrets:
         - name: ecr-credentials
       containers:
@@ -24,6 +25,9 @@ spec:
           env:
             - name: PYTHONPATH
               value: /app/src
+            - name: TRAINING_WORKER_IMAGE
+              # Placeholder — stamped by CI deploy workflow with the training image ref
+              value: <ECR_TRAINING_IMAGE>
             - name: TEMPORAL_HOST
               value: "temporal:7233"
             - name: AWS_DEFAULT_REGION

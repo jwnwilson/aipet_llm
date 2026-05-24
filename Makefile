@@ -21,7 +21,7 @@ GITHUB_REPO     ?= jwnwilson/aipet_llm_api
 TF_DIR          ?= infra/terraform
 TF_BOOTSTRAP_DIR ?= infra/terraform/bootstrap
 
-.PHONY: serve ui dev sync test test-unit test-integration test-cli test-all smoke-test data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
+.PHONY: serve ui dev sync test test-unit test-integration test-cli test-all smoke-test smoke-test-k8s smoke-test-kaggle smoke-test-vastai smoke-test-runpod data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -62,12 +62,35 @@ test-integration: .venv ## Run integration tests only (requires models/model.ggu
 test-e2e: .venv ## Run all e2e tests including slow training tests (cloud tests skip without credentials)
 	uv run python -m pytest tests/e2e/ -v
 
-smoke-test: ## Run post-deploy smoke test against the live API (requires .env.smoke)
-	@if [ ! -f .env.smoke ]; then \
-		echo "ERROR: .env.smoke not found. Copy from .env.example and fill in live credentials."; \
+smoke-test: smoke-test-k8s ## Run post-deploy smoke test against the live k8s cluster (alias for smoke-test-k8s)
+
+smoke-test-k8s: ## Smoke test against k8s training backend (requires .env.smoke.k8s)
+	@if [ ! -f .env.smoke.k8s ]; then \
+		echo "ERROR: .env.smoke.k8s not found. Copy from env.smoke.k8s.example and fill in live credentials."; \
 		exit 1; \
 	fi
-	set -a && . ./.env.smoke && set +a && python3 scripts/smoke_test.py
+	set -a && . ./.env.smoke.k8s && set +a && REMOTE_BACKEND=k8s python3 scripts/smoke_test.py
+
+smoke-test-kaggle: ## Smoke test against Kaggle training backend (requires .env.smoke.kaggle)
+	@if [ ! -f .env.smoke.kaggle ]; then \
+		echo "ERROR: .env.smoke.kaggle not found. Copy from env.smoke.kaggle.example and fill in live credentials."; \
+		exit 1; \
+	fi
+	set -a && . ./.env.smoke.kaggle && set +a && REMOTE_BACKEND=kaggle python3 scripts/smoke_test.py
+
+smoke-test-vastai: ## Smoke test against Vast.ai training backend (requires .env.smoke.vastai)
+	@if [ ! -f .env.smoke.vastai ]; then \
+		echo "ERROR: .env.smoke.vastai not found. Copy from env.smoke.vastai.example and fill in live credentials."; \
+		exit 1; \
+	fi
+	set -a && . ./.env.smoke.vastai && set +a && REMOTE_BACKEND=vastai python3 scripts/smoke_test.py
+
+smoke-test-runpod: ## Smoke test against RunPod training backend (requires .env.smoke.runpod)
+	@if [ ! -f .env.smoke.runpod ]; then \
+		echo "ERROR: .env.smoke.runpod not found. Copy from env.smoke.runpod.example and fill in live credentials."; \
+		exit 1; \
+	fi
+	set -a && . ./.env.smoke.runpod && set +a && REMOTE_BACKEND=runpod python3 scripts/smoke_test.py
 
 test-all: .venv ## Run all tests including slow integration tests
 	uv run python -m pytest tests/ -v

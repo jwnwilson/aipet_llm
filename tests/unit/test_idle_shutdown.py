@@ -172,3 +172,58 @@ class TestSweepIdleInstances:
         stopped = sweep_idle_instances(store, pod)
 
         assert stopped == 0
+
+
+# ---------------------------------------------------------------------------
+# check_initializing_instances — readiness watcher
+# ---------------------------------------------------------------------------
+
+class TestCheckInitializingInstances:
+    from interactors.api.idle_shutdown import check_initializing_instances  # noqa: E402
+
+    def _initializing(self, id: str = "inst-1") -> InferenceInstance:
+        return _make_instance(id=id, status=InferenceStatus.INITIALIZING)
+
+    def test_promotes_to_available_when_pod_running(self):
+        from interactors.api.idle_shutdown import check_initializing_instances
+        store = _make_store([self._initializing()])
+        pod = _make_pod()
+        pod.pod_status.return_value = "running"
+
+        promoted = check_initializing_instances(store, pod)
+
+        assert promoted == 1
+        store.update_status.assert_called_once_with("inst-1", InferenceStatus.AVAILABLE)
+
+    def test_marks_failed_when_pod_fails(self):
+        from interactors.api.idle_shutdown import check_initializing_instances
+        store = _make_store([self._initializing()])
+        pod = _make_pod()
+        pod.pod_status.return_value = "failed"
+
+        promoted = check_initializing_instances(store, pod)
+
+        assert promoted == 0
+        store.update_status.assert_called_once_with("inst-1", InferenceStatus.FAILED)
+
+    def test_skips_non_initializing_instances(self):
+        from interactors.api.idle_shutdown import check_initializing_instances
+        available = _make_instance(status=InferenceStatus.AVAILABLE)
+        store = _make_store([available])
+        pod = _make_pod()
+
+        promoted = check_initializing_instances(store, pod)
+
+        assert promoted == 0
+        pod.pod_status.assert_not_called()
+
+    def test_continues_on_pod_status_error(self):
+        from interactors.api.idle_shutdown import check_initializing_instances
+        store = _make_store([self._initializing()])
+        pod = _make_pod()
+        pod.pod_status.side_effect = Exception("k8s unavailable")
+
+        # must not raise; instance stays untouched
+        promoted = check_initializing_instances(store, pod)
+        assert promoted == 0
+        store.update_status.assert_not_called()

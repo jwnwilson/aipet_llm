@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Post-deploy smoke test — validates the live API endpoints."""
+"""Post-deploy smoke test — validates the live API endpoints.
+
+Full pipeline exercised (k8s backend):
+  dataset upload → k8s training Job → eval → inference pod → /infer → cleanup
+
+Set REMOTE_BACKEND env var to switch backends (default: k8s).
+"""
 
 from __future__ import annotations
 
@@ -30,13 +36,18 @@ def check(label: str, resp: httpx.Response, expected_status: int = 200) -> dict:
     return resp.json()
 
 
-def create_model(client: httpx.Client, api_url: str, headers: dict[str, str]) -> dict:
+def create_model(
+    client: httpx.Client,
+    api_url: str,
+    headers: dict[str, str],
+    remote_backend: str = "k8s",
+) -> dict:
     """POST /api/models — return created model record."""
     payload = {
         "name": "smoke-test-model",
         "description": "Created by smoke test — safe to delete",
         "base_model": "HuggingFaceTB/SmolLM2-360M",
-        "remote_backend": "local",
+        "remote_backend": remote_backend,
         "skip_generate": True,
     }
     resp = client.post(f"{api_url}/api/models", json=payload, headers=headers)
@@ -65,11 +76,13 @@ def trigger_run(
     headers: dict[str, str],
     model_id: str,
     dataset_id: str,
+    remote_backend: str = "k8s",
 ) -> dict:
     """POST /api/runs/trigger — return {workflow_id, run_id}."""
     payload = {
         "model_id": model_id,
         "train_dataset_id": dataset_id,
+        "remote_backend": remote_backend,
         "skip_generate": True,
         "num_train_samples": 2,
         "num_eval_samples": 2,
@@ -78,38 +91,118 @@ def trigger_run(
     return check("POST /api/runs/trigger", resp, expected_status=202)
 
 
-_TRAINING_FAILURE_STATUSES = frozenset({"failed", "cancelled"})
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 
 
-def poll_run_until_started(
+def poll_run_to_completion(
     client: httpx.Client,
     api_url: str,
     headers: dict[str, str],
     run_id: str,
-    timeout_seconds: int = 60,
-    poll_interval: int = 5,
+    timeout_seconds: int = 900,
+    poll_interval: int = 10,
 ) -> dict:
-    """Poll GET /api/runs/{run_id} until status moves past 'pending'. Return final run record.
+    """Poll GET /api/runs/{run_id} until status reaches a terminal state.
 
-    A 'failed' or 'cancelled' status is a warning, not an API failure — it proves the Temporal
-    worker processed the run. Training failures are a separate infrastructure concern.
-    The only hard failure here is the run staying 'pending' (Temporal worker may be down).
+    Exits 1 if the run fails, is cancelled, or times out.
+    Returns the final run record on success (status == 'completed').
     """
     deadline = time.monotonic() + timeout_seconds
     while True:
         resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
         run = check(f"GET /api/runs/{run_id}", resp)
         status = run.get("status", "")
-        if status != "pending":
+        if status in _TERMINAL_STATUSES:
+            if status != "completed":
+                detail = run.get("progress_detail") or ""
+                print(
+                    f"ERROR: run {run_id} ended with status='{status}'"
+                    f"{': ' + detail if detail else ''}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
             return run
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(
-                f"ERROR: run {run_id} still 'pending' after {timeout_seconds}s"
-                " — Temporal worker may be down",
+                f"ERROR: run {run_id} did not complete within {timeout_seconds}s"
+                f" (current status='{status}')",
                 file=sys.stderr,
             )
             sys.exit(1)
+        print(f"   run status={status} — waiting...")
+        time.sleep(min(poll_interval, remaining))
+
+
+def start_inference_pod(
+    client: httpx.Client,
+    api_url: str,
+    headers: dict[str, str],
+    model_id: str,
+) -> dict:
+    """Find or create an inference instance for model_id, then POST /start.
+
+    Returns the inference instance record after starting.
+    """
+    # Find existing instance for this model
+    instances_resp = client.get(f"{api_url}/api/inferences", headers=headers)
+    instances = check("GET /api/inferences", instances_resp)
+
+    instance = next((i for i in instances if i.get("model_id") == model_id), None)
+
+    if instance is None:
+        # Create a new inference instance
+        create_resp = client.post(
+            f"{api_url}/api/inferences",
+            json={"model_id": model_id},
+            headers=headers,
+        )
+        instance = check("POST /api/inferences", create_resp, expected_status=201)
+
+    instance_id = instance["id"]
+    # Start the pod
+    start_resp = client.post(
+        f"{api_url}/api/inferences/{instance_id}/start",
+        headers=headers,
+    )
+    return check(f"POST /api/inferences/{instance_id}/start", start_resp)
+
+
+def poll_inference_available(
+    client: httpx.Client,
+    api_url: str,
+    headers: dict[str, str],
+    instance_id: str,
+    timeout_seconds: int = 300,
+    poll_interval: int = 10,
+) -> dict:
+    """Poll GET /api/inferences/{id} until status == 'available'.
+
+    Exits 1 on 'failed' status or timeout.
+    Returns the instance record when available.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        resp = client.get(f"{api_url}/api/inferences/{instance_id}", headers=headers)
+        instance = check(f"GET /api/inferences/{instance_id}", resp)
+        status = instance.get("status", "")
+        if status == "available":
+            return instance
+        if status == "failed":
+            print(
+                f"ERROR: inference instance {instance_id} entered 'failed' state",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            print(
+                f"ERROR: inference instance {instance_id} not available after {timeout_seconds}s"
+                f" (current status='{status}')",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        print(f"   inference status={status} — waiting...")
         time.sleep(min(poll_interval, remaining))
 
 
@@ -121,6 +214,7 @@ def main() -> None:
     auth0_client_id = require_env("AUTH0_MGMT_CLIENT_ID")
     auth0_client_secret = require_env("AUTH0_MGMT_CLIENT_SECRET")
     auth0_audience = require_env("AUTH0_AUDIENCE")
+    remote_backend = os.environ.get("REMOTE_BACKEND", "k8s")
 
     client = httpx.Client(timeout=30)
 
@@ -143,7 +237,11 @@ def main() -> None:
     print(f"   status    : {token_resp.status_code}")
     if token_resp.status_code != 200:
         print(f"ERROR: Auth0 token exchange failed ({token_resp.status_code})", file=sys.stderr)
-        print(f"   response  : {token_resp.text}", file=sys.stderr)
+        try:
+            err_desc = token_resp.json().get("error_description", token_resp.json().get("error", "unknown"))
+        except Exception:
+            err_desc = "could not parse error response"
+        print(f"   error     : {err_desc}", file=sys.stderr)
         sys.exit(1)
     access_token = token_resp.json()["access_token"]
     auth_headers = {"Authorization": f"Bearer {access_token}"}
@@ -157,12 +255,13 @@ def main() -> None:
     model_id: str | None = None
     dataset_id: str | None = None
     run_id: str | None = None
+    instance_id: str | None = None
 
     try:
-        # 3. Create a model
-        model = create_model(client, api_url, auth_headers)
+        # 3. Create a model (with remote_backend wired in)
+        model = create_model(client, api_url, auth_headers, remote_backend=remote_backend)
         model_id = model["id"]
-        print(f"OK — model_id={model_id}\n")
+        print(f"OK — model_id={model_id} remote_backend={remote_backend}\n")
 
         # 4. Verify the model appears in the listing
         models = check("GET /api/models", client.get(f"{api_url}/api/models", headers=auth_headers))
@@ -194,24 +293,30 @@ def main() -> None:
             sys.exit(1)
         print(f"OK — {len(datasets)} dataset(s) returned, created dataset present\n")
 
-        # 7. Trigger a training run and poll until it moves past 'pending'
-        run_trigger = trigger_run(client, api_url, auth_headers, model_id, dataset_id)
+        # 7. Trigger a training run and wait for completion
+        run_trigger = trigger_run(
+            client, api_url, auth_headers, model_id, dataset_id,
+            remote_backend=remote_backend,
+        )
         run_id = run_trigger["run_id"]
         workflow_id = run_trigger["workflow_id"]
         print(f"OK — run_id={run_id} workflow_id={workflow_id}")
-        print("   Polling until run status moves past 'pending'...")
-        run = poll_run_until_started(client, api_url, auth_headers, run_id)
-        run_status = run.get("status", "unknown")
-        if run_status in _TRAINING_FAILURE_STATUSES:
-            detail = run.get("progress_detail") or ""
-            print(
-                f"WARN — run moved past 'pending' to '{run_status}'"
-                f" (training env issue, not an API failure){': ' + detail if detail else ''}\n"
-            )
-        else:
-            print(f"OK — run status={run_status}\n")
+        print("   Polling until run completes...")
+        run = poll_run_to_completion(client, api_url, auth_headers, run_id)
+        print(f"OK — run status={run.get('status')}\n")
 
-        # 8. Inference — minimal scene with a bowl so EAT is a valid candidate
+        # 8. Start an inference pod for the trained model
+        print("   Starting inference pod for trained model...")
+        instance = start_inference_pod(client, api_url, auth_headers, model_id)
+        instance_id = instance["id"]
+        print(f"OK — inference instance started: instance_id={instance_id}\n")
+
+        # 9. Wait for the inference pod to become available
+        print("   Waiting for inference pod to become available...")
+        poll_inference_available(client, api_url, auth_headers, instance_id)
+        print("OK — inference pod available\n")
+
+        # 10. Run inference via the pod
         infer_payload = {
             "scene": {
                 "objects": [{"id": "bowl1", "type": "bowl", "distance": 1.5}],
@@ -225,26 +330,33 @@ def main() -> None:
                 "tiredness": 0.4,
             },
         }
-        print("-- POST /infer...")
+        print(f"-- POST /api/inferences/{instance_id}/infer...")
         infer_resp = client.post(
-            f"{api_url}/infer", json=infer_payload, headers=auth_headers, timeout=120
+            f"{api_url}/api/inferences/{instance_id}/infer",
+            json=infer_payload,
+            headers=auth_headers,
+            timeout=120,
         )
-        if (
-            infer_resp.status_code == 503
-            and infer_resp.json().get("detail", {}).get("error") == "inference_disabled"
-        ):
-            print("OK — inference disabled (no model loaded)\n")
-        else:
-            infer = check("POST /infer", infer_resp)
-            print(f"OK — action={infer['action']}\n")
+        infer = check(f"POST /api/inferences/{instance_id}/infer", infer_resp)
+        action = infer.get("action")
+        if not action:
+            print("ERROR: inference response missing 'action' field", file=sys.stderr)
+            sys.exit(1)
+        print(f"OK — action={action}\n")
 
-        # 9. Database tables via kubectl
-        print("-- Checking database tables...")
+        # 11. Database tables via kubectl
+        db_pod = os.environ.get("DB_POD_NAME", "llm-api-db-0")
+        db_ns  = os.environ.get("DB_NAMESPACE", "default")
+        db_user = os.environ.get("DB_USER", "aipet")
+        db_name = os.environ.get("DB_NAME", "aipet")
+        print(f"-- Checking database tables (pod={db_pod}, ns={db_ns})...")
         result = subprocess.run(
             [
-                "kubectl", "exec", "llm-api-db-0", "--",
-                "psql", "-U", "aipet", "-d", "aipet", "-t", "-c",
-                "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;",
+                "kubectl", "exec", db_pod,
+                "--namespace", db_ns,
+                "--",
+                "psql", "-U", db_user, "-d", db_name, "-t", "-c",
+                "SELECT tablename FROM pg_tables WHERE schemaname=\'public\' ORDER BY tablename;",
             ],
             capture_output=True,
             text=True,
@@ -267,7 +379,44 @@ def main() -> None:
         print("OK — all required tables present\n")
 
     finally:
-        # 10. Cleanup — always runs, even on test failure
+        # 12. Cleanup — always runs, even on test failure
+        # Stop and delete inference instance first (it holds k8s resources)
+        if instance_id:
+            print(f"-- Cleanup: stop inference instance {instance_id}...")
+            try:
+                stop_resp = client.post(
+                    f"{api_url}/api/inferences/{instance_id}/stop",
+                    headers=auth_headers,
+                )
+                if stop_resp.status_code in (200, 204):
+                    print("OK — inference instance stopped")
+                else:
+                    print(
+                        f"WARN: stop returned {stop_resp.status_code} — continuing cleanup",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(f"WARN: inference stop raised {exc} — continuing cleanup", file=sys.stderr)
+
+            print(f"-- Cleanup: DELETE /api/inferences/{instance_id}...")
+            try:
+                del_resp = client.delete(
+                    f"{api_url}/api/inferences/{instance_id}", headers=auth_headers
+                )
+                if del_resp.status_code == 204:
+                    print("OK — inference instance deleted\n")
+                else:
+                    print(
+                        f"WARN: inference delete returned {del_resp.status_code}"
+                        " — manual cleanup may be needed",
+                        file=sys.stderr,
+                    )
+            except Exception as exc:
+                print(
+                    f"WARN: inference cleanup raised {exc} — manual cleanup may be needed",
+                    file=sys.stderr,
+                )
+
         if dataset_id:
             print(f"-- Cleanup: DELETE /api/datasets/{dataset_id}...")
             try:
@@ -278,11 +427,15 @@ def main() -> None:
                     print("OK — dataset deleted\n")
                 else:
                     print(
-                        f"WARN: dataset delete returned {del_resp.status_code} — manual cleanup may be needed",
+                        f"WARN: dataset delete returned {del_resp.status_code}"
+                        " — manual cleanup may be needed",
                         file=sys.stderr,
                     )
             except Exception as exc:
-                print(f"WARN: dataset cleanup raised {exc} — manual cleanup may be needed", file=sys.stderr)
+                print(
+                    f"WARN: dataset cleanup raised {exc} — manual cleanup may be needed",
+                    file=sys.stderr,
+                )
 
         if run_id:
             print(f"-- Cleanup: DELETE /api/runs/{run_id}...")
@@ -294,7 +447,8 @@ def main() -> None:
                     print("OK — run deleted\n")
                 else:
                     print(
-                        f"WARN: run delete returned {del_resp.status_code} — manual cleanup may be needed",
+                        f"WARN: run delete returned {del_resp.status_code}"
+                        " — manual cleanup may be needed",
                         file=sys.stderr,
                     )
             except Exception as exc:
@@ -310,7 +464,8 @@ def main() -> None:
                     print("OK — model deleted\n")
                 else:
                     print(
-                        f"WARN: model delete returned {del_resp.status_code} — manual cleanup may be needed",
+                        f"WARN: model delete returned {del_resp.status_code}"
+                        " — manual cleanup may be needed",
                         file=sys.stderr,
                     )
             except Exception as exc:
