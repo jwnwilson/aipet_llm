@@ -1,11 +1,13 @@
 import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { cancelRun, deleteRun, getRunEvaluation, getRun, isRunActive, isRunCancellable } from '@/api/runs'
 import { listDatasets } from '@/api/datasets'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
 import { EvalMetrics } from '@/components/EvalMetrics'
+import { Button } from '@/components/ui/button'
 import type { PipelineStage, StageStatus } from '@/components/PipelineStages'
 import type { RunStatus } from '@/types'
 
@@ -38,6 +40,19 @@ function buildStages(status: RunStatus): PipelineStage[] {
 const EVAL_STATUSES: RunStatus[] = ['completed', 'failed']
 const EVAL_PASS_THRESHOLD = 0.95
 
+function MetricBlock({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 py-3 border-b border-[#e5e3d8]">
+      <dt className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+        {label}
+      </dt>
+      <dd className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a] break-all">
+        {value}
+      </dd>
+    </div>
+  )
+}
+
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
   const navigate = useNavigate()
@@ -58,7 +73,6 @@ export function RunDetailPage() {
     },
   })
 
-  // Only fetch eval data for terminal statuses that have a score to display
   const showEval = run != null && EVAL_STATUSES.includes(run.status) && run.eval_valid_pct != null
 
   const { data: evalData, isError: evalError } = useQuery({
@@ -94,113 +108,152 @@ export function RunDetailPage() {
     }
   }
 
-  if (isLoading) return <p className="p-8 text-gray-500">Loading…</p>
-  if (!run) return <p className="p-8 text-red-600">Run not found.</p>
+  if (isLoading) {
+    return (
+      <div className="ed-page">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+          Loading run
+        </span>
+      </div>
+    )
+  }
+  if (!run) {
+    return (
+      <div className="ed-page">
+        <p className="font-['DM_Serif_Display'] italic text-[#7f1d1d] text-[1.4rem]">
+          Run not found.
+        </p>
+      </div>
+    )
+  }
 
   return (
-    <div className="p-8 max-w-2xl">
-      <div className="flex items-center gap-3 mb-2">
-        <h1 className="text-xl font-semibold font-mono truncate">{run.workflow_id}</h1>
-        <RunStatusBadge status={run.status} />
-        <div className="ml-auto flex items-center gap-2">
-          {run && isRunCancellable(run) && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelMutation.isPending}
-              className="text-sm text-yellow-700 border border-yellow-300 rounded px-3 py-1 hover:bg-yellow-50 disabled:opacity-50"
-            >
-              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel run'}
-            </button>
-          )}
-          <button
-            onClick={handleDelete}
-            disabled={deleteMutation.isPending}
-            className="text-sm text-red-600 border border-red-300 rounded px-3 py-1 hover:bg-red-50 disabled:opacity-50"
-          >
-            {deleteMutation.isPending ? 'Deleting…' : 'Delete run'}
-          </button>
+    <div className="ed-page max-w-4xl">
+      <Link
+        to="/runs"
+        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-5"
+      >
+        <ArrowLeft className="h-3 w-3" />
+        Back to runs
+      </Link>
+
+      <header className="mb-8">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+          Run · {run.id.slice(0, 8)}
         </div>
-      </div>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h1 className="font-['DM_Serif_Display'] text-[2rem] leading-tight text-[#1a1a1a] mb-3 break-all">
+              {run.workflow_id}
+            </h1>
+            <RunStatusBadge status={run.status} />
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {isRunCancellable(run) && (
+              <Button variant="outline" onClick={handleCancel} disabled={cancelMutation.isPending}>
+                {cancelMutation.isPending ? 'Cancelling' : 'Cancel run'}
+              </Button>
+            )}
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? 'Deleting' : 'Delete run'}
+            </Button>
+          </div>
+        </div>
+      </header>
 
-      {cancelMutation.isError && (
-        <p className="text-sm text-red-600 mb-4">Failed to cancel run. Please try again.</p>
-      )}
-      {deleteMutation.isError && (
-        <p className="text-sm text-red-600 mb-4">Failed to delete run. Please try again.</p>
+      {(cancelMutation.isError || deleteMutation.isError) && (
+        <div className="mb-6 border-l-[3px] border-[#7f1d1d] bg-[#f1e2e0] px-4 py-3">
+          <p className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#7f1d1d]">
+            {cancelMutation.isError ? 'Failed to cancel run. Please try again.' : 'Failed to delete run. Please try again.'}
+          </p>
+        </div>
       )}
 
-      <div className="mb-8 mt-6">
-        <h2 className="text-sm font-medium text-gray-500 mb-3">Pipeline stages</h2>
+      {/* Pipeline */}
+      <section className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] px-8 py-6 mb-10">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-5">
+          Pipeline stages
+        </div>
         <PipelineStages stages={buildStages(run.status)} />
-      </div>
+      </section>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-        <dt className="text-gray-500">Run ID</dt>
-        <dd className="font-mono text-gray-900">{run.id}</dd>
-        <dt className="text-gray-500">Started</dt>
-        <dd className="text-gray-900">{new Date(run.created_at).toLocaleString()}</dd>
-        <dt className="text-gray-500">Updated</dt>
-        <dd className="text-gray-900">{new Date(run.updated_at).toLocaleString()}</dd>
-        {run.progress != null && (
-          <>
-            <dt className="text-gray-500">Progress</dt>
-            <dd className="text-gray-900">{Math.round(run.progress * 100)}%</dd>
-          </>
-        )}
-        {run.eval_valid_pct != null && (
-          <>
-            <dt className="text-gray-500">Eval valid</dt>
-            <dd className="text-gray-900">{Math.round(run.eval_valid_pct * 100)}%</dd>
-          </>
-        )}
-        {run.progress_detail && (
-          <>
-            <dt className="text-gray-500">Detail</dt>
-            <dd className="text-gray-900">{run.progress_detail}</dd>
-          </>
-        )}
-        {run.train_dataset_id != null && (
-          <>
-            <dt className="text-gray-500">Train dataset</dt>
-            <dd className="text-gray-900">{datasetById[run.train_dataset_id] ?? run.train_dataset_id}</dd>
-          </>
-        )}
-        {run.eval_dataset_id != null && (
-          <>
-            <dt className="text-gray-500">Eval dataset</dt>
-            <dd className="text-gray-900">{datasetById[run.eval_dataset_id] ?? run.eval_dataset_id}</dd>
-          </>
-        )}
-      </dl>
+      <hr className="ed-rule" />
+
+      {/* Metrics grid */}
+      <section className="mb-10">
+        <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">Metrics</h2>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
+          <MetricBlock label="Run ID" value={run.id} />
+          <MetricBlock label="Started" value={new Date(run.created_at).toLocaleString()} />
+          <MetricBlock label="Updated" value={new Date(run.updated_at).toLocaleString()} />
+          {run.progress != null && (
+            <MetricBlock label="Progress" value={`${Math.round(run.progress * 100)}%`} />
+          )}
+          {run.eval_valid_pct != null && (
+            <MetricBlock
+              label="Eval valid"
+              value={`${Math.round(run.eval_valid_pct * 100)}%`}
+            />
+          )}
+          {run.progress_detail && (
+            <MetricBlock label="Detail" value={run.progress_detail} />
+          )}
+          {run.train_dataset_id != null && (
+            <MetricBlock
+              label="Train dataset"
+              value={datasetById[run.train_dataset_id] ?? run.train_dataset_id}
+            />
+          )}
+          {run.eval_dataset_id != null && (
+            <MetricBlock
+              label="Eval dataset"
+              value={datasetById[run.eval_dataset_id] ?? run.eval_dataset_id}
+            />
+          )}
+        </dl>
+      </section>
 
       {run.training_config && Object.keys(run.training_config).length > 0 && (
-        <div className="mt-8">
-          <h2 className="text-sm font-medium text-gray-500 mb-3">Run configuration</h2>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            {Object.entries(run.training_config)
-              .filter(([, v]) => v != null)
-              .map(([k, v]) => (
-                <React.Fragment key={k}>
-                  <dt className="text-gray-500">{k.replace(/_/g, ' ')}</dt>
-                  <dd className="font-mono text-gray-900">{String(v)}</dd>
-                </React.Fragment>
-              ))}
-          </dl>
-        </div>
+        <>
+          <hr className="ed-rule" />
+          <section className="mb-10">
+            <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">
+              Run configuration
+            </h2>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
+              {Object.entries(run.training_config)
+                .filter(([, v]) => v != null)
+                .map(([k, v]) => (
+                  <React.Fragment key={k}>
+                    <MetricBlock label={k.replace(/_/g, ' ')} value={String(v)} />
+                  </React.Fragment>
+                ))}
+            </dl>
+          </section>
+        </>
       )}
 
       {showEval && run.eval_valid_pct != null && (
-        <div className="mt-8">
-          <h2 className="text-sm font-medium text-gray-500 mb-3">Evaluation results</h2>
-          {evalError && (
-            <p className="text-sm text-red-600 mb-2">Failed to load detailed report.</p>
-          )}
-          <EvalMetrics
-            validPct={run.eval_valid_pct}
-            passed={evalData?.quality_report?.passed ?? (run.eval_valid_pct >= EVAL_PASS_THRESHOLD)}
-            qualityReport={evalData?.quality_report}
-          />
-        </div>
+        <>
+          <hr className="ed-rule" />
+          <section>
+            <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">
+              Evaluation results
+            </h2>
+            {evalError && (
+              <div className="mb-4 border-l-[3px] border-[#7f1d1d] bg-[#f1e2e0] px-3 py-2">
+                <p className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#7f1d1d]">
+                  Failed to load detailed report.
+                </p>
+              </div>
+            )}
+            <EvalMetrics
+              validPct={run.eval_valid_pct}
+              passed={evalData?.quality_report?.passed ?? (run.eval_valid_pct >= EVAL_PASS_THRESHOLD)}
+              qualityReport={evalData?.quality_report}
+            />
+          </section>
+        </>
       )}
     </div>
   )

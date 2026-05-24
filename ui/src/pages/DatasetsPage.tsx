@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, Upload } from 'lucide-react'
+import { Trash2, UploadCloud } from 'lucide-react'
 import type { Dataset, DatasetType } from '@/types'
 import { listDatasets, createDataset, deleteDataset } from '@/api/datasets'
 import { Button } from '@/components/ui/button'
@@ -13,29 +13,40 @@ function getErrorMessage(error: unknown): string {
   return 'Unexpected error'
 }
 
-function DatasetRow({ dataset, onDelete }: { dataset: Dataset; onDelete: (id: string) => void }) {
+function DatasetRow({ dataset, onDelete, index }: { dataset: Dataset; onDelete: (id: string) => void; index: number }) {
   return (
-    <tr className="border-b last:border-0">
-      <td className="py-3 pr-4 font-medium">{dataset.name}</td>
-      <td className="py-3 pr-4">
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-          dataset.dataset_type === 'train'
-            ? 'bg-blue-100 text-blue-700'
-            : 'bg-green-100 text-green-700'
-        }`}>
+    <tr>
+      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
+        {String(index + 1).padStart(2, '0')}
+      </td>
+      <td className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a]">{dataset.name}</td>
+      <td>
+        <span
+          className={[
+            "inline-flex items-center font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em]",
+            'px-2 py-[3px] rounded-[2px] border',
+            dataset.dataset_type === 'train'
+              ? 'border-[#1a1a1a] bg-[#1a1a1a] text-[#fafaf7]'
+              : 'border-[#2d6a4f] bg-[#e8efe9] text-[#2d6a4f]',
+          ].join(' ')}
+        >
           {dataset.dataset_type}
         </span>
       </td>
-      <td className="py-3 pr-4 text-sm text-gray-500 max-w-xs truncate">{dataset.description || '—'}</td>
-      <td className="py-3 pr-4 text-sm text-gray-400 font-mono truncate max-w-xs">{dataset.key}</td>
-      <td className="py-3 text-sm text-gray-400">
+      <td className="font-['Outfit'] text-[0.82rem] text-[#3a3a36] max-w-xs truncate">
+        {dataset.description || '—'}
+      </td>
+      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888] max-w-xs truncate">
+        {dataset.key}
+      </td>
+      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
         {new Date(dataset.created_at).toLocaleDateString()}
       </td>
-      <td className="py-3 pl-4">
+      <td className="text-right">
         <button
           onClick={() => onDelete(dataset.id)}
           aria-label={`Delete dataset ${dataset.name}`}
-          className="text-gray-400 hover:text-red-500 transition-colors"
+          className="text-[#888888] hover:text-[#7f1d1d] transition-colors p-1.5"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -44,11 +55,13 @@ function DatasetRow({ dataset, onDelete }: { dataset: Dataset; onDelete: (id: st
   )
 }
 
-function UploadForm({ onSuccess }: { onSuccess: () => void }) {
+function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [datasetType, setDatasetType] = useState<DatasetType>('train')
+  const [fileName, setFileName] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
 
   const mutation = useMutation({
@@ -58,6 +71,7 @@ function UploadForm({ onSuccess }: { onSuccess: () => void }) {
       setName('')
       setDescription('')
       setDatasetType('train')
+      setFileName(null)
       if (fileRef.current) fileRef.current.value = ''
       onSuccess()
     },
@@ -81,10 +95,50 @@ function UploadForm({ onSuccess }: { onSuccess: () => void }) {
     mutation.mutate({ name: name.trim(), dataset_type: datasetType, description, file })
   }
 
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && fileRef.current) {
+      const dt = new DataTransfer()
+      dt.items.add(file)
+      fileRef.current.files = dt.files
+      setFileName(file.name)
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1.5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {/* Drop zone */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onClick={() => fileRef.current?.click()}
+        className={[
+          'border-[1.5px] border-dashed rounded-[4px] px-6 py-10 text-center cursor-pointer transition-colors',
+          dragOver ? 'border-[#1a1a1a] bg-[#f3f2ec]' : 'border-[#1a1a1a] bg-[#fafaf7] hover:bg-[#f6f5ef]',
+        ].join(' ')}
+      >
+        <UploadCloud className="h-8 w-8 text-[#1a1a1a] mx-auto mb-3" />
+        <p className="font-['DM_Serif_Display'] text-[1.3rem] text-[#1a1a1a] mb-1">
+          {fileName ?? 'Drop your dataset here'}
+        </p>
+        <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888]">
+          {fileName ? 'Click to replace' : 'Click to browse · accepted format .jsonl'}
+        </p>
+        <input
+          id="dataset-file" aria-label="File"
+          type="file"
+          accept=".jsonl"
+          ref={fileRef}
+          onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+          className="hidden"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="dataset-name">Name</Label>
           <Input
             id="dataset-name"
@@ -94,7 +148,7 @@ function UploadForm({ onSuccess }: { onSuccess: () => void }) {
             disabled={mutation.isPending}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <Label>Type</Label>
           <Select
             value={datasetType}
@@ -111,35 +165,39 @@ function UploadForm({ onSuccess }: { onSuccess: () => void }) {
           </Select>
         </div>
       </div>
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="dataset-desc">Description (optional)</Label>
         <Input
           id="dataset-desc"
-          placeholder="Short description…"
+          placeholder="Short description"
           value={description}
           onChange={e => setDescription(e.target.value)}
           disabled={mutation.isPending}
         />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="dataset-file">File (.jsonl)</Label>
-        <Input
-          id="dataset-file"
-          type="file"
-          accept=".jsonl"
-          ref={fileRef}
-          disabled={mutation.isPending}
-        />
-      </div>
+
       {message && (
-        <p className={`text-sm ${message.error ? 'text-red-600' : 'text-green-600'}`}>
-          {message.text}
-        </p>
+        <div
+          className={`border-l-[3px] px-3 py-2 ${
+            message.error ? 'border-[#7f1d1d] bg-[#f1e2e0]' : 'border-[#2d6a4f] bg-[#e8efe9]'
+          }`}
+        >
+          <p
+            className={`font-['IBM_Plex_Mono'] text-[0.76rem] ${
+              message.error ? 'text-[#7f1d1d]' : 'text-[#2d6a4f]'
+            }`}
+          >
+            {message.text}
+          </p>
+        </div>
       )}
-      <Button type="submit" disabled={mutation.isPending} className="self-start flex items-center gap-2">
-        <Upload className="h-4 w-4" />
-        {mutation.isPending ? 'Uploading…' : 'Upload dataset'}
-      </Button>
+
+      <div>
+        <Button type="submit" disabled={mutation.isPending}>
+          <UploadCloud className="h-3.5 w-3.5" />
+          {mutation.isPending ? 'Uploading' : 'Upload dataset'}
+        </Button>
+      </div>
     </form>
   )
 }
@@ -162,43 +220,98 @@ export function DatasetsPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-8 flex flex-col gap-8">
-      <h1 className="text-2xl font-semibold">Datasets</h1>
+    <div className="ed-page">
+      <header className="mb-10">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+          Vol. 3 · Corpus
+        </div>
+        <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-3">
+          Datasets
+        </h1>
+        <p className="font-['Outfit'] text-[1rem] text-[#3a3a36] max-w-2xl leading-relaxed">
+          Upload training and evaluation corpora in .jsonl format.
+          Datasets are versioned by storage key and can be linked to any number of models.
+        </p>
+        <hr className="ed-rule mt-7 mb-0" />
+      </header>
 
-      {/* Upload form */}
-      <section className="bg-white rounded-lg border p-6">
-        <h2 className="text-base font-medium mb-4">Upload new dataset</h2>
-        <UploadForm onSuccess={() => queryClient.invalidateQueries({ queryKey: ['datasets'] })} />
-      </section>
+      <div className="grid grid-cols-1 lg:grid-cols-[20rem_1fr] gap-8 items-start">
+        {/* Upload column */}
+        <aside className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+          <div className="px-6 py-4 border-b border-[#d0d0c8]">
+            <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+              Section I
+            </div>
+            <h2 className="font-['DM_Serif_Display'] text-[1.25rem] text-[#1a1a1a]">
+              Upload new
+            </h2>
+          </div>
+          <div className="px-6 py-5">
+            <UploadDropzone onSuccess={() => queryClient.invalidateQueries({ queryKey: ['datasets'] })} />
+          </div>
+        </aside>
 
-      {/* Dataset list */}
-      <section className="bg-white rounded-lg border p-6">
-        <h2 className="text-base font-medium mb-4">Your datasets</h2>
-        {isLoading && <p className="text-sm text-gray-500">Loading…</p>}
-        {error && <p className="text-sm text-red-600">Failed to load datasets.</p>}
-        {datasets && datasets.length === 0 && (
-          <p className="text-sm text-gray-500">No datasets uploaded yet.</p>
-        )}
-        {datasets && datasets.length > 0 && (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-gray-500 text-xs uppercase tracking-wider">
-                <th className="pb-2 pr-4">Name</th>
-                <th className="pb-2 pr-4">Type</th>
-                <th className="pb-2 pr-4">Description</th>
-                <th className="pb-2 pr-4">Storage key</th>
-                <th className="pb-2">Created</th>
-                <th className="pb-2 pl-4" />
-              </tr>
-            </thead>
-            <tbody>
-              {datasets.map(ds => (
-                <DatasetRow key={ds.id} dataset={ds} onDelete={handleDelete} />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+        {/* List column */}
+        <section className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
+          <div className="px-6 py-4 border-b border-[#d0d0c8] flex items-center justify-between">
+            <div>
+              <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+                Section II
+              </div>
+              <h2 className="font-['DM_Serif_Display'] text-[1.25rem] text-[#1a1a1a]">
+                Catalog
+              </h2>
+            </div>
+            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888]">
+              {datasets?.length ?? 0} {datasets?.length === 1 ? 'entry' : 'entries'}
+            </span>
+          </div>
+
+          <div>
+            {isLoading && (
+              <div className="px-6 py-8">
+                <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+                  Loading
+                </span>
+              </div>
+            )}
+            {error && (
+              <div className="px-6 py-4 border-l-[3px] border-[#7f1d1d] bg-[#f1e2e0] m-6">
+                <p className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#7f1d1d]">
+                  Failed to load datasets.
+                </p>
+              </div>
+            )}
+            {datasets && datasets.length === 0 && (
+              <div className="px-6 py-12 text-center">
+                <p className="font-['DM_Serif_Display'] italic text-[1.2rem] text-[#888888]">
+                  No datasets uploaded yet.
+                </p>
+              </div>
+            )}
+            {datasets && datasets.length > 0 && (
+              <table className="ed-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '3rem' }}>№</th>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                    <th>Storage key</th>
+                    <th>Created</th>
+                    <th style={{ width: '3rem' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datasets.map((ds, i) => (
+                    <DatasetRow key={ds.id} dataset={ds} onDelete={handleDelete} index={i} />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
   )
 }

@@ -3,22 +3,43 @@ import { Slot } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
+/**
+ * Editorial Scientific button.
+ * No saturated colors — ink black, paper white, dark academic accents.
+ * Body text uses Outfit; uppercase tracking on small variants for label feel.
+ */
 const buttonVariants = cva(
-  'inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+  [
+    'inline-flex items-center justify-center gap-1.5',
+    'font-medium text-[0.85rem]',
+    "font-['Outfit']",
+    'transition-colors duration-150',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-paper)]',
+    'disabled:pointer-events-none disabled:opacity-40',
+    'whitespace-nowrap select-none',
+    'rounded-[3px]',
+  ].join(' '),
   {
     variants: {
       variant: {
-        default: 'bg-blue-600 text-white hover:bg-blue-700',
-        destructive: 'bg-red-600 text-white hover:bg-red-700',
-        outline: 'border border-gray-300 bg-white hover:bg-gray-50 text-gray-700',
-        ghost: 'hover:bg-gray-100 text-gray-700',
-        link: 'text-blue-600 underline-offset-4 hover:underline',
+        // Solid ink — primary action
+        default: 'bg-[#1a1a1a] text-[#fafaf7] border border-[#1a1a1a] hover:bg-black hover:border-black',
+        // Outline — ink rule, fills on hover
+        outline: 'bg-transparent text-[#1a1a1a] border-[1.5px] border-[#1a1a1a] hover:bg-[#1a1a1a] hover:text-[#fafaf7]',
+        // Destructive — academic dark red
+        destructive: 'bg-[#7f1d1d] text-[#fafaf7] border border-[#7f1d1d] hover:bg-[#651616] hover:border-[#651616]',
+        // Ghost — shows ink on hover
+        ghost: 'bg-transparent text-[#3a3a36] border border-transparent hover:text-[#1a1a1a] hover:bg-[#f3f2ec]',
+        // Subtle — paper alt surface
+        subtle: 'bg-[#f3f2ec] text-[#1a1a1a] border border-[#d0d0c8] hover:bg-[#ebe9df]',
+        // Link
+        link: 'text-[#1a1a1a] underline underline-offset-4 decoration-[#b3b1a6] hover:decoration-[#1a1a1a] bg-transparent border-transparent p-0 h-auto',
       },
       size: {
         default: 'h-9 px-4 py-2',
-        sm: 'h-8 px-3 text-xs',
-        lg: 'h-10 px-8',
-        icon: 'h-9 w-9',
+        sm: "h-8 px-3 text-[0.72rem] uppercase tracking-[0.12em] font-['Outfit'] font-semibold",
+        lg: 'h-11 px-7 text-[0.95rem]',
+        icon: 'h-9 w-9 p-0',
       },
     },
     defaultVariants: {
