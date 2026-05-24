@@ -6,6 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Skip the whole module when torch is not installed.
+# These tests require the training extra: uv sync --extra training
+torch = pytest.importorskip("torch", reason="torch not installed — run: uv sync --extra training")
+
 
 class TestWeightedTrainerDataLoader:
     """Regression tests for _WeightedTrainer.get_train_dataloader."""

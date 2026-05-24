@@ -16,6 +16,7 @@ env:
   AWS_REGION: us-east-1
   ECR_PROXY_REPOSITORY: llm-api-proxy
   ECR_INFERENCE_REPOSITORY: llm-api-inference
+  ECR_TRAINING_REPOSITORY: llm-api-training
   ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
 
 jobs:
@@ -26,6 +27,7 @@ jobs:
     outputs:
       proxy_image: ${{ steps.proxy-image.outputs.image }}
       inference_image: ${{ steps.inference-image.outputs.image }}
+      training_image: ${{ steps.training-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +82,25 @@ jobs:
         run: |
           echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+      # ── Training image (torch/transformers — k8s training Jobs) ──────────────
+      - name: Build and push training image (ARM64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/training/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:latest
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:buildcache,mode=max
+
+      - name: Export training image ref
+        id: training-image
+        run: |
+          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
   deploy:
     needs: build
@@ -90,6 +111,7 @@ jobs:
     env:
       PROXY_IMAGE: ${{ needs.build.outputs.proxy_image }}
       INFERENCE_IMAGE: ${{ needs.build.outputs.inference_image }}
+      TRAINING_IMAGE: ${{ needs.build.outputs.training_image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -164,6 +186,9 @@ jobs:
           # Stamp inference worker image so the proxy can spawn pods with the correct tag
           sed -i "s|<ECR_INFERENCE_IMAGE>|$INFERENCE_IMAGE|g" \
             infra/k8s/llm-api/deployment.yaml
+          # Stamp training image into temporal worker so K8sTrainingAdapter knows which image to use
+          sed -i "s|<ECR_TRAINING_IMAGE>|$TRAINING_IMAGE|g" \
+            infra/k8s/temporal/worker.yaml
           sed -i "s|<TEMPORAL_UI_IMAGE>|$TEMPORAL_UI_IMAGE|g" \
             infra/k8s/temporal/server.yaml
           # Apply and wait for the database before rolling out the app so that

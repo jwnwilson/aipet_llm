@@ -28,6 +28,11 @@ output "inference_repository_url" {
   value       = module.ecr_inference.repository_url
 }
 
+output "training_repository_url" {
+  description = "ECR URL for the training image — use as ECR_TRAINING_REPOSITORY in deploy.yml"
+  value       = module.ecr_training.repository_url
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC — set this as the AWS_ROLE_ARN repository secret"
   value       = module.iam.github_actions_role_arn

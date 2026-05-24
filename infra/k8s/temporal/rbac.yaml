@@ -1,0 +1,33 @@
+# RBAC for the temporal-worker pod.
+# Grants permission to create and manage training Jobs, inference Pods, and
+# paired ClusterIP Services — all of which the Temporal worker orchestrates.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-worker
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: temporal-worker-role
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: temporal-worker-binding
+subjects:
+  - kind: ServiceAccount
+    name: temporal-worker
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: temporal-worker-role
+  apiGroup: rbac.authorization.k8s.io

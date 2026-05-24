@@ -52,6 +52,31 @@ class StoragePort(ABC):
     def delete(self, key: str) -> None:
         """Remove ``key`` from storage (silent no-op if already absent)."""
 
+    def write_bytes(self, key: str, content: bytes) -> None:
+        """Write raw bytes to ``key`` (creates or overwrites).
+
+        Override in adapters that support arbitrary key writes.
+        Raises ``NotImplementedError`` on adapters that do not.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement write_bytes")
+
+    def read_text(self, key: str, *, encoding: str = "utf-8") -> str:
+        """Read ``key`` and return decoded text; return \"\" if the key is absent.
+
+        Override in adapters that support object reads.
+        Raises ``NotImplementedError`` on adapters that do not.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement read_text")
+
+    def download_directory(self, prefix: str, dest) -> None:
+        """Download all objects whose key starts with ``prefix`` into ``dest``.
+
+        ``prefix`` should end with ``/``. Relative paths within the prefix are
+        preserved under ``dest``. Override in adapters that support prefix listing.
+        Raises ``NotImplementedError`` on adapters that do not.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement download_directory")
+
 
 class InferencePort(ABC):
     """Abstract interface the domain layer expects from any LLM inference backend.
