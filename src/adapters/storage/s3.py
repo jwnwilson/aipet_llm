@@ -50,3 +50,22 @@ class S3StorageAdapter(StoragePort):
             return self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read().decode(encoding)
         except Exception:
             return ""
+
+    def download_directory(self, prefix: str, dest: Path) -> None:
+        """Download all S3 objects under ``prefix`` into ``dest``, preserving relative paths.
+
+        ``prefix`` should end with ``/`` (e.g. ``workflow/{run_id}/checkpoint/``).
+        Objects whose key equals the bare prefix (directory placeholder) are skipped.
+        """
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        paginator = self._s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key: str = obj["Key"]
+                relative = key[len(prefix):]
+                if not relative:
+                    continue
+                local = dest / relative
+                local.parent.mkdir(parents=True, exist_ok=True)
+                self._s3.download_file(self._bucket, key, str(local))
