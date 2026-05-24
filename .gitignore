@@ -45,3 +45,6 @@ infra/terraform/*.tfstate
 infra/terraform/*.tfstate.backup
 infra/terraform/**/.terraform.lock.hcl
 *.secret.yaml
+
+# Brainstorming visual companion
+.superpowers/

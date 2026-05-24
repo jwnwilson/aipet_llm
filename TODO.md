@@ -3,7 +3,6 @@
 - Fix kaggle and verify vastai runpod training works
 
 ## Better llm-api architecture
-- Make the llm API load instantly by decoupling it from model loading.
 - Setup functionality to set a model to "active"
 - Spin up a container for each "active" llm models requesting the right memory for the model.
 - Setup scaling for each model independanlty
