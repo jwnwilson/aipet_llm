@@ -24,9 +24,15 @@ _infer_semaphore = asyncio.Semaphore(1)
 @router.post("/infer", response_model=InferenceResponse, dependencies=[Depends(require_approved)])
 async def infer(
     request: InferenceRequest,
-    adapter: InferencePort = Depends(get_adapter),
 ) -> InferenceResponse:
+    # Guard before resolving the adapter — get_adapter() raises RuntimeError when no model
+    # is loaded, which FastAPI would convert to 500. Check the flag first so callers get
+    # a clean 503 they can handle gracefully.
     if os.getenv("INFERENCE_DISABLED", "").lower() in ("1", "true", "yes"):
+        raise HTTPException(status_code=503, detail={"error": "inference_disabled"})
+    try:
+        adapter = get_adapter()
+    except RuntimeError:
         raise HTTPException(status_code=503, detail={"error": "inference_disabled"})
     loop = asyncio.get_event_loop()
     async with _infer_semaphore:

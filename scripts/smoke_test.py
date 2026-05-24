@@ -225,10 +225,10 @@ def main() -> None:
                 "tiredness": 0.4,
             },
         }
+        print("-- POST /infer...")
         infer_resp = client.post(
             f"{api_url}/infer", json=infer_payload, headers=auth_headers, timeout=120
         )
-        print("-- POST /infer...")
         if (
             infer_resp.status_code == 503
             and infer_resp.json().get("detail", {}).get("error") == "inference_disabled"

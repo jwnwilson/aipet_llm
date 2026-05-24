@@ -24,6 +24,7 @@ htmlcov/
 
 # Environment files
 .env
+.env.smoke
 
 # Models (large binaries — store separately)
 models/*
