@@ -114,3 +114,26 @@ class TestK8sPodAdapter:
         monkeypatch.setenv("INFERENCE_WORKER_URL", "http://localhost:9999")
         url = self.adapter.pod_service_url("pod-1")
         assert url == "http://localhost:9999"
+
+    def test_create_pod_also_creates_clusterip_service(self):
+        """create_pod must create a ClusterIP Service so the pod DNS name resolves."""
+        self.adapter.create_pod("inf-abc", "model-1", "/models/m.gguf")
+        self.core.create_namespaced_service.assert_called_once()
+        # V1ObjectMeta is called twice: once for pod, once for service (name=pod_name)
+        meta_names = [
+            c.kwargs.get("name") or (c.args[0] if c.args else None)
+            for c in _k8s_client_mock.V1ObjectMeta.call_args_list
+        ]
+        assert "inf-abc" in meta_names
+
+    def test_delete_pod_also_deletes_service(self):
+        """delete_pod must remove the paired Service to clean up DNS entries."""
+        self.adapter.delete_pod("inf-abc")
+        self.core.delete_namespaced_pod.assert_called_once()
+        self.core.delete_namespaced_service.assert_called_once()
+
+    def test_delete_pod_tolerates_missing_service(self):
+        """delete_pod must not raise if the Service was already removed."""
+        self.core.delete_namespaced_pod.side_effect = Exception("not found")
+        self.core.delete_namespaced_service.side_effect = Exception("not found")
+        self.adapter.delete_pod("inf-abc")  # must not raise

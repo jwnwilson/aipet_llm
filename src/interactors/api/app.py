@@ -139,18 +139,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     from adapters.database.inference_store import SQLAlchemyInferenceStore
     from interactors.api.deps import clear_inference_store, configure_inference_store
-    from interactors.api.idle_shutdown import idle_shutdown_loop
+    from interactors.api.idle_shutdown import idle_shutdown_loop, readiness_watch_loop
 
     inference_store = SQLAlchemyInferenceStore(engine)
     configure_inference_store(inference_store)
 
     shutdown_task = asyncio.create_task(idle_shutdown_loop(inference_store, pod_adapter))
+    readiness_task = asyncio.create_task(readiness_watch_loop(inference_store, pod_adapter))
     log.info("Idle inference shutdown task started")
+    log.info("Inference readiness watcher task started")
 
     try:
         yield
     finally:
         shutdown_task.cancel()
+        readiness_task.cancel()
         clear_adapter()
         clear_auth()
         clear_dataset_store()

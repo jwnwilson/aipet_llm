@@ -41,14 +41,17 @@ class K8sPodAdapter(PodLifecyclePort):
         model_path: str,
         namespace: str = "default",
     ) -> str:
-        """Create inference pod. Return pod_name."""
+        """Create inference pod and a paired ClusterIP Service. Return pod_name.
+
+        The Service gives the pod a stable DNS name:
+        ``http://{pod_name}.{namespace}.svc.cluster.local:8080``
+        without which cluster-internal traffic cannot reach the pod.
+        """
         image = os.environ.get("INFERENCE_WORKER_IMAGE", "llm-inference:latest")
         image_pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
+        labels = {"app": "llm-inference", "model-id": model_id, "pod-name": pod_name}
         pod = k8s_client.V1Pod(
-            metadata=k8s_client.V1ObjectMeta(
-                name=pod_name,
-                labels={"app": "llm-inference", "model-id": model_id},
-            ),
+            metadata=k8s_client.V1ObjectMeta(name=pod_name, labels=labels),
             spec=k8s_client.V1PodSpec(
                 restart_policy="Never",
                 image_pull_secrets=[
@@ -69,7 +72,16 @@ class K8sPodAdapter(PodLifecyclePort):
                 ],
             ),
         )
+        svc = k8s_client.V1Service(
+            metadata=k8s_client.V1ObjectMeta(name=pod_name, namespace=namespace),
+            spec=k8s_client.V1ServiceSpec(
+                selector={"app": "llm-inference", "pod-name": pod_name},
+                ports=[k8s_client.V1ServicePort(port=8080, target_port=8080)],
+                type="ClusterIP",
+            ),
+        )
         self._core.create_namespaced_pod(namespace=namespace, body=pod)
+        self._core.create_namespaced_service(namespace=namespace, body=svc)
         return pod_name
 
     def pod_status(
@@ -92,9 +104,13 @@ class K8sPodAdapter(PodLifecyclePort):
             return "unknown"
 
     def delete_pod(self, pod_name: str, namespace: str = "default") -> None:
-        """Delete pod. No-op if already gone."""
+        """Delete pod and its paired ClusterIP Service. No-op if already gone."""
         try:
             self._core.delete_namespaced_pod(name=pod_name, namespace=namespace)
+        except Exception:
+            pass  # already gone or not found
+        try:
+            self._core.delete_namespaced_service(name=pod_name, namespace=namespace)
         except Exception:
             pass  # already gone or not found
 
