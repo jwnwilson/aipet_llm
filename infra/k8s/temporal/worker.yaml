@@ -18,8 +18,8 @@ spec:
         - name: ecr-credentials
       containers:
         - name: temporal-worker
-          # Placeholder — stamped by CI deploy workflow with the worker image ref
-          image: <ECR_WORKER_IMAGE>
+          # Placeholder — stamped by CI deploy workflow with the proxy image ref
+          image: <ECR_PROXY_IMAGE>
           command: ["python", "-m", "interactors.temporal.worker"]
           env:
             - name: PYTHONPATH

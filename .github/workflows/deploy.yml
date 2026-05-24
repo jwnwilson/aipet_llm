@@ -15,7 +15,6 @@ permissions:
 env:
   AWS_REGION: us-east-1
   ECR_PROXY_REPOSITORY: llm-api-proxy
-  ECR_WORKER_REPOSITORY: llm-api-worker
   ECR_INFERENCE_REPOSITORY: llm-api-inference
   ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
 
@@ -26,7 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       proxy_image: ${{ steps.proxy-image.outputs.image }}
-      worker_image: ${{ steps.worker-image.outputs.image }}
       inference_image: ${{ steps.inference-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
@@ -63,25 +61,6 @@ jobs:
         run: |
           echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
-      # ── Temporal worker image (proxy + training extras: torch/transformers) ──
-      - name: Build and push Temporal worker image (ARM64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: docker/worker/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WORKER_REPOSITORY }}:${{ github.sha }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WORKER_REPOSITORY }}:latest
-          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WORKER_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WORKER_REPOSITORY }}:buildcache,mode=max
-
-      - name: Export worker image ref
-        id: worker-image
-        run: |
-          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_WORKER_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
-
       # ── Inference worker image (heavy — llama-cpp-python cached at layer) ──
       - name: Build and push inference worker image (ARM64)
         uses: docker/build-push-action@v5
@@ -110,7 +89,6 @@ jobs:
       contents: read
     env:
       PROXY_IMAGE: ${{ needs.build.outputs.proxy_image }}
-      WORKER_IMAGE: ${{ needs.build.outputs.worker_image }}
       INFERENCE_IMAGE: ${{ needs.build.outputs.inference_image }}
     steps:
       - uses: actions/checkout@v4
@@ -179,11 +157,9 @@ jobs:
 
       - name: Apply k8s manifests
         run: |
-          # Stamp proxy API image into the main deployment
+          # Stamp proxy API image into the main deployment and temporal worker
           sed -i "s|<ECR_PROXY_IMAGE>|$PROXY_IMAGE|g" \
-            infra/k8s/llm-api/deployment.yaml
-          # Stamp worker image (has torch/transformers) into the Temporal worker deployment
-          sed -i "s|<ECR_WORKER_IMAGE>|$WORKER_IMAGE|g" \
+            infra/k8s/llm-api/deployment.yaml \
             infra/k8s/temporal/worker.yaml
           # Stamp inference worker image so the proxy can spawn pods with the correct tag
           sed -i "s|<ECR_INFERENCE_IMAGE>|$INFERENCE_IMAGE|g" \
