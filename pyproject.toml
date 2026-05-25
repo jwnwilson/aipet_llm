@@ -25,7 +25,7 @@ dependencies = [
     "alembic>=1.18.4",
     "tqdm>=4.67.3",
     "psycopg2-binary>=2.9.12",
-    "kubernetes>=31.0",
+    "kubernetes>=31.0,<36.0",  # v36 broke in-cluster auth (api_key key renamed BearerToken but loader still uses authorization)
     # Lightweight compute-backend clients (used by temporal worker activities)
     "kaggle>=1.6",
     "runpod>=1.7",
