@@ -87,6 +87,10 @@ def trigger_run(
         "skip_generate": True,
         "num_train_samples": 2,
         "num_eval_samples": 2,
+        # Keep the smoke test fast — we only care that the pipeline runs end-to-end,
+        # not that the model converges.
+        "epochs": 1,
+        "patience": 1,
     }
     resp = client.post(f"{api_url}/api/runs/trigger", json=payload, headers=headers)
     return check("POST /api/runs/trigger", resp, expected_status=202)
