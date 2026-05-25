@@ -82,6 +82,7 @@ def trigger_run(
     payload = {
         "model_id": model_id,
         "train_dataset_id": dataset_id,
+        "eval_dataset_id": dataset_id,
         "remote_backend": remote_backend,
         "skip_generate": True,
         "num_train_samples": 2,

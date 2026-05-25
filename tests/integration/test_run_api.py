@@ -66,6 +66,15 @@ async def client_with_model(client):
     yield c, model, run_store
 
 
+@pytest_asyncio.fixture
+async def client_with_model_and_dataset(client):
+    """Like client_with_model but also exposes the dataset_store."""
+    c, model_store, run_store = client
+    model = model_store.create(_VALID_MODEL_CONFIG)
+    dataset_store = app.dependency_overrides[get_dataset_store]()
+    yield c, model, run_store, dataset_store
+
+
 class TestTriggerRun:
     def _connect_mock(self):
         mock_client = AsyncMock()
@@ -130,6 +139,53 @@ class TestTriggerRun:
         assert config.model == model.base_model
         assert config.epochs == model.epochs
         assert config.skip_generate == model.skip_generate
+
+    @pytest.mark.asyncio
+    async def test_trigger_uses_train_dataset_key_for_eval_when_eval_dataset_id_omitted(
+        self, client_with_model_and_dataset
+    ):
+        """Regression: when train_dataset_id is supplied but eval_dataset_id is not,
+        ExperimentConfig.eval_data must equal the train dataset S3 key — not the
+        model's stale local default ('data/eval.jsonl') which never exists in S3.
+
+        This was the root cause of the K8s pod 404 on eval data download.
+        """
+        from domain.models import DatasetConfig, DatasetType
+
+        c, model, run_store, dataset_store = client_with_model_and_dataset
+        connect_mock, mock_wf_client = self._connect_mock()
+
+        dataset = dataset_store.create(
+            DatasetConfig(
+                name="smoke-ds",
+                dataset_type=DatasetType.TRAIN,
+                key="datasets/abc123.jsonl",
+                owner_id="integration-test-user",
+            )
+        )
+
+        with (
+            patch("temporalio.client.Client.connect", connect_mock),
+            patch("pathlib.Path.mkdir"),
+        ):
+            resp = await c.post(
+                "/api/runs/trigger",
+                json={
+                    "model_id": model.id,
+                    "train_dataset_id": dataset.id,
+                    # eval_dataset_id intentionally omitted
+                    "skip_generate": True,
+                    "remote_backend": "k8s",
+                },
+            )
+
+        assert resp.status_code == 202
+        config = mock_wf_client.start_workflow.call_args[0][1]
+        assert config.train_data == "datasets/abc123.jsonl"
+        assert config.eval_data == "datasets/abc123.jsonl", (
+            "eval_data must fall back to the train dataset S3 key when "
+            "eval_dataset_id is omitted — not the model's local 'data/eval.jsonl'"
+        )
 
 
 class TestListRuns:

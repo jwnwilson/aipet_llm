@@ -194,6 +194,12 @@ async def trigger_run(
         if eval_ds.owner_id is not None and eval_ds.owner_id != user.user_id:
             raise HTTPException(status_code=404, detail="Eval dataset not found")
         eval_data = eval_ds.key
+    elif body.train_dataset_id is not None:
+        # No explicit eval dataset — reuse the train dataset S3 key so remote
+        # backends (K8s, RunPod, etc.) can download a valid eval file.
+        # The model's eval_data field often holds a stale local path that
+        # doesn't exist in S3, making this fallback essential for remote runs.
+        eval_data = train_data
 
     epochs = body.epochs if body.epochs is not None else model.epochs
     patience = body.patience if body.patience is not None else model.patience
