@@ -189,6 +189,90 @@ async def test_training_pipeline_workflow_e2e_skip_generate():
 
 
 @pytest.mark.asyncio
+async def test_workflow_skip_generate_uses_explicit_train_data_s3_key():
+    """When skip_generate=True and train_data/eval_data are set on ExperimentConfig,
+    the workflow uses those values (the actual S3 keys) as the dataset paths.
+
+    Regression for: smoke-test K8s 404 — trigger_run provides train_dataset_id whose S3
+    key (datasets/{uuid}.jsonl) was never forwarded to ExperimentConfig, so the workflow
+    fell back to data/workflow/{run_id}/train.jsonl which does not exist in S3.
+    """
+    _configure_mock_storage()
+    async with await WorkflowEnvironment.start_time_skipping() as env:
+        async with Worker(
+            env.client,
+            task_queue="test-queue-skip-s3",
+            workflows=[TrainingPipelineWorkflow],
+            activities=_ACTIVITIES,
+        ):
+            patches = _dry_run_patches(eval_passes=True)
+            for p in patches:
+                p.start()
+            try:
+                config = ExperimentConfig(
+                    experiment_name="dry-run-s3-key",
+                    skip_generate=True,
+                    train_data="datasets/abc123.jsonl",
+                    eval_data="datasets/eval456.jsonl",
+                    data_dir="data/workflow/run-xyz",  # must NOT be used when train_data is set
+                    epochs=1,
+                )
+                result: PipelineResult = await env.client.execute_workflow(
+                    TrainingPipelineWorkflow.run,
+                    config,
+                    id="test-skip-gen-s3-key",
+                    task_queue="test-queue-skip-s3",
+                )
+            finally:
+                for p in reversed(patches):
+                    p.stop()
+
+    assert result.dataset_paths.train == "datasets/abc123.jsonl", (
+        "Workflow must propagate ExperimentConfig.train_data as the dataset path "
+        "so the K8s pod downloads the correct S3 key"
+    )
+    assert result.dataset_paths.eval == "datasets/eval456.jsonl"
+
+
+@pytest.mark.asyncio
+async def test_workflow_skip_generate_falls_back_to_data_dir_when_no_train_data():
+    """When skip_generate=True and train_data is empty, the fallback data_dir+/train.jsonl
+    path is used (backwards compatibility for runs that don't supply train_dataset_id)."""
+    _configure_mock_storage()
+    async with await WorkflowEnvironment.start_time_skipping() as env:
+        async with Worker(
+            env.client,
+            task_queue="test-queue-skip-fallback",
+            workflows=[TrainingPipelineWorkflow],
+            activities=_ACTIVITIES,
+        ):
+            patches = _dry_run_patches(eval_passes=True)
+            for p in patches:
+                p.start()
+            try:
+                config = ExperimentConfig(
+                    experiment_name="dry-run-fallback",
+                    skip_generate=True,
+                    train_data="",   # not set → fallback to data_dir
+                    eval_data="",
+                    data_dir="data",
+                    epochs=1,
+                )
+                result: PipelineResult = await env.client.execute_workflow(
+                    TrainingPipelineWorkflow.run,
+                    config,
+                    id="test-skip-gen-fallback",
+                    task_queue="test-queue-skip-fallback",
+                )
+            finally:
+                for p in reversed(patches):
+                    p.stop()
+
+    assert result.dataset_paths.train == "data/train.jsonl"
+    assert result.dataset_paths.eval == "data/eval.jsonl"
+
+
+@pytest.mark.asyncio
 async def test_evaluate_workflow_passes_db_run_id():
     """EvaluateWorkflow must pass db_run_id to EvalConfig so quality report is written."""
     storage = _configure_mock_storage()

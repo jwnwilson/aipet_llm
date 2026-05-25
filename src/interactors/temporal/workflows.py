@@ -57,6 +57,12 @@ class ExperimentConfig:
     remote_backend: str = ""
     # None = auto-detect based on model size; True = always QLoRA; False = never QLoRA.
     force_qlora: bool | None = None
+    # Explicit S3 keys for train/eval data.  When non-empty and skip_generate=True these
+    # are used directly instead of deriving paths from data_dir, so that a dataset
+    # uploaded via POST /api/datasets (stored at datasets/{uuid}.jsonl) is correctly
+    # forwarded to the remote training job rather than a non-existent local path.
+    train_data: str = ""
+    eval_data: str = ""
 
 
 @dataclass
@@ -96,11 +102,18 @@ class TrainingPipelineWorkflow:
 
         try:
             if config.skip_generate:
+                # Use explicit S3 keys when provided (e.g. uploaded via train_dataset_id).
+                # Fall back to data_dir-derived paths for local runs or re-runs that
+                # already have data at the standard location.
                 result.dataset_paths = DatasetPaths(
-                    train=f"{config.data_dir}/train.jsonl",
-                    eval=f"{config.data_dir}/eval.jsonl",
+                    train=config.train_data or f"{config.data_dir}/train.jsonl",
+                    eval=config.eval_data or f"{config.data_dir}/eval.jsonl",
                 )
-                workflow.logger.info("skip_generate=True: reusing existing dataset at %s", config.data_dir)
+                workflow.logger.info(
+                    "skip_generate=True: train=%s eval=%s",
+                    result.dataset_paths.train,
+                    result.dataset_paths.eval,
+                )
             else:
                 if config.run_id:
                     await workflow.execute_activity(

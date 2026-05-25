@@ -264,6 +264,10 @@ async def trigger_run(
             data_dir=f"data/workflow/{run_id}",
             output_dir=f"data/workflow/{run_id}/checkpoint",
             gguf_output=f"data/workflow/{run_id}/model.gguf",
+            # Forward resolved S3 keys so the workflow (and remote jobs) use the correct
+            # storage paths rather than deriving a local-only data_dir+/train.jsonl path.
+            train_data=train_data or "",
+            eval_data=eval_data or "",
             **({"train_size": num_train_samples} if num_train_samples is not None else {}),
             **({"eval_size": num_eval_samples} if num_eval_samples is not None else {}),
         )
