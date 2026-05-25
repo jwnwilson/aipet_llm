@@ -145,11 +145,14 @@ def test_incluster_auth_settings_nonempty_after_load():
     cfg.api_key["authorization"] = f"bearer {fake_token}"
 
     auth = cfg.auth_settings()
+    # Materialise into a plain list so truthiness and length are unambiguous,
+    # regardless of any custom dict subclass returned by the kubernetes client.
+    auth_entries = list(auth.values())
 
-    # auth_settings() must not be empty — an empty dict means zero
-    # Authorization headers will be sent → every API call returns 401.
-    assert auth, (
-        "auth_settings() returned {} when api_key['authorization'] is set. "
+    # auth_settings() must not be empty — an empty result means the
+    # Authorization header will never be set → every API call returns 401.
+    assert len(auth_entries) > 0, (
+        "auth_settings() returned no entries when api_key['authorization'] is set. "
         "The kubernetes client will send NO Authorization header and every "
         "API call will return 401 Unauthorized. "
         "This is the kubernetes v36 regression: auth_settings() checks "
@@ -157,9 +160,11 @@ def test_incluster_auth_settings_nonempty_after_load():
         "api_key['authorization']. Pin kubernetes<36.0 or update the loader."
     )
 
-    # The combined header value must contain the actual token
-    entry = next(iter(auth.values()))
-    assert fake_token in entry["value"], (
-        f"Token missing from Authorization header value {entry['value']!r}. "
+    # At least one entry must carry the actual token in its header value.
+    header_values = [
+        e.get("value", "") for e in auth_entries if isinstance(e, dict)
+    ]
+    assert any(fake_token in v for v in header_values), (
+        f"Token not found in any auth header value. Got: {header_values!r}. "
         "The request will be rejected by the API server."
     )
