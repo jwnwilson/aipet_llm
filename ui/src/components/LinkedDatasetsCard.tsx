@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Database } from 'lucide-react'
 import { listDatasets } from '@/api/datasets'
 import { updateModel } from '@/api/models'
 import type { Dataset, TrainingModel } from '@/types'
@@ -8,24 +9,30 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 
-// Sentinel value used in the Select to represent "no dataset selected"
 const NONE = '__none__'
 
 interface Props {
   model: TrainingModel
 }
 
-function DatasetBadge({ dataset }: { dataset: Dataset | undefined }) {
-  if (!dataset) return <span className="text-sm text-gray-400 italic">Not linked</span>
+function DatasetMeta({ dataset, kind }: { dataset: Dataset | undefined; kind: 'train' | 'eval' }) {
+  if (!dataset) {
+    return (
+      <div className="flex items-center gap-2 py-2 border-l-[3px] border-[#d0d0c8] pl-3 bg-[#f6f5ef]">
+        <span className="font-['DM_Serif_Display'] italic text-[0.95rem] text-[#888888]">
+          Not linked
+        </span>
+      </div>
+    )
+  }
   return (
-    <div className="flex items-center gap-2">
-      <span className="font-medium text-sm text-gray-900">{dataset.name}</span>
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        dataset.dataset_type === 'train'
-          ? 'bg-blue-100 text-blue-700'
-          : 'bg-green-100 text-green-700'
-      }`}>
-        {dataset.dataset_type}
+    <div className="flex items-center gap-3 py-2 border-l-[3px] border-[#1a1a1a] pl-3 bg-[#f6f5ef]">
+      <Database className="h-3.5 w-3.5 text-[#1a1a1a]" />
+      <span className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a] truncate">
+        {dataset.name}
+      </span>
+      <span className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.14em] text-[#888888] ml-auto">
+        {kind}
       </span>
     </div>
   )
@@ -42,11 +49,9 @@ export function LinkedDatasetsCard({ model }: Props) {
   const trainDatasets = allDatasets.filter(d => d.dataset_type === 'train')
   const evalDatasets  = allDatasets.filter(d => d.dataset_type === 'eval')
 
-  // Find currently linked datasets by matching storage key
   const linkedTrain = allDatasets.find(d => d.key === model.train_data)
   const linkedEval  = allDatasets.find(d => d.key === model.eval_data)
 
-  // Local selections start from what's currently linked (or NONE)
   const [selectedTrainId, setSelectedTrainId] = useState<string>(linkedTrain?.id ?? NONE)
   const [selectedEvalId,  setSelectedEvalId]  = useState<string>(linkedEval?.id  ?? NONE)
 
@@ -71,18 +76,23 @@ export function LinkedDatasetsCard({ model }: Props) {
 
   return (
     <Card>
-      <CardHeader><CardTitle>Linked datasets</CardTitle></CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1.5">
+      <CardHeader>
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+          Section IV
+        </div>
+        <CardTitle>Linked datasets</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2">
           <Label>Training dataset</Label>
-          <DatasetBadge dataset={linkedTrain} />
+          <DatasetMeta dataset={linkedTrain} kind="train" />
           <Select
             value={selectedTrainId}
             onValueChange={setSelectedTrainId}
             disabled={saveMutation.isPending}
           >
             <SelectTrigger aria-label="Select training dataset">
-              <SelectValue placeholder="Select a dataset…" />
+              <SelectValue placeholder="Select a dataset" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>— None —</SelectItem>
@@ -93,16 +103,16 @@ export function LinkedDatasetsCard({ model }: Props) {
           </Select>
         </div>
 
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2">
           <Label>Eval dataset</Label>
-          <DatasetBadge dataset={linkedEval} />
+          <DatasetMeta dataset={linkedEval} kind="eval" />
           <Select
             value={selectedEvalId}
             onValueChange={setSelectedEvalId}
             disabled={saveMutation.isPending}
           >
             <SelectTrigger aria-label="Select eval dataset">
-              <SelectValue placeholder="Select a dataset…" />
+              <SelectValue placeholder="Select a dataset" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={NONE}>— None —</SelectItem>
@@ -114,19 +124,25 @@ export function LinkedDatasetsCard({ model }: Props) {
         </div>
 
         {saveMutation.isError && (
-          <p className="text-sm text-red-600">Failed to save. Please try again.</p>
+          <p className="font-['IBM_Plex_Mono'] text-[0.72rem] uppercase tracking-[0.12em] text-[#7f1d1d]">
+            Failed to save
+          </p>
         )}
         {saveMutation.isSuccess && !isDirty && (
-          <p className="text-sm text-green-600">Saved.</p>
+          <p className="font-['IBM_Plex_Mono'] text-[0.72rem] uppercase tracking-[0.12em] text-[#2d6a4f]">
+            Saved
+          </p>
         )}
 
-        <Button
-          onClick={() => saveMutation.mutate()}
-          disabled={!isDirty || saveMutation.isPending}
-          className="self-start"
-        >
-          {saveMutation.isPending ? 'Saving…' : 'Save'}
-        </Button>
+        <div>
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={!isDirty || saveMutation.isPending}
+            variant={isDirty ? 'default' : 'outline'}
+          >
+            {saveMutation.isPending ? 'Saving' : 'Save links'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )

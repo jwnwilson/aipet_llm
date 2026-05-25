@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { useAuth0 } from '@auth0/auth0-react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { ModelsListPage } from './pages/ModelsListPage'
 import { ModelFormPage } from './pages/ModelFormPage'
 import { ModelDetailPage } from './pages/ModelDetailPage'
@@ -15,18 +15,6 @@ import { AccessPending } from './components/AccessPending'
 
 const queryClient = new QueryClient()
 
-function AuthButton() {
-  const { logout, user } = useAuth0()
-  return (
-    <button
-      onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-      className="ml-auto text-gray-700 hover:text-gray-900"
-    >
-      {user?.email} · Logout
-    </button>
-  )
-}
-
 const ROLES_CLAIM = 'https://aipet/roles'
 
 function useIsAdmin(): boolean {
@@ -35,17 +23,53 @@ function useIsAdmin(): boolean {
   return roles.includes('admin')
 }
 
+function AuthCluster() {
+  const { logout, user } = useAuth0()
+  return (
+    <div className="flex items-center gap-4 ml-auto">
+      <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888] tracking-[0.04em] hidden sm:inline">
+        {user?.email}
+      </span>
+      <button
+        onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
+        className="font-['Outfit'] text-[0.72rem] font-medium uppercase tracking-[0.12em] text-[#888888] hover:text-[#1a1a1a] transition-colors"
+      >
+        Logout
+      </button>
+    </div>
+  )
+}
+
 function Nav() {
   const isAdmin = useIsAdmin()
+  const linkClass = ({ isActive }: { isActive: boolean }) =>
+    [
+      "font-['Outfit'] text-[0.78rem] font-medium uppercase tracking-[0.12em]",
+      'pb-1 transition-colors duration-150',
+      isActive
+        ? 'text-[#1a1a1a] border-b-[1.5px] border-[#1a1a1a]'
+        : 'text-[#3a3a36] hover:text-[#1a1a1a] border-b-[1.5px] border-transparent',
+    ].join(' ')
+
   return (
-    <nav className="border-b bg-white px-8 py-3 flex gap-6 text-sm font-medium items-center">
-      <Link to="/models" className="text-gray-700 hover:text-gray-900">Models</Link>
-      <Link to="/runs" className="text-gray-700 hover:text-gray-900">Runs</Link>
-      <Link to="/datasets" className="text-gray-700 hover:text-gray-900">Datasets</Link>
-      <Link to="/inferences" className="text-gray-700 hover:text-gray-900">Inference</Link>
-      {isAdmin && <Link to="/admin/users" className="text-gray-700 hover:text-gray-900">Users</Link>}
-      <AuthButton />
-    </nav>
+    <header className="sticky top-0 z-40 bg-[#fafaf7]/95 backdrop-blur-sm border-b-2 border-[#1a1a1a]">
+      <div className="max-w-[1240px] mx-auto px-8 h-16 flex items-center gap-10">
+        <Link to="/models" className="flex items-baseline gap-1 select-none">
+          <span className="font-['DM_Serif_Display'] text-[1.55rem] leading-none text-[#1a1a1a]">
+            LLM
+          </span>
+          <span className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#888888]">.api</span>
+        </Link>
+        <nav className="flex items-center gap-7">
+          <NavLink to="/models" className={linkClass}>Models</NavLink>
+          <NavLink to="/datasets" className={linkClass}>Datasets</NavLink>
+          <NavLink to="/runs" className={linkClass}>Runs</NavLink>
+          <NavLink to="/inferences" className={linkClass}>Inference</NavLink>
+          {isAdmin && <NavLink to="/admin/users" className={linkClass}>Users</NavLink>}
+        </nav>
+        <AuthCluster />
+      </div>
+    </header>
   )
 }
 
@@ -56,9 +80,21 @@ function AdminRoute({ children }: { children: ReactNode }) {
   return isAdmin ? <>{children}</> : <Navigate to="/models" replace />
 }
 
+function LoadingScreen() {
+  return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="flex flex-col items-center gap-3">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+          Loading
+        </span>
+        <div className="h-px w-24 bg-[#1a1a1a] animate-pulse" />
+      </div>
+    </div>
+  )
+}
+
 function AppContent() {
   const { isAuthenticated, isLoading, loginWithRedirect, error } = useAuth0()
-
   const [accessDenied, setAccessDenied] = useState(false)
 
   useEffect(() => {
@@ -75,8 +111,13 @@ function AppContent() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen text-red-500">
-        Authentication error: {error.message}
+      <div className="flex items-center justify-center h-screen">
+        <div className="max-w-md text-center">
+          <h2 className="font-['DM_Serif_Display'] text-2xl text-[#7f1d1d] mb-2">
+            Authentication Error
+          </h2>
+          <p className="font-['IBM_Plex_Mono'] text-sm text-[#888888]">{error.message}</p>
+        </div>
       </div>
     )
   }
@@ -84,29 +125,27 @@ function AppContent() {
   if (accessDenied) return <AccessPending />
 
   if (isLoading || !isAuthenticated) {
-    return (
-      <div className="flex items-center justify-center h-screen text-gray-500">
-        Loading…
-      </div>
-    )
+    return <LoadingScreen />
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <TokenSync />
       <Nav />
-      <Routes>
-        <Route path="/" element={<Navigate to="/models" replace />} />
-        <Route path="/models" element={<ModelsListPage />} />
-        <Route path="/models/new" element={<ModelFormPage />} />
-        <Route path="/models/:id" element={<ModelDetailPage />} />
-        <Route path="/models/:id/edit" element={<ModelFormPage />} />
-        <Route path="/runs" element={<RunsListPage />} />
-        <Route path="/runs/:runId" element={<RunDetailPage />} />
-        <Route path="/datasets" element={<DatasetsPage />} />
-        <Route path="/inferences" element={<InferencePage />} />
-        <Route path="/admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
-      </Routes>
+      <main>
+        <Routes>
+          <Route path="/" element={<Navigate to="/models" replace />} />
+          <Route path="/models" element={<ModelsListPage />} />
+          <Route path="/models/new" element={<ModelFormPage />} />
+          <Route path="/models/:id" element={<ModelDetailPage />} />
+          <Route path="/models/:id/edit" element={<ModelFormPage />} />
+          <Route path="/runs" element={<RunsListPage />} />
+          <Route path="/runs/:runId" element={<RunDetailPage />} />
+          <Route path="/datasets" element={<DatasetsPage />} />
+          <Route path="/inferences" element={<InferencePage />} />
+          <Route path="/admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
+        </Routes>
+      </main>
     </div>
   )
 }
