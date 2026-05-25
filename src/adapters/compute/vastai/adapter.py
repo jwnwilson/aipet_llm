@@ -189,17 +189,15 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
             return ""
 
     def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        # Eval ran on the training instance (training_script.py) and results
-        # are already on S3 by the time train_activity completes.
-        raw = (
-            self._s3.get_object(Bucket=self._bucket, Key=f"{run_id}/eval_result.json")[
-                "Body"
-            ]
-            .read()
-            .decode()
+        """Not implemented — VastAI jobs are train-only.
+
+        evaluate_activity catches NotImplementedError and falls back to
+        downloading the checkpoint then running eval locally on the worker.
+        """
+        raise NotImplementedError(
+            "VastAI training jobs do not run eval. "
+            "evaluate_activity will download the checkpoint and eval locally."
         )
-        data = json.loads(raw)
-        return float(data["valid_pct"]), bool(data["passed"])
 
     def progress(self, run_id: str) -> tuple[float, str]:
         try:

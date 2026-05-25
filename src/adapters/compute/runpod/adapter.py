@@ -160,19 +160,15 @@ class RunPodTrainingAdapter(RemoteTrainingPort):
         return S3StorageAdapter().read_text(f"{run_id}/logs.txt")
 
     def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:  # noqa: ARG002
-        # Eval ran on the training pod (training_script.py) and results
-        # are already on S3 by the time train_activity completes.
-        raw = (
-            self._s3.get_object(Bucket=self._bucket, Key=f"{run_id}/eval_result.json")[
-                "Body"
-            ]
-            .read()
-            .decode()
+        """Not implemented — RunPod jobs are train-only.
+
+        evaluate_activity catches NotImplementedError and falls back to
+        downloading the checkpoint then running eval locally on the worker.
+        """
+        raise NotImplementedError(
+            "RunPod training jobs do not run eval. "
+            "evaluate_activity will download the checkpoint and eval locally."
         )
-        data = json.loads(raw)
-        valid_pct, passed = float(data["valid_pct"]), bool(data["passed"])
-        log.info("runpod eval (s3)  run_id=%s  valid_pct=%.1f%%  passed=%s", run_id, valid_pct * 100, passed)
-        return valid_pct, passed
 
     def progress(self, run_id: str) -> tuple[float, str]:
         try:

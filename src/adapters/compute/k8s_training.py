@@ -33,11 +33,11 @@ _JOB_ANNOTATION = "llm-api/run-id"
 
 
 class K8sTrainingAdapter(RemoteTrainingPort):
-    """Submit training + eval as k8s batch/v1 Jobs.
+    """Submit training as a k8s batch/v1 Job (train-only; eval runs on the worker).
 
     The job name returned from submit() is the opaque run_id used by Temporal.
-    The DB run ID is stored in a job annotation so eval() and download() can
-    construct the correct S3 key prefix without hitting the k8s API for data.
+    The DB run ID is stored in a job annotation so download() can construct
+    the correct S3 key prefix without hitting the k8s API for data.
     """
 
     def __init__(
@@ -188,16 +188,15 @@ class K8sTrainingAdapter(RemoteTrainingPort):
             return ""
 
     def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        """Read eval_result.json the Job uploaded to S3 via StoragePort."""
-        db_run_id = self._db_run_id(run_id)
-        key = f"workflow/{db_run_id}/eval_result.json"
-        raw = self._storage.read_text(key)
-        if not raw:
-            raise RuntimeError(
-                f"eval_result.json not found at s3://…/{key} — job may not have completed"
-            )
-        result = json.loads(raw)
-        return float(result["valid_pct"]), bool(result["passed"])
+        """Not implemented — K8s jobs are train-only.
+
+        evaluate_activity catches NotImplementedError and falls back to
+        downloading the checkpoint then running eval locally on the worker.
+        """
+        raise NotImplementedError(
+            "K8s training jobs do not run eval. "
+            "evaluate_activity will download the checkpoint and eval locally."
+        )
 
     def download(self, run_id: str, dest: Path) -> str:
         """Download checkpoint directory from S3 into dest via StoragePort."""

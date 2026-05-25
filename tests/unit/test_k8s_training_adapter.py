@@ -1,7 +1,6 @@
 """Unit tests for K8sTrainingAdapter."""
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -84,20 +83,10 @@ def test_status_failed(adapter):
     assert adapter.status("train-abc") == "failed"
 
 
-def test_eval_reads_result_via_storage(adapter):
-    result = {"valid_pct": 0.97, "passed": True}
-    adapter._storage.read_text.return_value = json.dumps(result)
-    job_meta = MagicMock()
-    job_meta.metadata.annotations = {"llm-api/run-id": "db-run-id-123"}
-    adapter._batch.read_namespaced_job.return_value = job_meta
-
-    valid_pct, passed = adapter.eval("train-abc", "unused")
-
-    assert valid_pct == pytest.approx(0.97)
-    assert passed is True
-    adapter._storage.read_text.assert_called_once_with(
-        "workflow/db-run-id-123/eval_result.json"
-    )
+def test_eval_raises_not_implemented(adapter):
+    """K8s jobs are train-only; evaluate_activity falls back to local eval via download."""
+    with pytest.raises(NotImplementedError):
+        adapter.eval("train-abc", "unused")
 
 
 def test_download_uses_storage_download_directory(adapter, tmp_path):
