@@ -12,6 +12,8 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
+from adapters.compute._wheel import build_wheel
+
 log = logging.getLogger(__name__)
 
 from domain.models import RemoteTrainConfig
@@ -229,11 +231,7 @@ class RunPodTrainingAdapter(RemoteTrainingPort):
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
 
-        subprocess.run(
-            ["uv", "build", "--wheel", "--out-dir", str(staging)],
-            cwd=str(self._project_root),
-            check=True,
-        )
+        build_wheel(self._project_root, staging)
 
         # Copy the standalone bootstrap script (no project-wheel dependency).
         shutil.copy2(Path(__file__).parent / "bootstrap.py", staging / "bootstrap.py")

@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from typing import Literal
 
+from adapters.compute._wheel import build_wheel
+
 from domain.models import RemoteTrainConfig
 from domain.ports import RemoteTrainingPort
 
@@ -254,11 +256,7 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         staging.mkdir(parents=True)
 
         # Build a wheel of the project and copy it into staging
-        subprocess.run(
-            ["uv", "build", "--wheel", "--out-dir", str(staging)],
-            cwd=str(self._project_root),
-            check=True,
-        )
+        build_wheel(self._project_root, staging)
 
         # Copy flat .jsonl training data files
         train_data = Path(config.train_data)
