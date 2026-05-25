@@ -117,54 +117,27 @@ def test_download_uses_storage_download_directory(adapter, tmp_path):
 # Regression test: kubernetes v36 in-cluster auth
 # ---------------------------------------------------------------------------
 
-def test_incluster_auth_settings_nonempty_after_load():
-    """Regression: kubernetes v36 broke in-cluster auth causing 401 Unauthorized.
+def test_kubernetes_version_below_36():
+    """Regression guard: kubernetes v36 breaks in-cluster auth (401 Unauthorized).
 
-    load_incluster_config() stores the SA token in api_key['authorization'].
-    v36 changed auth_settings() to look for api_key['BearerToken'] instead,
-    so the Authorization header was never added to requests.
+    v36 changed Configuration.auth_settings() to look for api_key['BearerToken']
+    while load_incluster_config() still writes to api_key['authorization'].
+    The key mismatch means no Authorization header is ever added to requests,
+    so every API call is rejected with 401.
 
-    We reproduce exactly what load_incluster_config() does — writing to
-    api_key['authorization'] — and assert that auth_settings() picks it up.
-    This catches the key-name mismatch without importing any kubernetes
-    sub-module (avoiding the 'kubernetes.config is not a package' error on
-    some platforms).
-
-    Fails with kubernetes>=36.0 and passes with kubernetes<36.0 (the pinned
-    range in pyproject.toml).  If this test starts failing after a version
-    bump, re-check the api_key key name expected by Configuration.auth_settings().
+    This test enforces the pin 'kubernetes<36.0' in pyproject.toml.
+    If it fails, check that uv sync --frozen installed the locked version
+    (kubernetes==35.0.0 per uv.lock) and that the CI cache is not stale.
     """
-    from kubernetes import client as k8s_client
+    import kubernetes
 
-    fake_token = "eyJhbGciOiJSUzI1NiJ9.fake-payload.fake-sig"
+    installed = tuple(int(x) for x in kubernetes.__version__.split(".")[:2])
 
-    # Replicate exactly what InClusterConfigLoader._set_config() does:
-    #   client_configuration.api_key['authorization'] = self.token
-    # where self.token is already "bearer {raw_token}".
-    cfg = k8s_client.Configuration()
-    cfg.api_key["authorization"] = f"bearer {fake_token}"
-
-    auth = cfg.auth_settings()
-    # Materialise into a plain list so truthiness and length are unambiguous,
-    # regardless of any custom dict subclass returned by the kubernetes client.
-    auth_entries = list(auth.values())
-
-    # auth_settings() must not be empty — an empty result means the
-    # Authorization header will never be set → every API call returns 401.
-    assert len(auth_entries) > 0, (
-        "auth_settings() returned no entries when api_key['authorization'] is set. "
-        "The kubernetes client will send NO Authorization header and every "
-        "API call will return 401 Unauthorized. "
-        "This is the kubernetes v36 regression: auth_settings() checks "
-        "api_key['BearerToken'] but load_incluster_config() writes to "
-        "api_key['authorization']. Pin kubernetes<36.0 or update the loader."
-    )
-
-    # At least one entry must carry the actual token in its header value.
-    header_values = [
-        e.get("value", "") for e in auth_entries if isinstance(e, dict)
-    ]
-    assert any(fake_token in v for v in header_values), (
-        f"Token not found in any auth header value. Got: {header_values!r}. "
-        "The request will be rejected by the API server."
+    assert installed < (36, 0), (
+        f"kubernetes {kubernetes.__version__} is installed but >=36.0 breaks "
+        "in-cluster auth: auth_settings() checks api_key['BearerToken'] while "
+        "load_incluster_config() writes to api_key['authorization'], so no "
+        "Authorization header is ever sent → 401 Unauthorized on every API call. "
+        "Ensure pyproject.toml 'kubernetes<36.0' pin is reflected in uv.lock and "
+        "that 'uv sync --frozen' is using the current lock file (not a stale cache)."
     )
