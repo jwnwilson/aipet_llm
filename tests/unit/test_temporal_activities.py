@@ -68,6 +68,61 @@ async def test_generate_dataset_activity_raises_on_exception():
             await ENV.run(generate_dataset_activity, DatasetConfig())
 
 
+@pytest.mark.asyncio
+async def test_generate_dataset_uploads_files_to_storage_when_flag_is_set(tmp_path, monkeypatch):
+    """When upload_to_storage=True, generated train and eval files are uploaded to the storage port.
+
+    Regression for: K8s pod 404 — dataset generated locally but never uploaded to S3 before
+    the training job is submitted (data/workflow/{run_id}/train.jsonl missing in S3).
+    """
+    import interactors.temporal.activities as acts
+
+    mock_storage = MagicMock()
+    monkeypatch.setattr(acts, "_storage", mock_storage)
+    monkeypatch.chdir(tmp_path)
+
+    data_dir = "data/workflow/run-abc123"
+    (tmp_path / data_dir).mkdir(parents=True)
+    (tmp_path / data_dir / "train.jsonl").write_text('{"action": "IDLE"}\n')
+    (tmp_path / data_dir / "eval.jsonl").write_text('{"action": "IDLE"}\n')
+
+    with patch("domain.train.dataset.generate", return_value=True):
+        result = await ENV.run(
+            generate_dataset_activity,
+            DatasetConfig(data_dir=data_dir, upload_to_storage=True),
+        )
+
+    # Both files must be uploaded so the remote K8s pod can download them from S3.
+    # Without this upload, the pod receives a 404 when calling storage.download().
+    assert mock_storage.upload.call_count == 2, (
+        "Expected two upload() calls (train + eval) — "
+        "without this the K8s pod gets a 404 from S3"
+    )
+    uploaded_keys = [call.args[1] for call in mock_storage.upload.call_args_list]
+    assert f"{data_dir}/train.jsonl" in uploaded_keys
+    assert f"{data_dir}/eval.jsonl" in uploaded_keys
+    # Returned DatasetPaths are unchanged — same relative paths are used as S3 keys by the pod
+    assert result.train == f"{data_dir}/train.jsonl"
+    assert result.eval == f"{data_dir}/eval.jsonl"
+
+
+@pytest.mark.asyncio
+async def test_generate_dataset_does_not_upload_when_flag_is_false(monkeypatch):
+    """When upload_to_storage is False (default), no upload to storage occurs (local runs)."""
+    import interactors.temporal.activities as acts
+
+    mock_storage = MagicMock()
+    monkeypatch.setattr(acts, "_storage", mock_storage)
+
+    with patch("domain.train.dataset.generate", return_value=True):
+        await ENV.run(
+            generate_dataset_activity,
+            DatasetConfig(data_dir="data", train_size=10, eval_size=5, seed=1),
+        )
+
+    mock_storage.upload.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # train_activity
 # ---------------------------------------------------------------------------

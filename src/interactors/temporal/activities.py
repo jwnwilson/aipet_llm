@@ -72,6 +72,10 @@ class DatasetConfig:
     train_size: int = TRAIN_SIZE
     eval_size: int = EVAL_SIZE
     seed: int = SEED
+    # Set to True when using a remote training backend (k8s, kaggle, ssh, …).
+    # The activity will upload the generated files to the configured StoragePort so
+    # the remote job can download them — without this the pod gets a 404 from S3.
+    upload_to_storage: bool = False
 
 
 @dataclass
@@ -196,10 +200,23 @@ async def generate_dataset_activity(config: DatasetConfig) -> DatasetPaths:
     if not ok:
         raise ApplicationError("Dataset generation failed: invalid examples or distribution out of bounds")
 
-    return DatasetPaths(
-        train=str(Path(config.data_dir) / "train.jsonl"),
-        eval=str(Path(config.data_dir) / "eval.jsonl"),
-    )
+    train_path = str(Path(config.data_dir) / "train.jsonl")
+    eval_path = str(Path(config.data_dir) / "eval.jsonl")
+
+    if config.upload_to_storage:
+        # Remote backends (K8s, Kaggle, SSH, …) fetch training data from S3.
+        # Upload the generated files now so the remote job can call storage.download().
+        storage = _get_storage()
+        await loop.run_in_executor(
+            None,
+            lambda: (
+                storage.upload(Path(train_path), train_path),
+                storage.upload(Path(eval_path), eval_path),
+            ),
+        )
+        log.info("Dataset uploaded to storage: train=%s eval=%s", train_path, eval_path)
+
+    return DatasetPaths(train=train_path, eval=eval_path)
 
 
 def _make_remote_adapter(backend: str) -> RemoteTrainingPort:

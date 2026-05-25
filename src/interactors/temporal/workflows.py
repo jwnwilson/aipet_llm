@@ -116,6 +116,9 @@ class TrainingPipelineWorkflow:
                         train_size=config.train_size,
                         eval_size=config.eval_size,
                         seed=config.seed,
+                        # Remote backends (k8s, kaggle, ssh, …) download training data from
+                        # S3 — upload generated files immediately so the remote job finds them.
+                        upload_to_storage=bool(config.remote_backend),
                     ),
                     start_to_close_timeout=timedelta(minutes=30),
                     heartbeat_timeout=timedelta(minutes=2),
