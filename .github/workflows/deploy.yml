@@ -210,11 +210,11 @@ jobs:
       - name: Install smoke test dependencies
         run: pip install httpx
 
-      - name: Run smoke tests
+      - name: Run smoke tests (all backends in parallel)
         env:
           API_URL: https://llm-api.jwnwilson.co.uk
           AUTH0_DOMAIN: ${{ secrets.AUTH0_DOMAIN }}
           AUTH0_MGMT_CLIENT_ID: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
           AUTH0_MGMT_CLIENT_SECRET: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
           AUTH0_AUDIENCE: ${{ secrets.AUTH0_AUDIENCE }}
-        run: python3 ./scripts/smoke_test.py
+        run: python3 ./scripts/smoke_test_all.py
