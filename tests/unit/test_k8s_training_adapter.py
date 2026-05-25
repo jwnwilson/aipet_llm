@@ -128,13 +128,17 @@ def test_kubernetes_version_below_36():
     This test enforces the pin 'kubernetes<36.0' in pyproject.toml.
     If it fails, check that uv sync --frozen installed the locked version
     (kubernetes==35.0.0 per uv.lock) and that the CI cache is not stale.
-    """
-    import kubernetes
 
-    installed = tuple(int(x) for x in kubernetes.__version__.split(".")[:2])
+    Uses importlib.metadata rather than importing the kubernetes package directly
+    so that sys.modules mocks in other test files cannot mask the real version.
+    """
+    from importlib.metadata import version
+
+    installed_str = version("kubernetes")
+    installed = tuple(int(x) for x in installed_str.split(".")[:2])
 
     assert installed < (36, 0), (
-        f"kubernetes {kubernetes.__version__} is installed but >=36.0 breaks "
+        f"kubernetes {installed_str} is installed but >=36.0 breaks "
         "in-cluster auth: auth_settings() checks api_key['BearerToken'] while "
         "load_incluster_config() writes to api_key['authorization'], so no "
         "Authorization header is ever sent → 401 Unauthorized on every API call. "
