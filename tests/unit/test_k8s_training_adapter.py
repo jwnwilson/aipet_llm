@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -126,56 +124,42 @@ def test_incluster_auth_settings_nonempty_after_load():
     v36 changed auth_settings() to look for api_key['BearerToken'] instead,
     so the Authorization header was never added to requests.
 
-    Assert that after load_incluster_config() the client configuration produces
-    a non-empty auth_settings() dict that contains the token — i.e. the
-    Authorization header *will* be sent.
+    We reproduce exactly what load_incluster_config() does — writing to
+    api_key['authorization'] — and assert that auth_settings() picks it up.
+    This catches the key-name mismatch without importing any kubernetes
+    sub-module (avoiding the 'kubernetes.config is not a package' error on
+    some platforms).
 
-    Fails with kubernetes>=36.0 and passes with kubernetes<36.0 (the pinned range
-    in pyproject.toml).  If this test starts failing after a version bump,
-    re-check the api_key key name in kubernetes.config.incluster_config.
+    Fails with kubernetes>=36.0 and passes with kubernetes<36.0 (the pinned
+    range in pyproject.toml).  If this test starts failing after a version
+    bump, re-check the api_key key name expected by Configuration.auth_settings().
     """
-    from kubernetes import config as k8s_config, client as k8s_client
-    import kubernetes.config.incluster_config as ic_mod
+    from kubernetes import client as k8s_client
 
     fake_token = "eyJhbGciOiJSUzI1NiJ9.fake-payload.fake-sig"
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        token_file = os.path.join(tmpdir, "token")
-        ca_file = os.path.join(tmpdir, "ca.crt")
-        with open(token_file, "w") as fh:
-            fh.write(fake_token)
-        with open(ca_file, "w") as fh:
-            fh.write("-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n")
+    # Replicate exactly what InClusterConfigLoader._set_config() does:
+    #   client_configuration.api_key['authorization'] = self.token
+    # where self.token is already "bearer {raw_token}".
+    cfg = k8s_client.Configuration()
+    cfg.api_key["authorization"] = f"bearer {fake_token}"
 
-        with (
-            patch.dict(os.environ, {
-                "KUBERNETES_SERVICE_HOST": "10.0.0.1",
-                "KUBERNETES_SERVICE_PORT": "443",
-            }),
-            patch.object(ic_mod, "SERVICE_TOKEN_FILENAME", token_file),
-            patch.object(ic_mod, "SERVICE_CERT_FILENAME", ca_file),
-        ):
-            # Reset default config so this test is isolated from others
-            fresh_cfg = k8s_client.Configuration()
-            with k8s_client.ApiClient(configuration=fresh_cfg):
-                k8s_config.load_incluster_config(client_configuration=fresh_cfg)
+    auth = cfg.auth_settings()
 
-            auth = fresh_cfg.auth_settings()
+    # auth_settings() must not be empty — an empty dict means zero
+    # Authorization headers will be sent → every API call returns 401.
+    assert auth, (
+        "auth_settings() returned {} when api_key['authorization'] is set. "
+        "The kubernetes client will send NO Authorization header and every "
+        "API call will return 401 Unauthorized. "
+        "This is the kubernetes v36 regression: auth_settings() checks "
+        "api_key['BearerToken'] but load_incluster_config() writes to "
+        "api_key['authorization']. Pin kubernetes<36.0 or update the loader."
+    )
 
-            # auth_settings() must not be empty — an empty dict means zero
-            # Authorization headers will be sent → every API call returns 401.
-            assert auth, (
-                "auth_settings() returned {} after load_incluster_config(). "
-                "The kubernetes client will send NO Authorization header and every "
-                "API call will return 401 Unauthorized. "
-                "This is the kubernetes v36 regression: auth_settings() checks "
-                "api_key['BearerToken'] but load_incluster_config() writes to "
-                "api_key['authorization']. Pin kubernetes<36.0 or update the loader."
-            )
-
-            # The combined header value must contain the actual token
-            entry = next(iter(auth.values()))
-            assert fake_token in entry["value"], (
-                f"Token missing from Authorization header value {entry['value']!r}. "
-                "The request will be rejected by the API server."
-            )
+    # The combined header value must contain the actual token
+    entry = next(iter(auth.values()))
+    assert fake_token in entry["value"], (
+        f"Token missing from Authorization header value {entry['value']!r}. "
+        "The request will be rejected by the API server."
+    )
