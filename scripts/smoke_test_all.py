@@ -33,7 +33,9 @@ from pathlib import Path
 
 _SCRIPT = Path(__file__).parent / "smoke_test.py"
 
-_ALL_BACKENDS = ["k8s", "kaggle", "runpod", "vastai"]
+# _ALL_BACKENDS = ["k8s", "kaggle", "runpod", "vastai"]
+# Dropping vastai as the platform is unreliable.
+_ALL_BACKENDS = ["k8s", "kaggle", "runpod"]
 
 # ANSI colours — one per backend, falls back gracefully on dumb terminals.
 _COLOURS = {
