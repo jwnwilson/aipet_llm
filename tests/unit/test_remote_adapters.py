@@ -31,6 +31,19 @@ def _config(**kwargs) -> RemoteTrainConfig:
     return RemoteTrainConfig(**defaults)
 
 
+def _make_data(tmp_path: Path, **kwargs) -> RemoteTrainConfig:
+    """Create minimal train/eval files in tmp_path and return a config pointing at them.
+
+    _stage_dataset now validates both files exist before uploading; using absolute
+    paths here avoids CWD-sensitivity and exercises the guard correctly.
+    """
+    train = tmp_path / "train.jsonl"
+    eval_ = tmp_path / "eval.jsonl"
+    train.write_text('{"prompt":"p","completion":"c"}\n')
+    eval_.write_text('{"prompt":"p","completion":"c"}\n')
+    return _config(train_data=str(train), eval_data=str(eval_), **kwargs)
+
+
 def _ok(stdout: str = "", stderr: str = "") -> MagicMock:
     m = MagicMock()
     m.returncode = 0
@@ -81,7 +94,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        adapter.submit(_config())
+        adapter.submit(_make_data(tmp_path))
 
         dataset_calls = [c for c in calls if "datasets" in c]
         assert len(dataset_calls) == 2  # create (non-zero) + version
@@ -102,7 +115,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        adapter.submit(_config())
+        adapter.submit(_make_data(tmp_path))
 
         push_calls = [c for c in calls if "kernels" in c and "push" in c]
         assert len(push_calls) == 1
@@ -114,7 +127,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        slug = adapter.submit(_config(experiment_name="myexp"))
+        slug = adapter.submit(_make_data(tmp_path, experiment_name="myexp"))
 
         assert slug == "myuser/myexp"
 
@@ -125,7 +138,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        cfg = _config(experiment_name="render-test", epochs=7)
+        cfg = _make_data(tmp_path, experiment_name="render-test", epochs=7)
         adapter.submit(cfg)
 
         notebook_path = tmp_path / "render-test" / "notebook.ipynb"
@@ -142,7 +155,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        adapter.submit(_config(experiment_name="meta-test"))
+        adapter.submit(_make_data(tmp_path, experiment_name="meta-test"))
 
         meta_path = tmp_path / "meta-test" / "kernel-metadata.json"
         assert meta_path.exists()
