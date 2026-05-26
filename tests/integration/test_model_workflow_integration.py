@@ -6,12 +6,10 @@ from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
-from adapters.database import init_db
+from tests.integration.conftest import make_test_engine
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
@@ -25,6 +23,7 @@ from interactors.temporal.activities import (
     fail_run_activity,
     finalise_run_activity,
     generate_dataset_activity,
+    record_eval_result_activity,
     save_gguf_path_activity,
     train_activity,
     update_run_status_activity,
@@ -38,6 +37,7 @@ _ACTIVITIES = [
     evaluate_activity,
     export_activity,
     finalise_run_activity,
+    record_eval_result_activity,
     save_gguf_path_activity,
     update_run_status_activity,
     create_inference_activity,
@@ -51,12 +51,7 @@ def _fake_evaluate(eval_data, infer_fn):
 
 @pytest.mark.asyncio
 async def test_workflow_updates_run_status_in_db():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
+    engine = make_test_engine()
     model_store = SQLAlchemyModelStore(engine)
     run_store = SQLAlchemyRunStore(engine)
 

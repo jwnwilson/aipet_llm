@@ -52,7 +52,13 @@ def init_db(engine: Engine) -> None:
 
 
 def run_migrations(engine: Engine) -> None:
-    """Apply pending Alembic migrations; stamps pre-Alembic databases first."""
+    """Apply pending Alembic migrations; stamps pre-Alembic databases first.
+
+    The engine's live connection is injected via ``cfg.attributes["connection"]``
+    so that Alembic's ``env.py`` reuses it instead of opening a new one.  This
+    is essential for SQLite in-memory databases (used in tests) where each
+    distinct connection object sees a different empty database.
+    """
     from alembic import command
     from alembic.config import Config
 
@@ -61,9 +67,13 @@ def run_migrations(engine: Engine) -> None:
 
     insp = sa_inspect(engine)
     if insp.has_table("training_models") and not insp.has_table("alembic_version"):
-        command.stamp(cfg, "0001")
+        with engine.connect() as conn:
+            cfg.attributes["connection"] = conn
+            command.stamp(cfg, "0001")
 
-    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        cfg.attributes["connection"] = conn
+        command.upgrade(cfg, "head")
 
 
 def get_session() -> Generator[Session, None, None]:
