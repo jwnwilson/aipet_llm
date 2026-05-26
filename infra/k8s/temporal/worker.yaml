@@ -28,6 +28,9 @@ spec:
             - name: TRAINING_WORKER_IMAGE
               # Placeholder — stamped by CI deploy workflow with the training image ref
               value: <ECR_TRAINING_IMAGE>
+            - name: EXPORT_WORKER_IMAGE
+              # Placeholder — stamped by CI deploy workflow with the export image ref
+              value: <ECR_EXPORT_IMAGE>
             - name: TEMPORAL_HOST
               value: "temporal:7233"
             - name: AWS_DEFAULT_REGION
