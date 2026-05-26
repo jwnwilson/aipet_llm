@@ -50,12 +50,12 @@ def main() -> None:
         [sys.executable, "-m", "pip", "install", f"{whl}[training]"],
         check=True,
     )
-    print("[bootstrap] wheel installed with [training] extras — starting training script", flush=True)
+    print("[bootstrap] wheel installed with [training] extras — starting remote worker", flush=True)
 
-    # Wheel is now installed; delegate to the training script in the same process.
+    # Wheel is now installed; delegate to the remote worker in the same process.
     # runpy sets __name__ = "__main__" so the if-block at the bottom fires.
     import runpy
-    runpy.run_module("adapters.compute.runpod.training_script", run_name="__main__")
+    runpy.run_module("interactors.cli.training.remote_worker", run_name="__main__")
 
 
 if __name__ == "__main__":

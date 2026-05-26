@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -123,29 +122,25 @@ class TestRunPodAdapterStatus:
 
 
 class TestRunPodAdapterDownload:
-    def test_download_extracts_checkpoint(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+    def test_download_uses_storage_download_directory(self, monkeypatch, tmp_path):
+        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+        mock_storage = MagicMock()
 
-        # Create a real tar.gz with a dummy file inside
-        checkpoint_dir = tmp_path / "checkpoints"
-        checkpoint_dir.mkdir()
-        (checkpoint_dir / "config.json").write_text('{"model": "test"}')
-        archive = tmp_path / "checkpoint.tar.gz"
-        with tarfile.open(archive, "w:gz") as tf:
-            tf.add(checkpoint_dir, arcname="checkpoints")
+        with patch("adapters.storage.s3.S3StorageAdapter", return_value=mock_storage):
+            dest = tmp_path / "output"
+            result = adapter.download("runpod/test-exp-aabbcc", dest)
 
-        def fake_download(Bucket, Key, Filename):
-            import shutil
-            shutil.copy2(archive, Filename)
+        mock_storage.download_directory.assert_called_once_with(
+            "runpod/test-exp-aabbcc/checkpoint/", dest
+        )
+        assert result == str(dest)
 
-        s3.download_file.side_effect = fake_download
-
-        dest = tmp_path / "output"
-        result = adapter.download("runpod/test-exp-aabbcc", dest)
-
-        assert Path(result) == dest / "checkpoints"
-        assert (dest / "checkpoints" / "config.json").exists()
-        assert not (dest / "checkpoint.tar.gz").exists()
+    def test_build_pod_env_includes_data_keys(self, monkeypatch, tmp_path):
+        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+        env = adapter._build_pod_env("runpod/my-exp-abc123", _config())
+        assert env["TRAIN_DATA_KEY"] == "runpod/my-exp-abc123/data/train.jsonl"
+        assert env["EVAL_DATA_KEY"] == "runpod/my-exp-abc123/data/eval.jsonl"
+        assert env["STORAGE_BACKEND"] == "s3"
 
 
 class TestRunPodAdapterLogs:
