@@ -50,13 +50,13 @@ def main() -> None:
         [sys.executable, "-m", "pip", "install", f"{whl}[training]"],
         check=True,
     )
-    # Route to the correct script based on JOB_TYPE env var.
+    # Route to the correct module based on JOB_TYPE env var.
     job_type = os.environ.get("JOB_TYPE", "train")
-    print(f"[bootstrap] wheel installed — starting job_type={job_type}", flush=True)
+    print(f"[bootstrap] wheel installed with [training] extras — starting job_type={job_type}", flush=True)
 
     import runpy
     if job_type == "train":
-        runpy.run_module("adapters.compute.runpod.training_script", run_name="__main__")
+        runpy.run_module("interactors.cli.training.remote_worker", run_name="__main__")
     elif job_type == "eval":
         runpy.run_module("adapters.compute.runpod.eval_script", run_name="__main__")
     else:

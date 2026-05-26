@@ -126,7 +126,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         configure(adapter)
         log.info("Inference adapter configured (model will load on first request): %s", model_path)
 
-    from adapters.compute.k8s import K8sPodAdapter, MockPodAdapter
+    from adapters.compute.k8s.adapter import K8sPodAdapter, MockPodAdapter
     from interactors.api.deps import clear_pod_adapter, configure_pod_adapter
     if os.environ.get("K8S_MOCK", "false").lower() == "true":
         pod_adapter = MockPodAdapter()

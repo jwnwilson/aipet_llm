@@ -9,7 +9,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import time
 from pathlib import Path
 from typing import Literal
@@ -109,24 +108,12 @@ class KaggleTrainingAdapter(RemoteJobPort):
             [_kaggle_bin(), "kernels", "output", run_id, "-p", str(dest)],
             check=True,
         )
-        # Eval kernels write eval_result.json to their output directory.
-        eval_result_file = dest / "eval_result.json"
-        is_eval_run = "-eval" in run_id.split("/")[-1]
-        if eval_result_file.exists():
-            return str(eval_result_file)
-        if is_eval_run:
-            raise RuntimeError(
-                f"Kaggle eval kernel produced no eval_result.json in {dest}. "
-                f"Files present: {[f.name for f in dest.iterdir()] if dest.exists() else []}"
-            )
-
-        # Training kernels write checkpoint.tar.gz to their output directory.
-        archive = dest / "checkpoint.tar.gz"
-        if archive.exists():
-            with tarfile.open(archive) as tf:
-                tf.extractall(dest, filter="data")
-            archive.unlink()
-
+        # remote_worker writes to /kaggle/working/checkpoint/
+        # kaggle kernels output preserves the path structure
+        for checkpoint_dir in sorted(dest.rglob("checkpoint")):
+            if checkpoint_dir.is_dir():
+                return str(checkpoint_dir)
+        # Fallback: find HF model config.json
         for config_path in sorted(dest.rglob("config.json")):
             if '"model_type"' in config_path.read_text():
                 return str(config_path.parent)
@@ -193,7 +180,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
         kernel_slug = _slugify(config.experiment_name)
         kernel_dir = self._work_dir / kernel_slug
         kernel_dir.mkdir(parents=True, exist_ok=True)
-        self._render_notebook(config, kernel_dir)
+        self._render_notebook(config, kernel_dir, dataset_slug)
 
         slug = f"{self._username}/{kernel_slug}"
         metadata = {
@@ -336,31 +323,59 @@ class KaggleTrainingAdapter(RemoteJobPort):
 
         log.warning(".whl not confirmed in %s after %ds — proceeding anyway.", dataset_ref, timeout)
 
-    def _render_notebook(self, config: TrainJobSpec, kernel_dir: Path) -> None:
-        template_path = Path(__file__).parent / "notebook_template.ipynb"
-        notebook = json.loads(template_path.read_text())
+    def _render_notebook(
+        self, config: TrainJobSpec, kernel_dir: Path, dataset_slug: str
+    ) -> None:
+        """Render a notebook that invokes remote_worker via runpy after installing the wheel."""
+        data_dir = f"/kaggle/input/{dataset_slug}"
 
-        config_repr = repr({
-            "model": config.model,
-            "epochs": config.epochs,
-            "patience": config.patience,
-            "warmup_ratio": config.warmup_ratio,
-            "experiment_name": config.experiment_name,
-            # Pre-compute the slug so the notebook uses exactly the same name that
-            # was used to create the Kaggle dataset — avoids mismatch when
-            # experiment_name contains underscores, uppercase, or other chars that
-            # _slugify normalises to hyphens.
-            "dataset_slug": _slugify(f"{config.experiment_name}-data"),
-        })
-
-        replacements = {"{{config}}": config_repr}
-        for cell in notebook["cells"]:
-            src = cell["source"]
-            if isinstance(src, str):
-                cell["source"] = _replace_all(src, replacements)
-            else:
-                cell["source"] = [_replace_all(line, replacements) for line in src]
-
+        notebook = {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "metadata": {
+                "kernelspec": {
+                    "display_name": "Python 3",
+                    "language": "python",
+                    "name": "python3",
+                }
+            },
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": [
+                        "import subprocess, sys, os, runpy, glob\n",
+                        "\n",
+                        "# Locate the project wheel — handle both old (/kaggle/input/<slug>/) and\n",
+                        "# new (/kaggle/input/datasets/<owner>/<slug>/) Kaggle mount paths.\n",
+                        f"_whl_list = (\n",
+                        f"    glob.glob('/kaggle/input/{dataset_slug}/*.whl') or\n",
+                        f"    glob.glob('/kaggle/input/**/{dataset_slug}/*.whl', recursive=True)\n",
+                        ")\n",
+                        "if not _whl_list:\n",
+                        f"    raise FileNotFoundError('No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset')\n",
+                        "whl = _whl_list[0]\n",
+                        "subprocess.run([sys.executable, '-m', 'pip', 'install', f'{whl}[training]'], check=True)\n",
+                        "\n",
+                        "# Set env vars consumed by remote_worker.py\n",
+                        f"os.environ['RUN_ID'] = {config.experiment_name!r}\n",
+                        "os.environ['TRAIN_DATA_KEY'] = 'train.jsonl'\n",
+                        "os.environ['EVAL_DATA_KEY'] = 'eval.jsonl'\n",
+                        f"os.environ['MODEL'] = {config.model!r}\n",
+                        f"os.environ['EPOCHS'] = {str(config.epochs)!r}\n",
+                        f"os.environ['PATIENCE'] = {str(config.patience)!r}\n",
+                        f"os.environ['WARMUP_RATIO'] = {str(config.warmup_ratio)!r}\n",
+                        "os.environ['STORAGE_BACKEND'] = 'kaggle'\n",
+                        f"os.environ['KAGGLE_DATA_DIR'] = {data_dir!r}\n",
+                        "\n",
+                        "# Run the unified training worker (same code as K8s/RunPod/Vast.ai)\n",
+                        "runpy.run_module('interactors.cli.training.remote_worker', run_name='__main__')\n",
+                    ],
+                    "metadata": {},
+                    "outputs": [],
+                    "execution_count": None,
+                }
+            ],
+        }
         (kernel_dir / "notebook.ipynb").write_text(json.dumps(notebook, indent=1))
 
     def _render_eval_notebook(
