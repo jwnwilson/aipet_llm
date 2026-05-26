@@ -15,8 +15,8 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort, StoragePort
+from domain.models import RemoteJobSpec, RemoteTrainConfig, TrainJobSpec
+from domain.ports import RemoteJobPort, RemoteTrainingPort, StoragePort
 
 try:
     from kubernetes import client as k8s_client
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 _JOB_ANNOTATION = "llm-api/run-id"
 
 
-class K8sTrainingAdapter(RemoteTrainingPort):
+class K8sTrainingAdapter(RemoteJobPort):
     """Submit training as a k8s batch/v1 Job (train-only; eval runs on the worker).
 
     The job name returned from submit() is the opaque run_id used by Temporal.
@@ -76,8 +76,16 @@ class K8sTrainingAdapter(RemoteTrainingPort):
     # RemoteTrainingPort implementation
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
-        """Create a k8s batch Job. Returns the job name as the opaque run_id."""
+    def submit(self, spec: RemoteJobSpec) -> str:
+        """Create a k8s batch Job. Returns the job name as the opaque run_id.
+
+        Only ``job_type="train"`` is supported; eval raises ``NotImplementedError``.
+        """
+        if not isinstance(spec, TrainJobSpec):
+            raise NotImplementedError(
+                f"K8sTrainingAdapter only supports job_type='train'; got {spec.job_type!r}"
+            )
+        config: TrainJobSpec = spec
         job_name = f"train-{uuid.uuid4().hex[:12]}"
         db_run_id = config.experiment_name  # set to DB run_id by train_activity
 

@@ -22,6 +22,7 @@ from interactors.temporal.activities import (
     fail_run_activity,
     finalise_run_activity,
     generate_dataset_activity,
+    record_eval_result_activity,
     save_gguf_path_activity,
     train_activity,
     update_run_status_activity,
@@ -72,6 +73,7 @@ _ACTIVITIES = [
     export_activity,
     fail_run_activity,
     finalise_run_activity,
+    record_eval_result_activity,
     save_gguf_path_activity,
     update_run_status_activity,
 ]
@@ -117,8 +119,8 @@ async def test_training_pipeline_workflow_e2e_pass():
 
 
 @pytest.mark.asyncio
-async def test_training_pipeline_workflow_e2e_eval_fail_skips_export():
-    """When eval does not reach 95%, the workflow completes but skips export."""
+async def test_training_pipeline_workflow_e2e_eval_fail_still_exports():
+    """When eval does not reach 95%, export still runs — checkpoint is never discarded."""
     _configure_mock_storage()
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
@@ -149,7 +151,8 @@ async def test_training_pipeline_workflow_e2e_eval_fail_skips_export():
 
     assert result.passed is False
     assert abs(result.eval_result.valid_pct - 0.75) < 1e-6
-    assert result.gguf_path.path == ""
+    # Export always runs even when eval fails — checkpoint is preserved in GGUF form.
+    assert result.gguf_path.path != ""
 
 
 @pytest.mark.asyncio
@@ -295,7 +298,7 @@ async def test_evaluate_workflow_passes_db_run_id():
             env.client,
             task_queue="test-evaluate-queue",
             workflows=[EvaluateWorkflow],
-            activities=[evaluate_activity, finalise_run_activity],
+            activities=[evaluate_activity, finalise_run_activity, record_eval_result_activity, fail_run_activity],
         ):
             # Patch the domain functions called by evaluate_activity
             patches = [

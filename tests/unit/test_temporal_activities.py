@@ -649,7 +649,8 @@ class TestFinaliseRunActivity:
 
         await ENV.run(finalise_run_activity, "run-3", True, 0.95)
 
-        mock_store.update_eval.assert_called_once_with("run-3", 0.95)
+        # eval persistence is now owned by record_eval_result_activity, not finalise_run_activity
+        mock_store.update_eval.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

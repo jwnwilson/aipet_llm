@@ -14,13 +14,13 @@ log = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Literal
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort
+from domain.models import RemoteJobSpec, RemoteTrainConfig, TrainJobSpec
+from domain.ports import RemoteJobPort, RemoteTrainingPort
 
 _DRIVE_ROOT_FOLDER = "ColabTraining"
 
 
-class ColabTrainingAdapter(RemoteTrainingPort):
+class ColabTrainingAdapter(RemoteJobPort):
     """RemoteTrainingPort implementation that submits training as a Colab notebook.
 
     Credentials are read from GOOGLE_APPLICATION_CREDENTIALS (service account JSON)
@@ -47,7 +47,13 @@ class ColabTrainingAdapter(RemoteTrainingPort):
     # RemoteTrainingPort
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
+    def submit(self, spec: RemoteJobSpec) -> str:  # type: ignore[override]
+        """Start training via Colab. Only job_type='train' is supported."""
+        if not isinstance(spec, TrainJobSpec):
+            raise NotImplementedError(
+                f"ColabTrainingAdapter only supports job_type='train'; got {spec.job_type!r}"
+            )
+        config: TrainJobSpec = spec
         staging = self._work_dir / config.experiment_name
         self._stage_files(config, staging)
 

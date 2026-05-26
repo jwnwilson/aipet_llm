@@ -14,7 +14,7 @@ from temporalio import activity
 log = logging.getLogger(__name__)
 from temporalio.exceptions import ApplicationError
 
-from domain.ports import ModelStorePort, RemoteTrainingPort, RunStorePort, StoragePort
+from domain.ports import ModelStorePort, RemoteJobPort, RemoteTrainingPort, RunStorePort, StoragePort
 from domain.train.dataset import EVAL_SIZE, SEED, TRAIN_SIZE
 from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DIR, DEFAULT_PATIENCE, DEFAULT_WARMUP_RATIO
 
@@ -113,10 +113,11 @@ class CheckpointPath:
 class EvalConfig:
     checkpoint: str = ""
     eval_data: str = "data/eval.jsonl"
-    run_id: str = ""          # non-empty → run eval on the remote machine
+    run_id: str = ""          # training adapter run_id (S3 prefix / kernel slug)
     remote_backend: str = ""
     output_dir: str = ""      # local download dest when falling back from remote to local eval
     db_run_id: str = ""       # DB RunRecord.id for progress updates; "" = no tracking
+    run_remote: bool = False  # when True, dispatch eval to remote_backend as an EvalJobSpec
 
 
 @dataclass
@@ -219,25 +220,27 @@ async def generate_dataset_activity(config: DatasetConfig) -> DatasetPaths:
     return DatasetPaths(train=train_path, eval=eval_path)
 
 
-def _make_remote_adapter(backend: str) -> RemoteTrainingPort:
+def _make_remote_adapter(backend: str) -> RemoteJobPort:
+    # Storage is only needed for S3-backed backends; fetch lazily to avoid
+    # failing when storage is not configured (e.g. Kaggle tests).
     if backend == "k8s":
         from adapters.compute.k8s_training import K8sTrainingAdapter
-        return K8sTrainingAdapter()
+        return K8sTrainingAdapter(storage=_get_storage())
     if backend == "kaggle":
         from adapters.compute.kaggle import KaggleTrainingAdapter
-        return KaggleTrainingAdapter()
+        return KaggleTrainingAdapter()          # Kaggle uses its own file-based staging
     if backend == "ssh":
         from adapters.compute.ssh import SshTrainingAdapter
-        return SshTrainingAdapter()
+        return SshTrainingAdapter()             # SSH has no StoragePort injection yet
     if backend == "colab":
         from adapters.compute.colab.adapter import ColabTrainingAdapter
-        return ColabTrainingAdapter()
+        return ColabTrainingAdapter()           # Colab has no StoragePort injection yet
     if backend == "runpod":
         from adapters.compute.runpod import RunPodTrainingAdapter
-        return RunPodTrainingAdapter()
+        return RunPodTrainingAdapter(storage=_get_storage())
     if backend == "vastai":
         from adapters.compute.vastai import VastAiTrainingAdapter
-        return VastAiTrainingAdapter()
+        return VastAiTrainingAdapter(storage=_get_storage())
     raise ApplicationError(f"Unknown remote_backend: {backend!r}")
 
 
@@ -282,10 +285,10 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
     return CheckpointPath(path=config.output_dir)
 
 
-async def _train_remote(config: TrainConfig, adapter: RemoteTrainingPort) -> CheckpointPath:
-    from domain.models import RemoteTrainConfig
+async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> CheckpointPath:
+    from domain.models import TrainJobSpec
 
-    remote_config = RemoteTrainConfig(
+    remote_config = TrainJobSpec(
         model=config.model,
         train_data=config.train_data,
         eval_data=config.eval_data,
@@ -399,7 +402,9 @@ async def evaluate_activity(config: EvalConfig) -> EvalResult:
     loop = asyncio.get_event_loop()
     heartbeat_task = asyncio.ensure_future(_heartbeat_loop("evaluate"))
     try:
-        if config.remote_backend:
+        if config.remote_backend and config.run_remote:
+            result = await _evaluate_via_remote_job(config, loop)
+        elif config.remote_backend:
             result = await _evaluate_remote(config, loop)
         else:
             result = await _evaluate_local(config, loop)
@@ -447,6 +452,51 @@ async def _evaluate_remote(config: EvalConfig, loop: asyncio.AbstractEventLoop) 
         db_run_id=config.db_run_id,
     )
     return await _evaluate_local(local_config, loop)
+
+
+async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEventLoop) -> EvalResult:
+    """Submit an EvalJobSpec to the remote backend and poll until done.
+
+    Mirrors the _train_remote polling loop so heartbeats are sent throughout.
+    """
+    import json as _json
+    from domain.models import EvalJobSpec
+
+    adapter = _make_remote_adapter(config.remote_backend)
+    spec = EvalJobSpec(
+        experiment_name=f"eval-{config.db_run_id or 'standalone'}",
+        training_artifact_ref=config.run_id,
+        eval_data=config.eval_data,
+    )
+    eval_run_id = await loop.run_in_executor(None, lambda: adapter.submit(spec))
+    activity.logger.info(
+        "Remote eval submitted: backend=%s eval_run_id=%s", config.remote_backend, eval_run_id
+    )
+
+    poll_hb = asyncio.ensure_future(_heartbeat_loop("eval_poll", interval=30))
+    try:
+        while True:
+            status = await loop.run_in_executor(None, lambda: adapter.status(eval_run_id))
+            logs = await loop.run_in_executor(None, lambda: adapter.logs(eval_run_id))
+            activity.heartbeat({"status": status, "eval_run_id": eval_run_id})
+            if logs:
+                activity.logger.info("Remote eval output:\n%s", logs)
+            if status == "done":
+                break
+            if status == "failed":
+                raise ApplicationError(
+                    f"Remote eval failed (backend={config.remote_backend}, "
+                    f"eval_run_id={eval_run_id})\n{logs}"
+                )
+            await asyncio.sleep(30)
+    finally:
+        poll_hb.cancel()
+        await asyncio.gather(poll_hb, return_exceptions=True)
+
+    dest = Path(config.output_dir or f"models/eval_tmp/{eval_run_id.replace('/', '_')}")
+    result_path = await loop.run_in_executor(None, lambda: adapter.download(eval_run_id, dest))
+    data = _json.loads(Path(result_path).read_text())
+    return EvalResult(valid_pct=data["valid_pct"], passed=data["passed"])
 
 
 def _normalise_report_keys(obj: object) -> object:
@@ -538,17 +588,42 @@ async def export_activity(config: ExportConfig) -> GGUFPath:
 
 @activity.defn
 async def finalise_run_activity(run_id: str, passed: bool, valid_pct: float) -> None:
-    """Mark the run as completed or failed and persist the eval result."""
+    """Mark the run as completed or failed.
+
+    ``passed`` reflects whether *training* succeeded (not eval) — the workflow
+    always calls this with ``passed=True`` after a successful train.  Eval outcome
+    is recorded separately via ``record_eval_result_activity``.
+    The ``valid_pct`` parameter is kept for backward-compat but is no longer
+    persisted here (``record_eval_result_activity`` owns that).
+    """
     from domain.models import RunStatus
 
     store = _get_run_store()
-    store.update_eval(run_id, valid_pct)
     store.update_status(run_id, RunStatus.COMPLETED if passed else RunStatus.FAILED)
     activity.logger.info(
-        "Run %s finalised: status=%s valid_pct=%.1f%%",
+        "Run %s finalised: status=%s",
         run_id,
         RunStatus.COMPLETED.value if passed else RunStatus.FAILED.value,
-        valid_pct * 100,
+    )
+
+
+@activity.defn
+async def record_eval_result_activity(
+    run_id: str, valid_pct: float, outcome_value: str
+) -> None:
+    """Persist the eval score and SUCCEEDED/FAILED outcome atomically.
+
+    Called by the workflow after evaluate_activity finishes (or raises).
+    Keeping this as a separate activity means eval failure never blocks
+    the run from being marked COMPLETED.
+    """
+    from domain.models import EvalOutcome
+
+    store = _get_run_store()
+    store.update_eval_result(run_id, valid_pct, EvalOutcome(outcome_value))
+    activity.logger.info(
+        "Eval result recorded: run=%s pct=%.1f%% outcome=%s",
+        run_id, valid_pct * 100, outcome_value,
     )
 
 

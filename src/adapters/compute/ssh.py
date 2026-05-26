@@ -7,11 +7,11 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort
+from domain.models import RemoteJobSpec, RemoteTrainConfig, TrainJobSpec
+from domain.ports import RemoteJobPort, RemoteTrainingPort
 
 
-class SshTrainingAdapter(RemoteTrainingPort):
+class SshTrainingAdapter(RemoteJobPort):
     """RemoteTrainingPort implementation that runs training on a remote machine via SSH.
 
     Configuration is read from env vars:
@@ -52,7 +52,13 @@ class SshTrainingAdapter(RemoteTrainingPort):
     # RemoteTrainingPort
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
+    def submit(self, spec: RemoteJobSpec) -> str:  # type: ignore[override]
+        """Start training via SSH. Only job_type='train' is supported."""
+        if not isinstance(spec, TrainJobSpec):
+            raise NotImplementedError(
+                f"SshTrainingAdapter only supports job_type='train'; got {spec.job_type!r}"
+            )
+        config: TrainJobSpec = spec
         remote = f"{self._user}@{self._host}"
 
         # Step 1: sync source tree and data.
