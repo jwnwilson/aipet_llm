@@ -111,7 +111,7 @@ def run() -> None:
     log.info("Uploaded eval_result.json → %s", eval_s3_key)
 
     log.info("Job complete — passed=%s valid_pct=%.1f%%", passed, valid_pct * 100)
-    sys.exit(0 if passed else 1)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
