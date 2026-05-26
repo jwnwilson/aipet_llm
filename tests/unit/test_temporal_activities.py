@@ -879,3 +879,111 @@ class TestSaveGgufPathActivity:
         await ENV.run(save_gguf_path_activity, "nonexistent-model", "gguf/x.gguf")
 
         mock_store.update.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _resolve_training_data — download from storage when skip_generate=True
+# ---------------------------------------------------------------------------
+
+
+class TestResolveTrainingData:
+    """Unit tests for the _resolve_training_data helper.
+
+    This function fixes the bug where skip_generate=True passes an S3 key
+    (e.g. datasets/<uuid>.jsonl) as train_data, but file-based backends
+    (Kaggle, Colab, SSH) need the file on the local filesystem for staging.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_paths_unchanged_when_files_exist_locally(self, tmp_path):
+        """No-op when both files already exist locally."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        train = tmp_path / "train.jsonl"
+        eval_ = tmp_path / "eval.jsonl"
+        train.write_text('{"prompt":"p","completion":"c"}\n')
+        eval_.write_text('{"prompt":"p","completion":"c"}\n')
+
+        config = TrainConfig(train_data=str(train), eval_data=str(eval_))
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == str(train)
+        assert eval_out == str(eval_)
+
+    @pytest.mark.asyncio
+    async def test_downloads_train_and_eval_when_missing(self, tmp_path, monkeypatch):
+        """When train_data is an S3 key, download both files to data/."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        def fake_download(key: str, dest) -> None:
+            dest = Path(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text('{"prompt":"p","completion":"c"}\n')
+
+        mock_storage = MagicMock()
+        mock_storage.download.side_effect = fake_download
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="datasets/eval.jsonl",
+        )
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert Path(train_out).name == "train.jsonl"
+        assert Path(train_out).exists()
+        assert Path(eval_out).name == "eval.jsonl"
+        assert Path(eval_out).exists()
+
+    @pytest.mark.asyncio
+    async def test_derives_eval_key_from_train_parent_when_eval_not_configured(
+        self, tmp_path, monkeypatch
+    ):
+        """When eval_data is empty, the eval key defaults to the train parent / eval.jsonl."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        downloaded: list[str] = []
+
+        def fake_download(key: str, dest) -> None:
+            downloaded.append(key)
+            dest = Path(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text("{}\n")
+
+        mock_storage = MagicMock()
+        mock_storage.download.side_effect = fake_download
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(train_data="datasets/abc123.jsonl", eval_data="")
+        loop = asyncio.get_event_loop()
+        await acts._resolve_training_data(config, loop)
+
+        assert "datasets/eval.jsonl" in downloaded
+
+    @pytest.mark.asyncio
+    async def test_skips_download_when_both_files_already_local(self, tmp_path, monkeypatch):
+        """Storage.download must not be called when both files already exist locally."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        train = tmp_path / "data" / "train.jsonl"
+        eval_ = tmp_path / "data" / "eval.jsonl"
+        train.parent.mkdir(parents=True)
+        train.write_text("{}\n")
+        eval_.write_text("{}\n")
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+
+        config = TrainConfig(train_data=str(train), eval_data=str(eval_))
+        loop = asyncio.get_event_loop()
+        await acts._resolve_training_data(config, loop)
+
+        mock_storage.download.assert_not_called()

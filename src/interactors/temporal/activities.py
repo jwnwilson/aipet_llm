@@ -284,13 +284,66 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
     return CheckpointPath(path=config.output_dir)
 
 
+async def _resolve_training_data(
+    config: TrainConfig, loop: asyncio.AbstractEventLoop
+) -> tuple[str, str]:
+    """Return *(train_path, eval_path)* guaranteed to exist on the local filesystem.
+
+    When ``skip_generate=True`` the workflow forwards the S3 storage key
+    (e.g. ``datasets/<uuid>.jsonl``) as ``train_data`` rather than generating
+    a local file.  File-based backends (Kaggle, Colab, SSH) stage data from the
+    local filesystem before upload, so we must materialise the files first.
+
+    If the paths already exist locally this is a no-op; otherwise both files are
+    downloaded from storage into ``data/train.jsonl`` / ``data/eval.jsonl``.
+    """
+    def _is_local(key: str) -> bool:
+        p = Path(key)
+        return (p if p.is_absolute() else Path.cwd() / p).exists()
+
+    train_key = config.train_data
+    # Derive eval key: use explicit config value or the sibling eval.jsonl.
+    eval_key = config.eval_data or str(Path(train_key).parent / "eval.jsonl")
+
+    if _is_local(train_key) and _is_local(eval_key):
+        return train_key, eval_key
+
+    activity.logger.info(
+        "Training data not found locally (train=%r eval=%r cwd=%s); "
+        "downloading from storage for local staging.",
+        train_key, eval_key, Path.cwd(),
+    )
+    storage = _get_storage()
+    dest = Path("data")
+    dest.mkdir(parents=True, exist_ok=True)
+    local_train = dest / "train.jsonl"
+    local_eval = dest / "eval.jsonl"
+
+    if not _is_local(train_key):
+        await loop.run_in_executor(None, lambda: storage.download(train_key, local_train))
+        activity.logger.info("Downloaded train data → %s", local_train)
+
+    if not _is_local(eval_key):
+        await loop.run_in_executor(None, lambda: storage.download(eval_key, local_eval))
+        activity.logger.info("Downloaded eval data → %s", local_eval)
+
+    return str(local_train), str(local_eval)
+
+
 async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> CheckpointPath:
     from domain.models import TrainJobSpec
 
+    loop = asyncio.get_event_loop()
+
+    # If train/eval paths are S3 keys (skip_generate=True), download them locally
+    # before building remote_config — file-based backends (Kaggle, Colab, SSH) need
+    # the data on the local filesystem to stage it into their compute environment.
+    train_data, eval_data = await _resolve_training_data(config, loop)
+
     remote_config = TrainJobSpec(
         model=config.model,
-        train_data=config.train_data,
-        eval_data=config.eval_data,
+        train_data=train_data,
+        eval_data=eval_data,
         epochs=config.epochs,
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
@@ -299,8 +352,6 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         # ensuring the training upload and export download use the same path.
         db_run_id=config.db_run_id,
     )
-
-    loop = asyncio.get_event_loop()
 
     # Resume from a prior attempt if the remote job was already submitted.
     info = activity.info()
