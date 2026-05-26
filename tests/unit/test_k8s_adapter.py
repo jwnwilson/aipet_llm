@@ -12,8 +12,8 @@ sys.modules.setdefault("kubernetes", MagicMock())
 sys.modules.setdefault("kubernetes.client", _k8s_client_mock)
 sys.modules.setdefault("kubernetes.config", _k8s_config_mock)
 
-import adapters.compute.k8s as k8s_mod  # noqa: E402
-from adapters.compute.k8s import K8sPodAdapter, MockPodAdapter  # noqa: E402
+import adapters.compute.k8s.adapter as k8s_mod  # noqa: E402
+from adapters.compute.k8s.adapter import K8sPodAdapter, MockPodAdapter  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
