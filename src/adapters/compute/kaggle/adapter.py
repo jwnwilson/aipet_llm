@@ -333,11 +333,6 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
             "patience": config.patience,
             "warmup_ratio": config.warmup_ratio,
             "experiment_name": config.experiment_name,
-            # Pre-compute the slug so the notebook uses exactly the same name that
-            # was used to create the Kaggle dataset — avoids mismatch when
-            # experiment_name contains underscores, uppercase, or other chars that
-            # _slugify normalises to hyphens.
-            "dataset_slug": _slugify(f"{config.experiment_name}-data"),
         })
 
         replacements = {"{{config}}": config_repr}
@@ -360,7 +355,6 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
             "training_run_id": training_run_id,
             "experiment_name": experiment_name,
             "eval_data_file": Path(eval_data).name,
-            "dataset_slug": _slugify(f"{experiment_name}-data"),
         })
 
         replacements = {"{{config}}": config_repr}
