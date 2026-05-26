@@ -215,32 +215,25 @@ async def test_evaluate_activity_raises_on_exception():
 
 
 @pytest.mark.asyncio
-async def test_evaluate_remote_kaggle_fallback_passes_inner_checkpoint_to_local(monkeypatch):
-    """When a backend raises NotImplementedError on eval(), download() is called and the
-    path it returns (the inner HF checkpoint dir) must be forwarded to _evaluate_local."""
+async def test_evaluate_remote_backend_dispatches_via_remote_job(monkeypatch):
+    """With a remote_backend set, evaluate_activity must dispatch to _evaluate_via_remote_job,
+    NOT download the checkpoint to the Temporal worker.  The worker is an orchestrator only."""
     import asyncio
     import interactors.temporal.activities as acts
-    from unittest.mock import MagicMock
 
-    inner_ckpt = "/tmp/dest/checkpoints"
-    mock_adapter = MagicMock()
-    mock_adapter.eval.side_effect = NotImplementedError
-    mock_adapter.download.return_value = inner_ckpt
+    remote_calls: list[str] = []
 
-    local_calls: list[str] = []
-
-    async def fake_local(config, loop):
-        local_calls.append(config.checkpoint)
+    async def fake_remote_job(config, loop):
+        remote_calls.append(config.remote_backend)
         return EvalResult(valid_pct=0.95, passed=True)
 
-    monkeypatch.setattr(acts, "_evaluate_local", fake_local)
-    monkeypatch.setattr(acts, "_make_remote_adapter", lambda _: mock_adapter)
+    monkeypatch.setattr(acts, "_evaluate_via_remote_job", fake_remote_job)
 
     config = EvalConfig(remote_backend="kaggle", run_id="u/exp", eval_data="data/eval.jsonl")
-    await acts._evaluate_remote(config, asyncio.get_event_loop())
+    await acts._evaluate_via_remote_job(config, asyncio.get_event_loop())
 
-    assert local_calls == [inner_ckpt], (
-        "_evaluate_local must receive the inner checkpoint path returned by download(), not the extraction root"
+    assert remote_calls == ["kaggle"], (
+        "remote_backend must route to _evaluate_via_remote_job, not download checkpoint to Temporal"
     )
 
 

@@ -114,10 +114,9 @@ class EvalConfig:
     checkpoint: str = ""
     eval_data: str = "data/eval.jsonl"
     run_id: str = ""          # training adapter run_id (S3 prefix / kernel slug)
-    remote_backend: str = ""
-    output_dir: str = ""      # local download dest when falling back from remote to local eval
+    remote_backend: str = ""  # non-empty → dispatch eval as EvalJobSpec to the remote GPU
+    output_dir: str = ""      # local dir for downloaded eval_results.json
     db_run_id: str = ""       # DB RunRecord.id for progress updates; "" = no tracking
-    run_remote: bool = False  # when True, dispatch eval to remote_backend as an EvalJobSpec
 
 
 @dataclass
@@ -402,15 +401,11 @@ async def evaluate_activity(config: EvalConfig) -> EvalResult:
     loop = asyncio.get_event_loop()
     heartbeat_task = asyncio.ensure_future(_heartbeat_loop("evaluate"))
     try:
-        if config.run_remote and not config.remote_backend:
-            raise ApplicationError(
-                "EvalConfig.run_remote=True requires a non-empty remote_backend; "
-                "set remote_backend to 'runpod', 'vastai', or 'kaggle'."
-            )
-        if config.remote_backend and config.run_remote:
+        if config.remote_backend:
+            # Dispatch eval to the remote GPU that ran training.
+            # The EvalJobSpec downloads checkpoint + eval data on the remote machine;
+            # the Temporal worker only polls status and retrieves the tiny eval_results.json.
             result = await _evaluate_via_remote_job(config, loop)
-        elif config.remote_backend:
-            result = await _evaluate_remote(config, loop)
         else:
             result = await _evaluate_local(config, loop)
     except ApplicationError:
@@ -426,37 +421,6 @@ async def evaluate_activity(config: EvalConfig) -> EvalResult:
         result.passed,
     )
     return result
-
-
-async def _evaluate_remote(config: EvalConfig, loop: asyncio.AbstractEventLoop) -> EvalResult:
-    """Download the checkpoint from S3 then evaluate locally on the Temporal worker.
-
-    All remote backends (K8s, RunPod, VastAI, Kaggle, SSH) are train-only — the
-    training job uploads the checkpoint to S3 and the worker scores it here so
-    eval always runs in a consistent environment regardless of backend.
-    """
-    adapter = _make_remote_adapter(config.remote_backend)
-    dest = Path(config.output_dir) if config.output_dir else Path("models/checkpoints") / config.run_id
-    activity.logger.info(
-        "Downloading checkpoint for eval: backend=%r  run_id=%s  dest=%s",
-        config.remote_backend, config.run_id, dest,
-    )
-    try:
-        checkpoint_path = await loop.run_in_executor(
-            None, lambda: adapter.download(config.run_id, dest)
-        )
-    except Exception as exc:
-        raise ApplicationError(
-            f"Checkpoint download failed for eval "
-            f"(backend={config.remote_backend!r}, run_id={config.run_id!r}): {exc}"
-        ) from exc
-
-    local_config = EvalConfig(
-        checkpoint=checkpoint_path,
-        eval_data=config.eval_data,
-        db_run_id=config.db_run_id,
-    )
-    return await _evaluate_local(local_config, loop)
 
 
 async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEventLoop) -> EvalResult:
