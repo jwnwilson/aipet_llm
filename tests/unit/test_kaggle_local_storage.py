@@ -38,6 +38,23 @@ class TestKaggleLocalStorageDownload:
         with pytest.raises(FileNotFoundError):
             adapter.download("missing.jsonl", tmp_path / "out.jsonl")
 
+    def test_download_uses_kaggle_data_dir_env_var(self, tmp_path, monkeypatch):
+        """Replicates the actual Kaggle runtime: KAGGLE_DATA_DIR is set from the wheel parent.
+
+        The new Kaggle mount path is /kaggle/input/datasets/<owner>/<slug>/ — the adapter
+        must read KAGGLE_DATA_DIR and find train.jsonl there.
+        """
+        new_mount = (
+            tmp_path / "kaggle" / "input" / "datasets" / "noelwilson" / "smoke-test-model-data"
+        )
+        new_mount.mkdir(parents=True)
+        (new_mount / "train.jsonl").write_text('{"prompt":"p","completion":"c"}\n')
+        monkeypatch.setenv("KAGGLE_DATA_DIR", str(new_mount))
+        adapter = KaggleLocalStorageAdapter()  # reads env var — no explicit args
+        dest = tmp_path / "out.jsonl"
+        adapter.download("train.jsonl", dest)
+        assert dest.exists()
+
     def test_download_directory_copies_all_files(self, adapter, data_dir, tmp_path):
         (data_dir / "train.jsonl").write_text("train")
         (data_dir / "eval.jsonl").write_text("eval")
