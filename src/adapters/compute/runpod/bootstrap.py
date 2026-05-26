@@ -43,11 +43,14 @@ def main() -> None:
     whl = Path("/tmp") / whl_key.split("/")[-1]
     print(f"[bootstrap] downloading wheel  key={whl_key}", flush=True)
     s3.download_file(BUCKET, whl_key, str(whl))
+    # Install with [training] extras so transformers, datasets, accelerate,
+    # peft, bitsandbytes, and sentencepiece are available inside the pod.
+    # These are optional deps in pyproject.toml; the base wheel omits them.
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", str(whl)],
+        [sys.executable, "-m", "pip", "install", f"{whl}[training]"],
         check=True,
     )
-    print("[bootstrap] wheel installed — starting training script", flush=True)
+    print("[bootstrap] wheel installed with [training] extras — starting training script", flush=True)
 
     # Wheel is now installed; delegate to the training script in the same process.
     # runpy sets __name__ = "__main__" so the if-block at the bottom fires.
