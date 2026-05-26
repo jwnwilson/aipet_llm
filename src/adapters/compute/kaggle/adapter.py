@@ -352,7 +352,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         f"    glob.glob('/kaggle/input/**/{dataset_slug}/*.whl', recursive=True)\n",
                         ")\n",
                         "if not _whl_list:\n",
-                        f"    raise FileNotFoundError('No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset')\n",
+                        f'    raise FileNotFoundError("No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset")\n',
                         "whl = _whl_list[0]\n",
                         "subprocess.run([sys.executable, '-m', 'pip', 'install', f'{whl}[training]'], check=True)\n",
                         "\n",
