@@ -402,6 +402,11 @@ async def evaluate_activity(config: EvalConfig) -> EvalResult:
     loop = asyncio.get_event_loop()
     heartbeat_task = asyncio.ensure_future(_heartbeat_loop("evaluate"))
     try:
+        if config.run_remote and not config.remote_backend:
+            raise ApplicationError(
+                "EvalConfig.run_remote=True requires a non-empty remote_backend; "
+                "set remote_backend to 'runpod', 'vastai', or 'kaggle'."
+            )
         if config.remote_backend and config.run_remote:
             result = await _evaluate_via_remote_job(config, loop)
         elif config.remote_backend:
@@ -494,9 +499,22 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
         await asyncio.gather(poll_hb, return_exceptions=True)
 
     dest = Path(config.output_dir or f"models/eval_tmp/{eval_run_id.replace('/', '_')}")
-    result_path = await loop.run_in_executor(None, lambda: adapter.download(eval_run_id, dest))
-    data = _json.loads(Path(result_path).read_text())
-    return EvalResult(valid_pct=data["valid_pct"], passed=data["passed"])
+    try:
+        result_path = await loop.run_in_executor(None, lambda: adapter.download(eval_run_id, dest))
+        data = _json.loads(Path(result_path).read_text())
+        return EvalResult(valid_pct=data["valid_pct"], passed=data["passed"])
+    except (KeyError, json.JSONDecodeError) as exc:
+        raise ApplicationError(
+            f"Remote eval result malformed "
+            f"(backend={config.remote_backend}, eval_run_id={eval_run_id}): {exc}"
+        ) from exc
+    except ApplicationError:
+        raise
+    except Exception as exc:
+        raise ApplicationError(
+            f"Remote eval result download failed "
+            f"(backend={config.remote_backend}, eval_run_id={eval_run_id}): {exc}"
+        ) from exc
 
 
 def _normalise_report_keys(obj: object) -> object:

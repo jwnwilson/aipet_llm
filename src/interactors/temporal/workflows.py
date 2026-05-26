@@ -199,9 +199,12 @@ class TrainingPipelineWorkflow:
                 eval_valid_pct = result.eval_result.valid_pct
                 eval_outcome_value = "succeeded" if result.eval_result.passed else "failed"
             except Exception as eval_exc:
+                if is_cancelled_exception(eval_exc):
+                    raise   # propagate cancellation — do not absorb it as an eval failure
                 workflow.logger.warning(
                     "experiment=%s eval failed (non-fatal) — checkpoint preserved: %s",
                     config.experiment_name, eval_exc,
+                    exc_info=True,
                 )
 
             result.eval_outcome = eval_outcome_value

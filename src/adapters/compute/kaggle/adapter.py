@@ -111,8 +111,14 @@ class KaggleTrainingAdapter(RemoteJobPort):
         )
         # Eval kernels write eval_result.json to their output directory.
         eval_result_file = dest / "eval_result.json"
+        is_eval_run = "-eval" in run_id.split("/")[-1]
         if eval_result_file.exists():
             return str(eval_result_file)
+        if is_eval_run:
+            raise RuntimeError(
+                f"Kaggle eval kernel produced no eval_result.json in {dest}. "
+                f"Files present: {[f.name for f in dest.iterdir()] if dest.exists() else []}"
+            )
 
         # Training kernels write checkpoint.tar.gz to their output directory.
         archive = dest / "checkpoint.tar.gz"

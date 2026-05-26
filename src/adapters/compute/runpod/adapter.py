@@ -125,7 +125,8 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 run_id, pod.get("desiredStatus"), mapped or "pending",
             )
             return (mapped or "pending")  # type: ignore[return-value]
-        except Exception:
+        except Exception as exc:
+            log.warning("runpod status API fallback failed  run_id=%s  error=%s", run_id, exc)
             return "pending"
 
     def download(self, run_id: str, dest: Path) -> str:
@@ -154,7 +155,8 @@ class RunPodTrainingAdapter(RemoteJobPort):
             header = f"[runpod] pod_id={pod_id}  actual_status={actual_status}"
             s3_logs = self._storage.read_text(f"{run_id}/logs.txt")
             return f"{header}\n{s3_logs}" if s3_logs else header
-        except Exception:
+        except Exception as exc:
+            log.warning("runpod log retrieval failed  run_id=%s  error=%s", run_id, exc)
             return ""
 
     def progress(self, run_id: str) -> tuple[float, str]:

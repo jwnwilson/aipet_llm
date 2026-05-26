@@ -125,7 +125,8 @@ class VastAiTrainingAdapter(RemoteJobPort):
                 run_id, actual, mapped or "pending",
             )
             return (mapped or "pending")  # type: ignore[return-value]
-        except Exception:
+        except Exception as exc:
+            log.warning("vastai status API fallback failed  run_id=%s  error=%s", run_id, exc)
             return "pending"
 
     def download(self, run_id: str, dest: Path) -> str:
@@ -166,7 +167,8 @@ class VastAiTrainingAdapter(RemoteJobPort):
             ]
             body = "\n".join(lines)
             return f"{header}\n{body}" if body else header
-        except Exception:
+        except Exception as exc:
+            log.warning("vastai log retrieval failed  run_id=%s  error=%s", run_id, exc)
             return ""
 
     def progress(self, run_id: str) -> tuple[float, str]:
