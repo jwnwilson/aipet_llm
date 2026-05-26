@@ -310,7 +310,10 @@ class K8sTrainingAdapter(RemoteJobPort):
 
     def _submit_train(self, config: TrainJobSpec) -> str:
         job_name = f"train-{uuid.uuid4().hex[:12]}"
-        db_run_id = config.experiment_name
+        # Prefer the explicit DB run-record UUID over experiment_name so the
+        # training upload (workflow/{db_run_id}/checkpoint/) lands at the same
+        # S3 path that export_activity uses when building checkpoint_s3_prefix.
+        db_run_id = config.db_run_id or config.experiment_name
         region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
         env = [

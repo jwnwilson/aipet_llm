@@ -295,6 +295,9 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
         experiment_name=config.experiment_name or "llm-api",
+        # Thread the DB run-record UUID so K8s can use it as the S3 key prefix,
+        # ensuring the training upload and export download use the same path.
+        db_run_id=config.db_run_id,
     )
 
     loop = asyncio.get_event_loop()

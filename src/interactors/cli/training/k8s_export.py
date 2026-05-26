@@ -62,6 +62,24 @@ def run() -> None:
     storage.download_directory(checkpoint_prefix, checkpoint_dir)
     log.info("Checkpoint downloaded to %s", checkpoint_dir)
 
+    # Validate the download produced a usable HF checkpoint directory.
+    # download_directory() silently succeeds with an empty result when the
+    # S3 prefix has no matching objects (e.g. prefix mismatch between the
+    # training job's RUN_ID and the export job's CHECKPOINT_S3_PREFIX).
+    config_json = checkpoint_dir / "config.json"
+    if not config_json.exists():
+        files = list(checkpoint_dir.rglob("*"))
+        log.error(
+            "Checkpoint download incomplete: config.json not found in %s. "
+            "S3 prefix used: %r. Files present: %s. "
+            "Verify that CHECKPOINT_S3_PREFIX matches the S3_KEY_PREFIX used "
+            "by the training job (workflow/{db_run_id}/checkpoint/).",
+            checkpoint_dir,
+            checkpoint_prefix,
+            [str(f.relative_to(checkpoint_dir)) for f in files] if files else "(none)",
+        )
+        sys.exit(1)
+
     # --- Convert HF checkpoint → quantised GGUF ---
     from domain.train.export import export as export_gguf
     log.info(

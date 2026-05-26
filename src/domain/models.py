@@ -56,6 +56,10 @@ class TrainJobSpec(BaseModel):
     patience: int
     warmup_ratio: float
     experiment_name: str
+    # DB run-record UUID — when set, used as the S3 key prefix
+    # (``workflow/{db_run_id}/checkpoint/``) so the export job can locate the
+    # checkpoint.  Falls back to ``experiment_name`` when absent (legacy paths).
+    db_run_id: str = ""
     gpu_type: str = "NvidiaTeslaT4"
 
 
