@@ -7,11 +7,13 @@ from typing import Generic, Literal, TypeVar
 from domain.models import (
     DatasetConfig,
     DatasetRecord,
+    EvalOutcome,
     InferenceInstance,
     InferenceInstanceConfig,
     InferenceRequest,
     InferenceResponse,
     InferenceStatus,
+    RemoteJobSpec,
     RemoteTrainConfig,
     RunConfig,
     RunRecord,
@@ -102,8 +104,8 @@ class InferencePort(ABC):
         """
 
 
-class RemoteTrainingPort(ABC):
-    """Abstract interface for offloading fine-tuning to a remote compute backend.
+class RemoteJobPort(ABC):
+    """Abstract interface for dispatching compute jobs (train, eval, …) to remote backends.
 
     Implementations live in ``src/adapters/`` — never in the domain layer.
 
@@ -111,15 +113,20 @@ class RemoteTrainingPort(ABC):
     - ``submit`` must start the remote job and return an opaque ``run_id``.
     - ``status`` must be non-blocking (poll, don't wait).
     - ``download`` must be called only after ``status`` returns ``"done"``; it
-      fetches the checkpoint into ``dest`` and returns the local path as a string.
+      fetches job artifacts into ``dest`` and returns the local path as a string.
+      Train jobs return the checkpoint directory path.
+      Eval jobs return the eval_results.json file path.
     """
 
     @abstractmethod
-    def submit(self, config: RemoteTrainConfig) -> str:
-        """Upload data + code and start the remote training job.
+    def submit(self, spec: RemoteJobSpec) -> str:
+        """Stage resources, launch job, return opaque run_id.
+
+        Args:
+            spec: Either a ``TrainJobSpec`` or ``EvalJobSpec``, selected by ``job_type``.
 
         Returns:
-            An opaque ``run_id`` string used by ``status`` and ``download``.
+            An opaque ``run_id`` string used by ``status``, ``logs``, and ``download``.
         """
 
     @abstractmethod
@@ -128,7 +135,11 @@ class RemoteTrainingPort(ABC):
 
     @abstractmethod
     def download(self, run_id: str, dest: Path) -> str:
-        """Fetch the trained checkpoint into ``dest`` and return the local path."""
+        """Fetch job artifacts into ``dest`` and return the local path.
+
+        - Train jobs: returns the checkpoint directory path.
+        - Eval jobs: returns the eval_results.json file path.
+        """
 
     def logs(self, run_id: str) -> str:  # noqa: ARG002
         """Return recent log output for the running job (best-effort, may be empty)."""
@@ -142,14 +153,9 @@ class RemoteTrainingPort(ABC):
         """
         return 0.0, ""
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:  # noqa: ARG002
-        """Run evaluation on the remote machine and return ``(valid_pct, passed)``.
 
-        Raises ``NotImplementedError`` if the backend does not support remote
-        evaluation (e.g. Kaggle batch kernels).  ``evaluate_activity`` catches
-        this and raises an ``ApplicationError`` with a descriptive message.
-        """
-        raise NotImplementedError
+# Backward-compat alias — existing code using RemoteTrainingPort continues to work.
+RemoteTrainingPort = RemoteJobPort
 
 
 class StorePort(ABC, Generic[TDomain, TConfig]):
@@ -222,6 +228,15 @@ class RunStorePort(StorePort["RunRecord", "RunConfig"]):
         status: RunStatus = RunStatus.FAILED,
     ) -> RunRecord | None:
         """Mark a run as failed or cancelled, persisting the reason in progress_detail.
+
+        Returns the updated record, or None if run_id is not found.
+        """
+
+    @abstractmethod
+    def update_eval_result(
+        self, run_id: str, valid_pct: float, outcome: EvalOutcome
+    ) -> RunRecord | None:
+        """Persist eval score and pass/fail outcome atomically.
 
         Returns the updated record, or None if run_id is not found.
         """

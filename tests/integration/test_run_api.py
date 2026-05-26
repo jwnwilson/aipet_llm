@@ -10,13 +10,9 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-
 from interactors.api.app import app
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
-from adapters.database import Base, init_db
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
@@ -36,13 +32,8 @@ _VALID_MODEL_CONFIG = TrainingModelConfig(
 
 
 @pytest_asyncio.fixture
-async def client():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
+async def client(db_engine):
+    engine = db_engine
     model_store = SQLAlchemyModelStore(engine)
     run_store = SQLAlchemyRunStore(engine)
     dataset_store = SQLAlchemyDatasetStore(engine)

@@ -9,15 +9,14 @@ Storage I/O goes through the injected StoragePort — no raw boto3 here.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Literal
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort, StoragePort
+from domain.models import RemoteJobSpec, RemoteTrainConfig, TrainJobSpec
+from domain.ports import RemoteJobPort, RemoteTrainingPort, StoragePort
 
 try:
     from kubernetes import client as k8s_client
@@ -32,12 +31,12 @@ log = logging.getLogger(__name__)
 _JOB_ANNOTATION = "llm-api/run-id"
 
 
-class K8sTrainingAdapter(RemoteTrainingPort):
-    """Submit training + eval as k8s batch/v1 Jobs.
+class K8sTrainingAdapter(RemoteJobPort):
+    """Submit training as a k8s batch/v1 Job (train-only; eval runs on the worker).
 
     The job name returned from submit() is the opaque run_id used by Temporal.
-    The DB run ID is stored in a job annotation so eval() and download() can
-    construct the correct S3 key prefix without hitting the k8s API for data.
+    The DB run ID is stored in a job annotation so download() can construct
+    the correct S3 key prefix without hitting the k8s API for data.
     """
 
     def __init__(
@@ -77,8 +76,16 @@ class K8sTrainingAdapter(RemoteTrainingPort):
     # RemoteTrainingPort implementation
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
-        """Create a k8s batch Job. Returns the job name as the opaque run_id."""
+    def submit(self, spec: RemoteJobSpec) -> str:
+        """Create a k8s batch Job. Returns the job name as the opaque run_id.
+
+        Only ``job_type="train"`` is supported; eval raises ``NotImplementedError``.
+        """
+        if not isinstance(spec, TrainJobSpec):
+            raise NotImplementedError(
+                f"K8sTrainingAdapter only supports job_type='train'; got {spec.job_type!r}"
+            )
+        config: TrainJobSpec = spec
         job_name = f"train-{uuid.uuid4().hex[:12]}"
         db_run_id = config.experiment_name  # set to DB run_id by train_activity
 
@@ -189,18 +196,6 @@ class K8sTrainingAdapter(RemoteTrainingPort):
         except Exception as exc:
             log.debug("Could not fetch logs for Job %s: %s", run_id, exc)
             return ""
-
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        """Read eval_result.json the Job uploaded to S3 via StoragePort."""
-        db_run_id = self._db_run_id(run_id)
-        key = f"workflow/{db_run_id}/eval_result.json"
-        raw = self._storage.read_text(key)
-        if not raw:
-            raise RuntimeError(
-                f"eval_result.json not found at s3://…/{key} — job may not have completed"
-            )
-        result = json.loads(raw)
-        return float(result["valid_pct"]), bool(result["passed"])
 
     def download(self, run_id: str, dest: Path) -> str:
         """Download checkpoint directory from S3 into dest via StoragePort."""

@@ -91,45 +91,6 @@ class TestRenderNotebook:
         assert "[training]" in source
 
 
-class TestEval:
-    def test_eval_reads_result_from_kernel_output(self, tmp_path, monkeypatch):
-        adapter = _make_adapter(tmp_path, monkeypatch)
-
-        # Simulate kernel output: eval_result.json in output dir
-        output_dir = tmp_path / "my-exp-output"
-        output_dir.mkdir()
-        (output_dir / "eval_result.json").write_text('{"valid_pct": 0.97, "passed": true}')
-
-        with patch("subprocess.run"):
-            valid_pct, passed = adapter.eval("testuser/my-exp", "eval.jsonl")
-
-        assert valid_pct == pytest.approx(0.97)
-        assert passed is True
-
-    def test_eval_reads_from_nested_working_dir(self, tmp_path, monkeypatch):
-        adapter = _make_adapter(tmp_path, monkeypatch)
-
-        output_dir = tmp_path / "my-exp-output"
-        nested = output_dir / "kaggle" / "working"
-        nested.mkdir(parents=True)
-        (nested / "eval_result.json").write_text('{"valid_pct": 0.8, "passed": false}')
-
-        with patch("subprocess.run"):
-            valid_pct, passed = adapter.eval("testuser/my-exp", "eval.jsonl")
-
-        assert valid_pct == pytest.approx(0.8)
-        assert passed is False
-
-    def test_eval_raises_when_result_file_missing(self, tmp_path, monkeypatch):
-        adapter = _make_adapter(tmp_path, monkeypatch)
-        # output_dir created but no eval_result.json inside
-        (tmp_path / "my-exp-output").mkdir()
-
-        with patch("subprocess.run"):
-            with pytest.raises(RuntimeError, match="eval_result.json not found"):
-                adapter.eval("testuser/my-exp", "eval.jsonl")
-
-
 class TestDownload:
     def test_download_returns_checkpoint_dir_when_found(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)

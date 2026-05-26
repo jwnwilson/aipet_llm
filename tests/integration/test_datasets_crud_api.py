@@ -9,10 +9,6 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-
-from adapters.database import Base, init_db
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
 from interactors.api.app import app
 from interactors.api.deps import (
@@ -26,19 +22,13 @@ VALID_JSONL = b'{"prompt": "hello", "completion": "world"}\n'
 
 
 @pytest_asyncio.fixture
-async def client():
+async def client(db_engine):
     storage = MagicMock()
     storage.upload = MagicMock()
     storage.delete = MagicMock()
     configure_storage(storage)
 
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
-    dataset_store = SQLAlchemyDatasetStore(engine)
+    dataset_store = SQLAlchemyDatasetStore(db_engine)
     configure_dataset_store(dataset_store)
 
     async with httpx.AsyncClient(

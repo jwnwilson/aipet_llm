@@ -26,20 +26,18 @@ def _config(**kwargs) -> RemoteTrainConfig:
 
 
 def _make_adapter(monkeypatch, tmp_path: Path):
-    """Return a VastAiTrainingAdapter with mocked S3 client."""
+    """Return a VastAiTrainingAdapter with a mock StoragePort injected."""
     monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "fake-key")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "fake-secret")
     monkeypatch.setenv("VAST_API_KEY", "fake-vast-key")
 
-    mock_s3 = MagicMock()
+    mock_storage = MagicMock()
+    mock_storage.read_text.return_value = ""   # default: nothing in storage
 
-    with patch("boto3.client", return_value=mock_s3):
-        from adapters.compute.vastai.adapter import VastAiTrainingAdapter
-        adapter = VastAiTrainingAdapter(work_dir=tmp_path / "runs")
-
-    adapter._s3 = mock_s3
-    return adapter, mock_s3
+    from adapters.compute.vastai.adapter import VastAiTrainingAdapter
+    adapter = VastAiTrainingAdapter(storage=mock_storage, work_dir=tmp_path / "runs")
+    return adapter, mock_storage
 
 
 def _mock_vastai_client(adapter, offers=None, instance_info=None):
@@ -61,7 +59,7 @@ class TestVastAiAdapterSubmit:
         mock_client = _mock_vastai_client(adapter)
 
         monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
-        monkeypatch.setattr(adapter, "_upload_to_s3", lambda staging, run_id, config: None)
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
 
         run_id = adapter.submit(_config())
 
@@ -71,53 +69,56 @@ class TestVastAiAdapterSubmit:
         call_kwargs = mock_client.create_instance.call_args.kwargs
         assert call_kwargs["id"] == 222
 
-    def test_submit_writes_instance_id_to_s3(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+    def test_submit_writes_instance_id_to_storage(self, monkeypatch, tmp_path):
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
         _mock_vastai_client(adapter)
 
         monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
-        monkeypatch.setattr(adapter, "_upload_to_s3", lambda staging, run_id, config: None)
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
 
         adapter.submit(_config())
 
-        s3.put_object.assert_called_once()
-        call_kwargs = s3.put_object.call_args.kwargs
-        assert call_kwargs["Key"].endswith("/instance_id.txt")
-        assert call_kwargs["Body"] == b"222"
+        # instance_id.txt written via StoragePort.write_bytes
+        write_calls = {call.args[0]: call.args[1] for call in storage.write_bytes.call_args_list}
+        instance_id_key = next((k for k in write_calls if k.endswith("/instance_id.txt")), None)
+        assert instance_id_key is not None, "instance_id.txt not written to storage"
+        assert write_calls[instance_id_key] == b"222"
 
     def test_submit_raises_when_no_offers_found(self, monkeypatch, tmp_path):
         adapter, s3 = _make_adapter(monkeypatch, tmp_path)
         _mock_vastai_client(adapter, offers=[])
 
         monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
-        monkeypatch.setattr(adapter, "_upload_to_s3", lambda staging, run_id, config: None)
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
 
         with pytest.raises(RuntimeError, match="No Vast.ai offers found"):
             adapter.submit(_config())
 
 
 class TestVastAiAdapterStatus:
-    def test_returns_status_from_s3(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"done")}
+    def test_returns_status_from_storage(self, monkeypatch, tmp_path):
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = "done"
 
         assert adapter.status("vastai/test-exp-aabbcc") == "done"
 
-    def test_returns_pending_when_no_s3_data_and_no_instance_id(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.side_effect = Exception("NoSuchKey")
+    def test_returns_pending_when_no_status_txt_and_no_instance_id(self, monkeypatch, tmp_path):
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = ""   # nothing in storage
 
         assert adapter.status("vastai/test-exp-aabbcc") == "pending"
 
     def test_falls_back_to_vastai_api_when_no_status_txt(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
 
-        def get_object(Bucket, Key):
-            if Key.endswith("status.txt"):
-                raise Exception("NoSuchKey")
-            return {"Body": MagicMock(read=lambda: b"12345")}
+        def read_text(key):
+            if key.endswith("status.txt"):
+                return ""
+            if key.endswith("instance_id.txt"):
+                return "12345"
+            return ""
 
-        s3.get_object.side_effect = get_object
+        storage.read_text.side_effect = read_text
         mock_client = MagicMock()
         mock_client.show_instance.return_value = {"actual_status": "loading"}
         adapter._build_vastai_client = lambda: mock_client
@@ -125,14 +126,16 @@ class TestVastAiAdapterStatus:
         assert adapter.status("vastai/test-exp-aabbcc") == "pending"
 
     def test_maps_exited_status_to_pending_when_no_status_txt(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
 
-        def get_object(Bucket, Key):
-            if Key.endswith("status.txt"):
-                raise Exception("NoSuchKey")
-            return {"Body": MagicMock(read=lambda: b"99999")}
+        def read_text(key):
+            if key.endswith("status.txt"):
+                return ""
+            if key.endswith("instance_id.txt"):
+                return "99999"
+            return ""
 
-        s3.get_object.side_effect = get_object
+        storage.read_text.side_effect = read_text
         mock_client = MagicMock()
         mock_client.show_instance.return_value = {"actual_status": "exited"}
         adapter._build_vastai_client = lambda: mock_client
@@ -143,12 +146,10 @@ class TestVastAiAdapterStatus:
 
 class TestVastAiAdapterDownload:
     def test_download_uses_storage_download_directory(self, monkeypatch, tmp_path):
-        adapter, _ = _make_adapter(monkeypatch, tmp_path)
-        mock_storage = MagicMock()
+        adapter, mock_storage = _make_adapter(monkeypatch, tmp_path)
 
-        with patch("adapters.storage.s3.S3StorageAdapter", return_value=mock_storage):
-            dest = tmp_path / "output"
-            result = adapter.download("vastai/test-exp-aabbcc", dest)
+        dest = tmp_path / "output"
+        result = adapter.download("vastai/test-exp-aabbcc", dest)
 
         mock_storage.download_directory.assert_called_once_with(
             "vastai/test-exp-aabbcc/checkpoint/", dest
@@ -173,9 +174,8 @@ class TestVastAiAdapterDownload:
 
 class TestVastAiAdapterProgress:
     def test_returns_fraction_and_detail(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        payload = json.dumps({"fraction": 0.75, "detail": "epoch=2"}).encode()
-        s3.get_object.return_value = {"Body": MagicMock(read=lambda: payload)}
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = json.dumps({"fraction": 0.75, "detail": "epoch=2"})
 
         fraction, detail = adapter.progress("vastai/test-exp-aabbcc")
 
@@ -183,8 +183,8 @@ class TestVastAiAdapterProgress:
         assert detail == "epoch=2"
 
     def test_returns_zero_on_missing_progress_json(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.side_effect = Exception("NoSuchKey")
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = ""
 
         fraction, detail = adapter.progress("vastai/test-exp-aabbcc")
 
@@ -194,8 +194,8 @@ class TestVastAiAdapterProgress:
 
 class TestVastAiAdapterLogs:
     def test_returns_log_string(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"12345")}
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = "12345"   # instance_id.txt
         mock_client = MagicMock()
         mock_client.show_instance.return_value = {"actual_status": "running"}
         mock_client.logs.return_value = "training step 1/10"
@@ -208,7 +208,7 @@ class TestVastAiAdapterLogs:
         mock_client.logs.assert_called_once_with(instance_id=12345, tail="200")
 
     def test_returns_empty_string_on_error(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.side_effect = Exception("NoSuchKey")
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.side_effect = Exception("connection error")
 
         assert adapter.logs("vastai/test-exp-aabbcc") == ""
