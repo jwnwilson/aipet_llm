@@ -75,9 +75,30 @@ class EvalJobSpec(BaseModel):
     gpu_type: str = "NvidiaTeslaT4"
 
 
-# Discriminated union — adapters accept either a train or eval job.
+class ExportJobSpec(BaseModel):
+    """Job spec for a remote GGUF-export job dispatched via RemoteJobPort.
+
+    The K8s export Job downloads the checkpoint from S3, converts it to a
+    quantised GGUF using llama.cpp (pre-built in the export image), and
+    uploads the result back to S3.  The Temporal worker does NOT need
+    llama.cpp installed — it only submits this spec and polls status().
+    """
+    job_type: Literal["export"] = "export"
+    # DB run_id — used as the S3 key namespace: workflow/{experiment_name}/…
+    experiment_name: str
+    # S3 prefix for the HuggingFace checkpoint produced by the training job.
+    # Must end with "/".  Example: "workflow/{run_id}/checkpoint/"
+    checkpoint_s3_prefix: str
+    # S3 key the finished GGUF will be written to.
+    # Example: "workflow/{run_id}/model.gguf" or "gguf/{model_name}.gguf"
+    gguf_s3_key: str
+    # llama.cpp quantisation format (default matches the inference image target).
+    quantize: str = "Q4_K_M"
+
+
+# Discriminated union — adapters accept a train, eval, or export job.
 RemoteJobSpec = Annotated[
-    Union[TrainJobSpec, EvalJobSpec],
+    Union[TrainJobSpec, EvalJobSpec, ExportJobSpec],
     Field(discriminator="job_type"),
 ]
 

@@ -519,12 +519,74 @@ async def _evaluate_local(config: EvalConfig, loop: asyncio.AbstractEventLoop) -
 
 @activity.defn
 async def export_activity(config: ExportConfig) -> GGUFPath:
+    # Determine the destination GGUF storage key upfront — shared by all paths.
+    if config.model_name:
+        gguf_key = f"gguf/{config.model_name}.gguf"
+    elif config.pipeline_run_id:
+        gguf_key = f"workflow/{config.pipeline_run_id}/model.gguf"
+    elif config.model_id:
+        gguf_key = f"gguf/{config.model_id}.gguf"
+    else:
+        gguf_key = config.gguf_output
+
+    # ── K8s path: dispatch a dedicated export Job ─────────────────────────
+    # The Temporal worker image does NOT have llama.cpp installed.  When the
+    # backend is "k8s" we submit an ExportJobSpec so the conversion runs inside
+    # the export Docker image (which has llama.cpp pre-built).
+    # The Job downloads the checkpoint from S3, converts it, and uploads the
+    # GGUF back to S3 — the worker only needs to submit + poll.
+    if config.remote_backend == "k8s":
+        from domain.models import ExportJobSpec
+        db_run_id = config.pipeline_run_id
+        if not db_run_id:
+            raise ApplicationError(
+                "export_activity: pipeline_run_id is required for K8s export "
+                "(it is the DB run_id used as the S3 key prefix)."
+            )
+        spec = ExportJobSpec(
+            experiment_name=db_run_id,
+            checkpoint_s3_prefix=f"workflow/{db_run_id}/checkpoint/",
+            gguf_s3_key=gguf_key,
+        )
+        adapter = _make_remote_adapter("k8s")
+        loop = asyncio.get_event_loop()
+        heartbeat_task = asyncio.ensure_future(_heartbeat_loop("export"))
+        try:
+            export_run_id = await loop.run_in_executor(None, lambda: adapter.submit(spec))
+            activity.logger.info(
+                "K8s export Job submitted: %s (db_run_id=%s, gguf_key=%s)",
+                export_run_id,
+                db_run_id,
+                gguf_key,
+            )
+            while True:
+                status = await loop.run_in_executor(
+                    None, lambda: adapter.status(export_run_id)
+                )
+                if status == "done":
+                    break
+                if status == "failed":
+                    logs = adapter.logs(export_run_id)
+                    raise ApplicationError(
+                        f"K8s export Job {export_run_id} failed.\nLogs:\n{logs}"
+                    )
+                await asyncio.sleep(30)
+        except ApplicationError:
+            raise
+        except Exception as exc:
+            raise ApplicationError(f"K8s export failed: {exc}") from exc
+        finally:
+            heartbeat_task.cancel()
+        return GGUFPath(path=gguf_key)
+
+    # ── Local / other-remote path: download checkpoint then export inline ──
+    # Non-k8s backends (kaggle, ssh, colab, runpod, vastai) and local runs
+    # still download the checkpoint to the worker and export inline.
     from domain.train.export import export as export_gguf
 
     loop = asyncio.get_event_loop()
     heartbeat_task = asyncio.ensure_future(_heartbeat_loop("export"))
     try:
-        # For remote runs, download the checkpoint first (deferred from train_activity).
         if config.remote_backend:
             adapter = _make_remote_adapter(config.remote_backend)
             dest = Path(config.gguf_output).parent / "checkpoint"
@@ -543,18 +605,10 @@ async def export_activity(config: ExportConfig) -> GGUFPath:
             lambda: export_gguf(checkpoint=Path(checkpoint_path), output=local_gguf),
         )
 
-        # Compress and upload to storage so the API can retrieve it by key.
+        # Upload to storage so the API can retrieve it by key.
         from adapters.storage import upload_model
         storage = _get_storage()
-        if config.model_name:
-            key = f"gguf/{config.model_name}.gguf"
-        elif config.pipeline_run_id:
-            key = f"workflow/{config.pipeline_run_id}/model.gguf"
-        elif config.model_id:
-            key = f"gguf/{config.model_id}.gguf"
-        else:
-            key = config.gguf_output
-        key = upload_model(storage, local_gguf, key)
+        gguf_key = upload_model(storage, local_gguf, gguf_key)
 
     except SystemExit as exc:
         raise ApplicationError(f"export failed: llama.cpp setup issue (exit {exc.code})") from exc
@@ -565,7 +619,7 @@ async def export_activity(config: ExportConfig) -> GGUFPath:
     finally:
         heartbeat_task.cancel()
 
-    return GGUFPath(path=key)
+    return GGUFPath(path=gguf_key)
 
 
 @activity.defn
