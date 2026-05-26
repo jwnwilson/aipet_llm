@@ -43,16 +43,18 @@ def main() -> None:
     whl = Path("/tmp") / whl_key.split("/")[-1]
     print(f"[bootstrap] downloading wheel  key={whl_key}", flush=True)
     s3.download_file(BUCKET, whl_key, str(whl))
+    # Install with [training] extras so transformers, datasets, accelerate,
+    # peft, bitsandbytes, and sentencepiece are available inside the instance.
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", str(whl)],
+        [sys.executable, "-m", "pip", "install", f"{whl}[training]"],
         check=True,
     )
-    print("[bootstrap] wheel installed — starting training script", flush=True)
+    print("[bootstrap] wheel installed with [training] extras — starting remote worker", flush=True)
 
-    # Wheel is now installed; delegate to the training script in the same process.
+    # Wheel is now installed; delegate to the remote worker in the same process.
     # runpy sets __name__ = "__main__" so the if-block at the bottom fires.
     import runpy
-    runpy.run_module("adapters.compute.runpod.training_script", run_name="__main__")
+    runpy.run_module("interactors.cli.training.remote_worker", run_name="__main__")
 
 
 if __name__ == "__main__":

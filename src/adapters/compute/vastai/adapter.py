@@ -6,7 +6,6 @@ import logging
 import os
 import shutil
 import subprocess
-import tarfile
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -141,17 +140,11 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
             return "pending"
 
     def download(self, run_id: str, dest: Path) -> str:
-        dest.mkdir(parents=True, exist_ok=True)
-        archive = dest / "checkpoint.tar.gz"
-        self._s3.download_file(
-            self._bucket, f"{run_id}/checkpoint.tar.gz", str(archive)
-        )
-        with tarfile.open(archive) as tf:
-            tf.extractall(dest, filter="data")
-        archive.unlink()
-        # Archive is created with arcname="checkpoints", so model files land in dest/checkpoints/
-        checkpoints_dir = dest / "checkpoints"
-        return str(checkpoints_dir if checkpoints_dir.exists() else dest)
+        from adapters.storage.s3 import S3StorageAdapter
+        storage = S3StorageAdapter()
+        storage.download_directory(f"{run_id}/checkpoint/", dest)
+        log.info("checkpoint downloaded  run_id=%s  dest=%s", run_id, dest)
+        return str(dest)
 
     def logs(self, run_id: str) -> str:
         try:
@@ -226,6 +219,9 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
             "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
             "AWS_S3_BUCKET": self._bucket,
             "RUN_ID": run_id,
+            "TRAIN_DATA_KEY": f"{run_id}/data/train.jsonl",
+            "EVAL_DATA_KEY": f"{run_id}/data/eval.jsonl",
+            "STORAGE_BACKEND": "s3",
             "MODEL": config.model,
             "EPOCHS": str(config.epochs),
             "PATIENCE": str(config.patience),
