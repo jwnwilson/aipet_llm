@@ -327,8 +327,6 @@ class KaggleTrainingAdapter(RemoteJobPort):
         self, config: TrainJobSpec, kernel_dir: Path, dataset_slug: str
     ) -> None:
         """Render a notebook that invokes remote_worker via runpy after installing the wheel."""
-        data_dir = f"/kaggle/input/{dataset_slug}"
-
         notebook = {
             "nbformat": 4,
             "nbformat_minor": 5,
@@ -343,7 +341,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                 {
                     "cell_type": "code",
                     "source": [
-                        "import subprocess, sys, os, runpy, glob\n",
+                        "import subprocess, sys, os, runpy, glob, pathlib\n",
                         "\n",
                         "# Locate the project wheel — handle both old (/kaggle/input/<slug>/) and\n",
                         "# new (/kaggle/input/datasets/<owner>/<slug>/) Kaggle mount paths.\n",
@@ -354,6 +352,8 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "if not _whl_list:\n",
                         f'    raise FileNotFoundError("No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset")\n',
                         "whl = _whl_list[0]\n",
+                        "# Derive data dir from the wheel — correct regardless of Kaggle mount convention.\n",
+                        "_data_dir = str(pathlib.Path(whl).parent)\n",
                         "subprocess.run([sys.executable, '-m', 'pip', 'install', f'{whl}[training]'], check=True)\n",
                         "\n",
                         "# Set env vars consumed by remote_worker.py\n",
@@ -365,7 +365,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         f"os.environ['PATIENCE'] = {str(config.patience)!r}\n",
                         f"os.environ['WARMUP_RATIO'] = {str(config.warmup_ratio)!r}\n",
                         "os.environ['STORAGE_BACKEND'] = 'kaggle'\n",
-                        f"os.environ['KAGGLE_DATA_DIR'] = {data_dir!r}\n",
+                        "os.environ['KAGGLE_DATA_DIR'] = _data_dir\n",
                         "\n",
                         "# Run the unified training worker (same code as K8s/RunPod/Vast.ai)\n",
                         "runpy.run_module('interactors.cli.training.remote_worker', run_name='__main__')\n",
