@@ -6,6 +6,7 @@ import { cancelRun, deleteRun, getRunEvaluation, getRun, isRunActive, isRunCance
 import { listDatasets } from '@/api/datasets'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
+import { RunDetailsPanel } from '@/components/RunDetailsPanel'
 import { EvalMetrics } from '@/components/EvalMetrics'
 import { Button } from '@/components/ui/button'
 import type { PipelineStage, StageStatus } from '@/components/PipelineStages'
@@ -175,6 +176,7 @@ export function RunDetailPage() {
           Pipeline stages
         </div>
         <PipelineStages stages={buildStages(run.status)} />
+        <RunDetailsPanel runId={runId!} run={run} />
       </section>
 
       <hr className="ed-rule" />
