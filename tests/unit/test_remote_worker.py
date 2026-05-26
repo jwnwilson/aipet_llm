@@ -48,6 +48,7 @@ def _run_worker(monkeypatch, tmp_path, *, storage=None, mock_train=None,
     mock_infer_hf = mock_infer_hf or MagicMock(return_value="IDLE")
 
     sys.modules.pop("interactors.cli.training.remote_worker", None)
+    sys.modules.pop("domain.train.run", None)
     with (
         patch("interactors.cli.training.remote_worker._make_storage", return_value=storage),
         patch("domain.train.trainer.train", mock_train),
@@ -185,6 +186,7 @@ class TestRemoteWorkerFailurePaths:
         storage = MagicMock()
 
         sys.modules.pop("interactors.cli.training.remote_worker", None)
+        sys.modules.pop("domain.train.run", None)
         with (
             patch("interactors.cli.training.remote_worker._make_storage", return_value=storage),
             patch("domain.train.trainer.train", side_effect=RuntimeError("OOM")),
