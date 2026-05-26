@@ -35,13 +35,20 @@ _SessionLocal: sessionmaker | None = None
 
 
 def init_db(engine: Engine) -> None:
-    """Initialise the module-level engine and session factory."""
+    """Initialise the module-level engine and session factory.
+
+    For SQLite (dev/test): auto-creates all tables via SQLAlchemy metadata.
+    For Postgres (staging/prod): runs pending Alembic migrations so the schema
+    is always up to date without a manual migration step on each deploy.
+    """
     global _engine, _SessionLocal
     _engine = engine
     _SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
     if str(engine.url).startswith("sqlite"):
         Base.metadata.create_all(engine)
+    else:
+        run_migrations(engine)
 
 
 def run_migrations(engine: Engine) -> None:
