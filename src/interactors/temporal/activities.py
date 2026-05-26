@@ -355,6 +355,14 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
                 activity.logger.info("Instance output:\n%s", logs)
                 log.info("Instance output (run_id=%s):\n%s", run_id, logs)
 
+            if logs and config.db_run_id:
+                try:
+                    log_path = Path(f"data/workflow/{config.db_run_id}/logs.txt")
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    log_path.write_text(logs)
+                except Exception:
+                    log.warning("Failed to persist training logs for run %s", config.db_run_id)
+
             # Detailed heartbeat after each poll (background loop covers gaps between polls).
             # run_id is included so a restarted worker can resume polling without resubmitting.
             activity.heartbeat({"status": status, "elapsed_s": elapsed_s, "logs": logs, "run_id": run_id})
