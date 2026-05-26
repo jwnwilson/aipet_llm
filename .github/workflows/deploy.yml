@@ -109,12 +109,12 @@ jobs:
           echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
       # ── Export image (llama.cpp pre-built — k8s GGUF-export Jobs) ────────
-      - name: Build and push export image (AMD64)
+      - name: Build and push export image (ARM64)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: docker/export/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/arm64
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}
