@@ -5,6 +5,7 @@ Reads all configuration from environment variables set by the adapter.
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -19,10 +20,36 @@ RUN_ID = os.environ.get("RUN_ID", "")
 TRAINING_ARTIFACT_REF = os.environ.get("TRAINING_ARTIFACT_REF", "")
 EVAL_DATA_S3_KEY = os.environ.get("EVAL_DATA_S3_KEY", "")
 
+# Module-level log buffer: attached once in main() so _flush_logs_to_s3 can read it.
+_log_stream: io.StringIO | None = None
+
+
+def _storage():
+    """Return an S3StorageAdapter for the current bucket."""
+    from adapters.storage.s3 import S3StorageAdapter
+    return S3StorageAdapter()
+
+
+def _flush_logs_to_s3(storage) -> None:
+    """Upload buffered log output to S3 as ``{RUN_ID}/logs.txt`` (best-effort)."""
+    try:
+        run_id = os.environ.get("RUN_ID", "")
+        if not run_id or _log_stream is None:
+            return
+        content = _log_stream.getvalue().encode()
+        storage.write_bytes(f"{run_id}/logs.txt", content)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("failed to flush logs to S3: %s", exc)
+
 
 def main() -> None:
-    # Lazy imports: training_script has module-level env var reads that fail outside a pod.
-    from adapters.compute.runpod.training_script import _flush_logs_to_s3, _storage
+    global _log_stream
+
+    # Attach an in-memory log handler so we can ship logs to S3.
+    _log_stream = io.StringIO()
+    _mem_handler = logging.StreamHandler(_log_stream)
+    _mem_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s  %(message)s"))
+    logging.getLogger().addHandler(_mem_handler)
 
     bucket = os.environ["AWS_S3_BUCKET"]
     run_id = os.environ["RUN_ID"]
