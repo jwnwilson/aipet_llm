@@ -214,6 +214,25 @@ async def get_run_temporal(
     )
 
 
+@router.get("/{run_id}/logs", response_model=RunLogsResponse)
+def get_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> RunLogsResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = Path(f"data/workflow/{run_id}/logs.txt")
+    if not log_path.exists():
+        return RunLogsResponse(logs=None, source=None)
+
+    return RunLogsResponse(logs=log_path.read_text(), source="local")
+
+
 @router.post("/trigger", status_code=202)
 async def trigger_run(
     body: TriggerRunRequest,

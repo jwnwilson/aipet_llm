@@ -116,3 +116,36 @@ class TestGetRunTemporal:
         with patch("temporalio.client.Client.connect", connect_mock):
             await c.get(f"/api/runs/{run.id}/temporal")
         mock_handle.describe.assert_awaited_once()
+
+
+class TestGetRunLogs:
+    @pytest.mark.asyncio
+    async def test_returns_null_logs_when_no_file_exists(self, client_with_run, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        c, run = client_with_run
+        resp = await c.get(f"/api/runs/{run.id}/logs")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["logs"] is None
+        assert body["source"] is None
+
+    @pytest.mark.asyncio
+    async def test_returns_log_content_when_file_exists(self, client_with_run, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        c, run = client_with_run
+        log_dir = tmp_path / "data" / "workflow" / run.id
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "logs.txt").write_text("epoch 1/3  loss=0.42\nepoch 2/3  loss=0.38\n")
+
+        resp = await c.get(f"/api/runs/{run.id}/logs")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "epoch 1/3" in body["logs"]
+        assert body["source"] == "local"
+
+    @pytest.mark.asyncio
+    async def test_returns_404_for_unknown_run(self, client, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        c, _, _ = client
+        resp = await c.get("/api/runs/no-such-run/logs")
+        assert resp.status_code == 404
