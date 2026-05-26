@@ -45,6 +45,16 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # When run_migrations() injects a live connection (e.g. a StaticPool SQLite
+    # in-memory engine used by tests), reuse it directly so Alembic does not
+    # open a second connection that would point to a different empty database.
+    injected = context.config.attributes.get("connection", None)
+    if injected is not None:
+        context.configure(connection=injected, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         {"sqlalchemy.url": _get_url()},
         prefix="sqlalchemy.",

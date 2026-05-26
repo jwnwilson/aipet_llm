@@ -5,10 +5,6 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-
-from adapters.database import Base, init_db
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
 from domain.models import UserContext
@@ -44,15 +40,9 @@ def _setup():
 
 
 @pytest_asyncio.fixture
-async def client():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
-    app.dependency_overrides[get_model_store] = lambda: SQLAlchemyModelStore(engine)
-    app.dependency_overrides[get_run_store] = lambda: SQLAlchemyRunStore(engine)
+async def client(db_engine):
+    app.dependency_overrides[get_model_store] = lambda: SQLAlchemyModelStore(db_engine)
+    app.dependency_overrides[get_run_store] = lambda: SQLAlchemyRunStore(db_engine)
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:

@@ -15,10 +15,6 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-
-from adapters.database import Base, init_db
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
@@ -47,14 +43,9 @@ VALID_JSONL = b'{"prompt": "hello", "completion": "world"}\n'
 
 
 @pytest_asyncio.fixture
-async def stores():
+async def stores(db_engine):
     """Shared in-memory SQLite with all three stores wired into the app."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
+    engine = db_engine
     model_store = SQLAlchemyModelStore(engine)
     run_store = SQLAlchemyRunStore(engine)
     dataset_store = SQLAlchemyDatasetStore(engine)
