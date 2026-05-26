@@ -230,8 +230,22 @@ class RunPodTrainingAdapter(RemoteJobPort):
             train_data = Path(spec.train_data)
             if not train_data.is_absolute():
                 train_data = self._project_root / train_data
-            for jsonl in train_data.parent.glob("*.jsonl"):
+            staged = list(train_data.parent.glob("*.jsonl"))
+            for jsonl in staged:
                 shutil.copy2(jsonl, staging / jsonl.name)
+
+            if not staged:
+                # spec.train_data / eval_data are S3 keys (e.g. "datasets/{id}.jsonl")
+                # from a pre-uploaded dataset — the files don't exist locally.
+                # Download them and rename to the canonical names expected by the
+                # training command (--train-data data/train.jsonl, --eval-data data/eval.jsonl).
+                log.info(
+                    "Local train data not found at %s; downloading from S3: %s",
+                    train_data.parent,
+                    spec.train_data,
+                )
+                self._storage.download(spec.train_data, staging / "train.jsonl")
+                self._storage.download(spec.eval_data, staging / "eval.jsonl")
 
     def _upload_staged_files(self, staging: Path, run_id: str, spec: RemoteJobSpec) -> None:  # noqa: ARG002
         for path in staging.iterdir():

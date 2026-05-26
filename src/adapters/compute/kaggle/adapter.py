@@ -345,8 +345,15 @@ class KaggleTrainingAdapter(RemoteJobPort):
                     "source": [
                         "import subprocess, sys, os, runpy, glob\n",
                         "\n",
-                        "# Install project wheel with training extras\n",
-                        f"whl = glob.glob('/kaggle/input/{dataset_slug}/*.whl')[0]\n",
+                        "# Locate the project wheel — handle both old (/kaggle/input/<slug>/) and\n",
+                        "# new (/kaggle/input/datasets/<owner>/<slug>/) Kaggle mount paths.\n",
+                        f"_whl_list = (\n",
+                        f"    glob.glob('/kaggle/input/{dataset_slug}/*.whl') or\n",
+                        f"    glob.glob('/kaggle/input/**/{dataset_slug}/*.whl', recursive=True)\n",
+                        ")\n",
+                        "if not _whl_list:\n",
+                        f"    raise FileNotFoundError('No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset')\n",
+                        "whl = _whl_list[0]\n",
                         "subprocess.run([sys.executable, '-m', 'pip', 'install', f'{whl}[training]'], check=True)\n",
                         "\n",
                         "# Set env vars consumed by remote_worker.py\n",
@@ -371,4 +378,31 @@ class KaggleTrainingAdapter(RemoteJobPort):
         }
         (kernel_dir / "notebook.ipynb").write_text(json.dumps(notebook, indent=1))
 
+    def _render_eval_notebook(
+        self, training_run_id: str, eval_data: str, experiment_name: str, kernel_dir: Path
+    ) -> None:
+        template_path = Path(__file__).parent / "eval_notebook_template.ipynb"
+        notebook = json.loads(template_path.read_text())
 
+        config_repr = repr({
+            "training_run_id": training_run_id,
+            "experiment_name": experiment_name,
+            "eval_data_file": Path(eval_data).name,
+            "dataset_slug": _slugify(f"{experiment_name}-data"),
+        })
+
+        replacements = {"{{config}}": config_repr}
+        for cell in notebook["cells"]:
+            src = cell["source"]
+            if isinstance(src, str):
+                cell["source"] = _replace_all(src, replacements)
+            else:
+                cell["source"] = [_replace_all(line, replacements) for line in src]
+
+        (kernel_dir / "eval_notebook.ipynb").write_text(json.dumps(notebook, indent=1))
+
+
+def _replace_all(s: str, replacements: dict[str, str]) -> str:
+    for old, new in replacements.items():
+        s = s.replace(old, new)
+    return s
