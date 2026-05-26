@@ -889,14 +889,15 @@ class TestSaveGgufPathActivity:
 class TestResolveTrainingData:
     """Unit tests for the _resolve_training_data helper.
 
-    This function fixes the bug where skip_generate=True passes an S3 key
-    (e.g. datasets/<uuid>.jsonl) as train_data, but file-based backends
-    (Kaggle, Colab, SSH) need the file on the local filesystem for staging.
+    File-based backends (Kaggle, Colab, SSH) stage data from the local filesystem
+    and need S3 keys materialised locally when skip_generate=True.
+    S3-backed backends (K8s, RunPod, VastAI) must receive the original S3 key so
+    the remote pod can download it — replacing the key with a local path breaks them.
     """
 
     @pytest.mark.asyncio
     async def test_returns_paths_unchanged_when_files_exist_locally(self, tmp_path):
-        """No-op when both files already exist locally."""
+        """No-op when both files already exist locally (file-based backend)."""
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -905,7 +906,7 @@ class TestResolveTrainingData:
         train.write_text('{"prompt":"p","completion":"c"}\n')
         eval_.write_text('{"prompt":"p","completion":"c"}\n')
 
-        config = TrainConfig(train_data=str(train), eval_data=str(eval_))
+        config = TrainConfig(train_data=str(train), eval_data=str(eval_), remote_backend="kaggle")
         loop = asyncio.get_event_loop()
         train_out, eval_out = await acts._resolve_training_data(config, loop)
 
@@ -913,8 +914,8 @@ class TestResolveTrainingData:
         assert eval_out == str(eval_)
 
     @pytest.mark.asyncio
-    async def test_downloads_train_and_eval_when_missing(self, tmp_path, monkeypatch):
-        """When train_data is an S3 key, download both files to data/."""
+    async def test_downloads_train_and_eval_when_missing_for_kaggle(self, tmp_path, monkeypatch):
+        """For Kaggle (file-based), S3 keys are downloaded to data/ when not present locally."""
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -931,6 +932,7 @@ class TestResolveTrainingData:
         config = TrainConfig(
             train_data="datasets/abc123.jsonl",
             eval_data="datasets/eval.jsonl",
+            remote_backend="kaggle",
         )
         loop = asyncio.get_event_loop()
         train_out, eval_out = await acts._resolve_training_data(config, loop)
@@ -961,7 +963,11 @@ class TestResolveTrainingData:
         monkeypatch.setattr(acts, "_storage", mock_storage)
         monkeypatch.chdir(tmp_path)
 
-        config = TrainConfig(train_data="datasets/abc123.jsonl", eval_data="")
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="",
+            remote_backend="kaggle",
+        )
         loop = asyncio.get_event_loop()
         await acts._resolve_training_data(config, loop)
 
@@ -982,8 +988,58 @@ class TestResolveTrainingData:
         mock_storage = MagicMock()
         monkeypatch.setattr(acts, "_storage", mock_storage)
 
-        config = TrainConfig(train_data=str(train), eval_data=str(eval_))
+        config = TrainConfig(
+            train_data=str(train), eval_data=str(eval_), remote_backend="kaggle"
+        )
         loop = asyncio.get_event_loop()
         await acts._resolve_training_data(config, loop)
 
+        mock_storage.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_k8s_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
+        """K8s (S3-backed) must receive the original S3 key — never a local path.
+
+        Replacing the key with a local path would make the K8s pod look for
+        'data/train.jsonl' in S3, where it doesn't exist for skip_generate=True runs.
+        """
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="datasets/eval.jsonl",
+            remote_backend="k8s",
+        )
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == "datasets/abc123.jsonl"
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_runpod_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
+        """RunPod (S3-backed) also passes S3 keys through unchanged."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="datasets/eval.jsonl",
+            remote_backend="runpod",
+        )
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == "datasets/abc123.jsonl"
+        assert eval_out == "datasets/eval.jsonl"
         mock_storage.download.assert_not_called()

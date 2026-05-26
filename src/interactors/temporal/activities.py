@@ -284,26 +284,44 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
     return CheckpointPath(path=config.output_dir)
 
 
+# Backends that stage training data from the local filesystem before uploading it
+# to their own compute environment.  These need train/eval files materialised
+# locally even when skip_generate=True provides an S3 key as train_data.
+#
+# S3-backed backends (k8s, runpod, vastai) pass the S3 key directly to the
+# remote job; the pod downloads from S3 itself.  Replacing the key with a local
+# path would point the pod at a key that doesn't exist → DO NOT download for them.
+_FILE_BASED_BACKENDS = frozenset({"kaggle", "colab", "ssh"})
+
+
 async def _resolve_training_data(
     config: TrainConfig, loop: asyncio.AbstractEventLoop
 ) -> tuple[str, str]:
-    """Return *(train_path, eval_path)* guaranteed to exist on the local filesystem.
+    """Return *(train_key, eval_key)* ready for use in ``TrainJobSpec``.
 
-    When ``skip_generate=True`` the workflow forwards the S3 storage key
-    (e.g. ``datasets/<uuid>.jsonl``) as ``train_data`` rather than generating
-    a local file.  File-based backends (Kaggle, Colab, SSH) stage data from the
-    local filesystem before upload, so we must materialise the files first.
+    For **file-based backends** (Kaggle, Colab, SSH) the adapter stages data
+    from the local filesystem.  When ``skip_generate=True`` the workflow
+    forwards an S3 storage key (e.g. ``datasets/<uuid>.jsonl``) as
+    ``train_data`` — the file does not exist locally.  This function downloads
+    it to ``data/train.jsonl`` / ``data/eval.jsonl`` and returns the local paths.
 
-    If the paths already exist locally this is a no-op; otherwise both files are
-    downloaded from storage into ``data/train.jsonl`` / ``data/eval.jsonl``.
+    For **S3-backed backends** (K8s, RunPod, VastAI) the remote job downloads
+    from S3 directly; the original S3 keys are returned unchanged so the pod
+    can find them (replacing keys with local paths would break S3 downloads).
+
+    If the paths already exist locally this is a no-op for file-based backends too.
     """
-    def _is_local(key: str) -> bool:
-        p = Path(key)
-        return (p if p.is_absolute() else Path.cwd() / p).exists()
-
     train_key = config.train_data
     # Derive eval key: use explicit config value or the sibling eval.jsonl.
     eval_key = config.eval_data or str(Path(train_key).parent / "eval.jsonl")
+
+    # S3-backed backends: pass keys straight through — no local download needed.
+    if config.remote_backend not in _FILE_BASED_BACKENDS:
+        return train_key, eval_key
+
+    def _is_local(key: str) -> bool:
+        p = Path(key)
+        return (p if p.is_absolute() else Path.cwd() / p).exists()
 
     if _is_local(train_key) and _is_local(eval_key):
         return train_key, eval_key
