@@ -223,7 +223,7 @@ def _make_remote_adapter(backend: str) -> RemoteJobPort:
     # Storage is only needed for S3-backed backends; fetch lazily to avoid
     # failing when storage is not configured (e.g. Kaggle tests).
     if backend == "k8s":
-        from adapters.compute.k8s_training import K8sTrainingAdapter
+        from adapters.compute.k8s.adapter import K8sTrainingAdapter
         return K8sTrainingAdapter(storage=_get_storage())
     if backend == "kaggle":
         from adapters.compute.kaggle import KaggleTrainingAdapter

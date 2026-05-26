@@ -24,15 +24,15 @@ def adapter():
     """K8sTrainingAdapter with mocked k8s clients and a mock StoragePort."""
     mock_storage = MagicMock()
     with (
-        patch("adapters.compute.k8s_training._K8S_AVAILABLE", True),
-        patch("adapters.compute.k8s_training.k8s_client") as mock_k8s,
-        patch("adapters.compute.k8s_training.k8s_config") as mock_cfg,
+        patch("adapters.compute.k8s.adapter._K8S_AVAILABLE", True),
+        patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s,
+        patch("adapters.compute.k8s.adapter.k8s_config") as mock_cfg,
     ):
         mock_cfg.load_incluster_config.side_effect = Exception("not in cluster")
         mock_cfg.load_kube_config.return_value = None
         mock_k8s.BatchV1Api.return_value = MagicMock()
         mock_k8s.CoreV1Api.return_value = MagicMock()
-        from adapters.compute.k8s_training import K8sTrainingAdapter
+        from adapters.compute.k8s.adapter import K8sTrainingAdapter
         inst = K8sTrainingAdapter(
             storage=mock_storage,
             training_image="test/training:latest",
@@ -44,7 +44,7 @@ def adapter():
 
 
 def test_submit_creates_job(adapter):
-    with patch("adapters.compute.k8s_training.k8s_client") as mock_k8s:
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
         mock_k8s.V1Job.return_value = MagicMock()
         mock_k8s.V1ObjectMeta.return_value = MagicMock()
         adapter._batch.create_namespaced_job.return_value = MagicMock()
@@ -97,7 +97,7 @@ def test_download_uses_storage_download_directory(adapter, tmp_path):
 
 
 def test_submit_sets_container_command_to_remote_worker(adapter):
-    with patch("adapters.compute.k8s_training.k8s_client") as mock_k8s:
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
         mock_k8s.V1Container.return_value = MagicMock()
         adapter._batch.create_namespaced_job.return_value = MagicMock()
         adapter.submit(_CONFIG)
@@ -109,7 +109,7 @@ def test_submit_sets_container_command_to_remote_worker(adapter):
 
 
 def test_submit_passes_s3_key_prefix_matching_workflow_prefix(adapter):
-    with patch("adapters.compute.k8s_training.k8s_client") as mock_k8s:
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
         mock_k8s.V1EnvVar.side_effect = (
             lambda name, value=None, value_from=None: MagicMock(env_name=name, env_value=value)
         )
