@@ -113,3 +113,24 @@ class TestBootstrapWheelInstall:
             from adapters.compute.runpod import bootstrap
             with pytest.raises(SystemExit):
                 bootstrap.main()
+
+    def test_delegates_to_remote_worker_not_training_script(self, monkeypatch):
+        """Bootstrap must invoke remote_worker, not the old per-adapter training_script."""
+        mock_run_module = MagicMock()
+        s3 = _make_s3_mock()
+        monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
+        monkeypatch.setenv("RUN_ID", "runpod/test-run-abc123")
+
+        with (
+            patch("boto3.client", return_value=s3),
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch("runpy.run_module", mock_run_module),
+        ):
+            sys.modules.pop("adapters.compute.runpod.bootstrap", None)
+            from adapters.compute.runpod import bootstrap
+            bootstrap.main()
+
+        called_module = mock_run_module.call_args[0][0]
+        assert called_module == "interactors.cli.training.remote_worker", (
+            f"Expected remote_worker, got: {called_module!r}"
+        )

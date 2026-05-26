@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import shutil
-import tarfile
 import uuid
 from pathlib import Path
 from typing import Literal
@@ -191,6 +190,9 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 "EPOCHS": str(spec.epochs),
                 "PATIENCE": str(spec.patience),
                 "WARMUP_RATIO": str(spec.warmup_ratio),
+                "TRAIN_DATA_KEY": f"{run_id}/data/train.jsonl",
+                "EVAL_DATA_KEY": f"{run_id}/data/eval.jsonl",
+                "STORAGE_BACKEND": "s3",
             }
         elif isinstance(spec, EvalJobSpec):
             env |= {
@@ -246,11 +248,6 @@ class RunPodTrainingAdapter(RemoteJobPort):
             self._storage.upload(path, key)
 
     def _download_checkpoint(self, run_id: str, dest: Path) -> str:
-        archive = dest / "checkpoint.tar.gz"
-        self._storage.download(f"{run_id}/checkpoint.tar.gz", archive)
-        with tarfile.open(archive) as tf:
-            tf.extractall(dest, filter="data")
-        archive.unlink()
-        # Archive is created with arcname="checkpoints", so model files land in dest/checkpoints/
-        checkpoints_dir = dest / "checkpoints"
-        return str(checkpoints_dir if checkpoints_dir.exists() else dest)
+        self._storage.download_directory(f"{run_id}/checkpoint/", dest)
+        log.info("checkpoint downloaded  run_id=%s  dest=%s", run_id, dest)
+        return str(dest)

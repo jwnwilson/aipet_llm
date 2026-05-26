@@ -94,6 +94,8 @@ class K8sTrainingAdapter(RemoteJobPort):
 
         env = [
             k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
+            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{db_run_id}"),
+            k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
             k8s_client.V1EnvVar(
                 name="AWS_S3_BUCKET",
                 value_from=k8s_client.V1EnvVarSource(
@@ -147,6 +149,7 @@ class K8sTrainingAdapter(RemoteJobPort):
                             k8s_client.V1Container(
                                 name="trainer",
                                 image=self._image,
+                                command=["python", "-m", "interactors.cli.training.remote_worker"],
                                 env=env,
                                 resources=k8s_client.V1ResourceRequirements(
                                     requests={"cpu": "1", "memory": "4Gi"},

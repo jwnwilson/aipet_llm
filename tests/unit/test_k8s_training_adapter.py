@@ -96,6 +96,32 @@ def test_download_uses_storage_download_directory(adapter, tmp_path):
     assert result == str(tmp_path)
 
 
+def test_submit_sets_container_command_to_remote_worker(adapter):
+    with patch("adapters.compute.k8s_training.k8s_client") as mock_k8s:
+        mock_k8s.V1Container.return_value = MagicMock()
+        adapter._batch.create_namespaced_job.return_value = MagicMock()
+        adapter.submit(_CONFIG)
+
+    container_call = mock_k8s.V1Container.call_args
+    assert container_call.kwargs["command"] == [
+        "python", "-m", "interactors.cli.training.remote_worker"
+    ]
+
+
+def test_submit_passes_s3_key_prefix_matching_workflow_prefix(adapter):
+    with patch("adapters.compute.k8s_training.k8s_client") as mock_k8s:
+        mock_k8s.V1EnvVar.side_effect = (
+            lambda name, value=None, value_from=None: MagicMock(env_name=name, env_value=value)
+        )
+        adapter._batch.create_namespaced_job.return_value = MagicMock()
+        adapter.submit(_CONFIG)
+
+    env_var_calls = mock_k8s.V1EnvVar.call_args_list
+    s3_prefix_calls = [c for c in env_var_calls if c.kwargs.get("name") == "S3_KEY_PREFIX"]
+    assert s3_prefix_calls, "V1EnvVar(name='S3_KEY_PREFIX') must be passed to the container"
+    assert s3_prefix_calls[0].kwargs["value"] == "workflow/db-run-id-123"
+
+
 # ---------------------------------------------------------------------------
 # Regression test: kubernetes v36 in-cluster auth
 # ---------------------------------------------------------------------------
