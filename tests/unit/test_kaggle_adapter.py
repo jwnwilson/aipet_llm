@@ -80,7 +80,7 @@ class TestRenderNotebook:
         assert "EVAL_DATA_KEY" in source
         assert "eval.jsonl" in source
 
-    def test_notebook_installs_wheel_with_training_extras(self, tmp_path, monkeypatch):
+    def test_notebook_installs_wheel_and_training_deps(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)
         kernel_dir = tmp_path / "my-exp"
         kernel_dir.mkdir()
@@ -88,7 +88,11 @@ class TestRenderNotebook:
 
         nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
         source = "".join(nb["cells"][0]["source"])
-        assert "[training]" in source
+        # Wheel is installed first; training deps are installed explicitly because
+        # pip install /local/file.whl[extras] silently ignores extras on some pip versions.
+        assert "pip" in source and "install" in source
+        assert "transformers" in source
+        assert "datasets" in source
 
 
 class TestDownload:
