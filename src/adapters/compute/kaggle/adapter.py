@@ -258,10 +258,24 @@ class KaggleTrainingAdapter(RemoteJobPort):
         # Build a wheel of the project and copy it into staging
         build_wheel(self._project_root, staging)
 
-        # Copy flat .jsonl training data files
+        # Copy flat .jsonl training data files.
+        # Resolve relative paths from CWD (where the Temporal worker runs), NOT from
+        # _project_root — that resolves to the Python site-packages dir when the
+        # project is installed as a wheel, which is never where train.jsonl lives.
         train_data = Path(config.train_data)
         if not train_data.is_absolute():
-            train_data = self._project_root / train_data
+            train_data = Path.cwd() / train_data
+
+        # Fail early with a clear message rather than uploading an empty dataset
+        # and discovering the problem deep inside the Kaggle kernel.
+        missing = [p for p in (train_data, train_data.parent / "eval.jsonl") if not p.exists()]
+        if missing:
+            raise FileNotFoundError(
+                f"Training data not found before Kaggle upload: {[str(p) for p in missing]}. "
+                f"Ensure generate_dataset_activity ran successfully before train_activity "
+                f"(cwd={Path.cwd()}, configured train_data={config.train_data!r})."
+            )
+
         for jsonl in train_data.parent.glob("*.jsonl"):
             shutil.copy2(jsonl, staging / jsonl.name)
 
