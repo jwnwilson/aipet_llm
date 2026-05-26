@@ -1,7 +1,7 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
 import type { Dataset, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
-import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE } from './fixtures'
+import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE, TEMPORAL_DETAILS_FIXTURE, RUN_LOGS_FIXTURE } from './fixtures'
 
 const BASE = 'http://localhost:8000'
 
@@ -73,6 +73,16 @@ export const handlers = [
 
   http.get(`${BASE}/api/runs/:id/evaluation`, ({ params }) => {
     if (params.id === EVAL_DATA_FIXTURE.run_id) return HttpResponse.json(EVAL_DATA_FIXTURE)
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.get(`${BASE}/api/runs/:id/temporal`, ({ params }) => {
+    if (params.id === RUN_FIXTURE.id) return HttpResponse.json(TEMPORAL_DETAILS_FIXTURE)
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.get(`${BASE}/api/runs/:id/logs`, ({ params }) => {
+    if (params.id === RUN_FIXTURE.id) return HttpResponse.json(RUN_LOGS_FIXTURE)
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
   }),
 

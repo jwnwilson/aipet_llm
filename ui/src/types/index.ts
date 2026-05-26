@@ -176,3 +176,16 @@ export interface InferenceInstance {
   created_at: string
   updated_at: string
 }
+
+export interface TemporalDetails {
+  workflow_id: string
+  temporal_run_id: string
+  status: string
+  start_time: string | null
+  close_time: string | null
+}
+
+export interface RunLogsResponse {
+  logs: string | null
+  source: string | null
+}
