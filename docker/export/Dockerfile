@@ -28,9 +28,11 @@ RUN git clone --depth=1 --branch ${LLAMA_CPP_TAG} \
     || git clone --depth=1 https://github.com/ggerganov/llama.cpp.git /llama.cpp
 
 # Build only the quantize binary to keep image size small.
+# NOTE: do NOT pass -DLLAMA_BUILD_EXAMPLES=OFF — llama-quantize lives inside
+# examples/quantize/ and that flag prevents CMake from registering the target.
+# We still pass --target llama-quantize so only that one binary is compiled.
 RUN cmake -S /llama.cpp -B /llama.cpp/build \
         -DLLAMA_BUILD_TESTS=OFF \
-        -DLLAMA_BUILD_EXAMPLES=OFF \
         -DBUILD_SHARED_LIBS=OFF \
     && cmake --build /llama.cpp/build --config Release --target llama-quantize -j$(nproc)
 
