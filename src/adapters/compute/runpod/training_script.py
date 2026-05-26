@@ -141,28 +141,9 @@ def main() -> None:
 
     log.info("uploading checkpoint  key=%s/checkpoint.tar.gz", RUN_ID)
     storage.upload(archive, f"{RUN_ID}/checkpoint.tar.gz")
-    storage.write_bytes(
-        f"{RUN_ID}/progress.json",
-        json.dumps({"fraction": 0.95, "detail": "evaluating checkpoint"}).encode(),
-    )
-    _flush_logs_to_s3(storage)
-
-    # Run HF eval in-process so results land on S3 before the instance exits.
-    try:
-        from domain.train.evaluate import PASS_THRESHOLD, evaluate, infer_hf, load_hf_pipeline
-
-        pipe = load_hf_pipeline(str(checkpoint_dir))
-        exit_code, valid_pct = evaluate(Path("data/eval.jsonl"), lambda p: infer_hf(pipe, p))
-        passed = valid_pct >= PASS_THRESHOLD
-        log.info("eval complete  valid_pct=%.1f%%  passed=%s", valid_pct * 100, passed)
-    except Exception as exc:
-        log.error("eval failed — storing 0%%: %s", exc, exc_info=True)
-        valid_pct, passed = 0.0, False
-
-    storage.write_bytes(
-        f"{RUN_ID}/eval_result.json",
-        json.dumps({"valid_pct": valid_pct, "passed": passed}).encode(),
-    )
+    # Eval runs as a separate remote job dispatched by evaluate_activity after this pod
+    # exits — the checkpoint stays in S3 and is pulled by the eval pod, not the Temporal
+    # worker. Mark done now so the poll loop in _train_remote can exit.
     storage.write_bytes(
         f"{RUN_ID}/progress.json",
         json.dumps({"fraction": 1.0, "detail": "done"}).encode(),

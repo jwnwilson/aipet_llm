@@ -2,7 +2,7 @@
 
 Only depends on boto3 + stdlib — the project wheel is not yet installed
 when this runs.  Downloads and installs the wheel from S3, then delegates
-to the training script (which lives inside the wheel).
+to the appropriate script based on JOB_TYPE (which lives inside the wheel).
 """
 from __future__ import annotations
 
@@ -47,12 +47,19 @@ def main() -> None:
         [sys.executable, "-m", "pip", "install", str(whl)],
         check=True,
     )
-    print("[bootstrap] wheel installed — starting training script", flush=True)
 
-    # Wheel is now installed; delegate to the training script in the same process.
-    # runpy sets __name__ = "__main__" so the if-block at the bottom fires.
+    # Route to the correct script based on JOB_TYPE env var.
+    job_type = os.environ.get("JOB_TYPE", "train")
+    print(f"[bootstrap] wheel installed — starting job_type={job_type}", flush=True)
+
     import runpy
-    runpy.run_module("adapters.compute.runpod.training_script", run_name="__main__")
+    if job_type == "train":
+        runpy.run_module("adapters.compute.runpod.training_script", run_name="__main__")
+    elif job_type == "eval":
+        runpy.run_module("adapters.compute.vastai.eval_script", run_name="__main__")
+    else:
+        s3.put_object(Bucket=BUCKET, Key=f"{RUN_ID}/status.txt", Body=b"failed")
+        sys.exit(f"ERROR: Unknown JOB_TYPE={job_type!r}. Expected 'train' or 'eval'.")
 
 
 if __name__ == "__main__":
