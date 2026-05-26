@@ -17,6 +17,7 @@ env:
   ECR_PROXY_REPOSITORY: llm-api-proxy
   ECR_INFERENCE_REPOSITORY: llm-api-inference
   ECR_TRAINING_REPOSITORY: llm-api-training
+  ECR_EXPORT_REPOSITORY: llm-api-export
   ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
 
 jobs:
@@ -28,6 +29,7 @@ jobs:
       proxy_image: ${{ steps.proxy-image.outputs.image }}
       inference_image: ${{ steps.inference-image.outputs.image }}
       training_image: ${{ steps.training-image.outputs.image }}
+      export_image: ${{ steps.export-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -106,6 +108,25 @@ jobs:
         run: |
           echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+      # ── Export image (llama.cpp pre-built — k8s GGUF-export Jobs) ────────
+      - name: Build and push export image (AMD64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/export/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:latest
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:buildcache,mode=max
+
+      - name: Export export image ref
+        id: export-image
+        run: |
+          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
   deploy:
     needs: build
@@ -117,6 +138,7 @@ jobs:
       PROXY_IMAGE: ${{ needs.build.outputs.proxy_image }}
       INFERENCE_IMAGE: ${{ needs.build.outputs.inference_image }}
       TRAINING_IMAGE: ${{ needs.build.outputs.training_image }}
+      EXPORT_IMAGE: ${{ needs.build.outputs.export_image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -193,6 +215,8 @@ jobs:
             infra/k8s/llm-api/deployment.yaml
           # Stamp training image into temporal worker so K8sTrainingAdapter knows which image to use
           sed -i "s|<ECR_TRAINING_IMAGE>|$TRAINING_IMAGE|g" \
+            infra/k8s/temporal/worker.yaml
+          sed -i "s|<ECR_EXPORT_IMAGE>|$EXPORT_IMAGE|g" \
             infra/k8s/temporal/worker.yaml
           sed -i "s|<TEMPORAL_UI_IMAGE>|$TEMPORAL_UI_IMAGE|g" \
             infra/k8s/temporal/server.yaml

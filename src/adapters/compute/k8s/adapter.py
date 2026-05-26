@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from domain.models import RemoteJobSpec, TrainJobSpec
+from domain.models import ExportJobSpec, RemoteJobSpec, TrainJobSpec
 from domain.ports import PodLifecyclePort, RemoteJobPort, StoragePort
 
 # Import kubernetes at module level so tests can patch it cleanly.
@@ -161,13 +161,17 @@ class MockPodAdapter(PodLifecyclePort):
 # ---------------------------------------------------------------------------
 
 class K8sTrainingAdapter(RemoteJobPort):
-    """Submit training as a k8s batch/v1 Job (train-only; eval runs inside the worker).
+    """Submit training and export jobs as k8s batch/v1 Jobs.
 
     The job name returned from submit() is the opaque run_id used by Temporal.
     The DB run ID is stored in a job annotation so download() can construct
     the correct S3 key prefix without hitting the k8s API for data.
 
-    Only K8s uses batch Jobs for training; other compute adapters (RunPod,
+    Supported job_types:
+    - ``"train"``: uses ``TRAINING_WORKER_IMAGE`` (torch/transformers, no llama.cpp)
+    - ``"export"``: uses ``EXPORT_WORKER_IMAGE`` (llama.cpp pre-built for GGUF conversion)
+
+    Only K8s uses batch Jobs for training/export; other compute adapters (RunPod,
     Vast.ai, Kaggle) submit via their own platform APIs and do not implement
     this class.
     """
@@ -176,6 +180,7 @@ class K8sTrainingAdapter(RemoteJobPort):
         self,
         storage: StoragePort | None = None,
         training_image: str | None = None,
+        export_image: str | None = None,
         namespace: str = "default",
     ) -> None:
         if not _K8S_AVAILABLE:
@@ -189,14 +194,17 @@ class K8sTrainingAdapter(RemoteJobPort):
         self._batch = k8s_client.BatchV1Api()
         self._core = k8s_client.CoreV1Api()
         if training_image:
-            self._image = training_image
+            self._training_image = training_image
         else:
-            self._image = os.environ.get("TRAINING_WORKER_IMAGE", "")
-            if not self._image:
+            self._training_image = os.environ.get("TRAINING_WORKER_IMAGE", "")
+            if not self._training_image:
                 raise RuntimeError(
                     "TRAINING_WORKER_IMAGE env var is required for K8sTrainingAdapter. "
                     "Set it to the ECR URI of the training image."
                 )
+        # Resolved lazily: only validated when _submit_export() is actually called,
+        # so training-only workflows work even if EXPORT_WORKER_IMAGE is not set.
+        self._export_image = export_image or os.environ.get("EXPORT_WORKER_IMAGE", "")
         self._namespace = namespace
         if storage is not None:
             self._storage = storage
@@ -211,23 +219,22 @@ class K8sTrainingAdapter(RemoteJobPort):
     def submit(self, spec: RemoteJobSpec) -> str:
         """Create a k8s batch Job. Returns the job name as the opaque run_id.
 
-        Only ``job_type="train"`` is supported; eval raises ``NotImplementedError``.
+        Supported specs:
+        - ``TrainJobSpec``  → training Job using ``TRAINING_WORKER_IMAGE``
+        - ``ExportJobSpec`` → GGUF-export Job using ``EXPORT_WORKER_IMAGE``
         """
-        if not isinstance(spec, TrainJobSpec):
-            raise NotImplementedError(
-                f"K8sTrainingAdapter only supports job_type='train'; got {spec.job_type!r}"
-            )
-        config: TrainJobSpec = spec
-        job_name = f"train-{uuid.uuid4().hex[:12]}"
-        db_run_id = config.experiment_name
+        if isinstance(spec, TrainJobSpec):
+            return self._submit_train(spec)
+        if isinstance(spec, ExportJobSpec):
+            return self._submit_export(spec)
+        raise NotImplementedError(
+            f"K8sTrainingAdapter does not support job_type={spec.job_type!r}"
+        )
 
-        pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
-        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
-
-        env = [
-            k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
-            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{db_run_id}"),
-            k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
+    def _aws_secret_env(self, region: str) -> list:
+        """Return the shared AWS credential env vars injected into every Job."""
+        return [
+            k8s_client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
             k8s_client.V1EnvVar(
                 name="AWS_S3_BUCKET",
                 value_from=k8s_client.V1EnvVarSource(
@@ -236,13 +243,6 @@ class K8sTrainingAdapter(RemoteJobPort):
                     )
                 ),
             ),
-            k8s_client.V1EnvVar(name="TRAIN_DATA_KEY", value=config.train_data),
-            k8s_client.V1EnvVar(name="EVAL_DATA_KEY", value=config.eval_data),
-            k8s_client.V1EnvVar(name="MODEL", value=config.model),
-            k8s_client.V1EnvVar(name="EPOCHS", value=str(config.epochs)),
-            k8s_client.V1EnvVar(name="PATIENCE", value=str(config.patience)),
-            k8s_client.V1EnvVar(name="WARMUP_RATIO", value=str(config.warmup_ratio)),
-            k8s_client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
             k8s_client.V1EnvVar(
                 name="AWS_ACCESS_KEY_ID",
                 value_from=k8s_client.V1EnvVarSource(
@@ -261,12 +261,25 @@ class K8sTrainingAdapter(RemoteJobPort):
             ),
         ]
 
+    def _create_job(
+        self,
+        job_name: str,
+        db_run_id: str,
+        image: str,
+        command: list[str],
+        env: list,
+        labels: dict,
+        memory_request: str = "4Gi",
+        memory_limit: str = "8Gi",
+    ) -> None:
+        """Create a namespaced batch/v1 Job with standard settings."""
+        pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
         job = k8s_client.V1Job(
             metadata=k8s_client.V1ObjectMeta(
                 name=job_name,
                 namespace=self._namespace,
                 annotations={_JOB_ANNOTATION: db_run_id},
-                labels={"app": "llm-training"},
+                labels=labels,
             ),
             spec=k8s_client.V1JobSpec(
                 backoff_limit=0,
@@ -279,13 +292,13 @@ class K8sTrainingAdapter(RemoteJobPort):
                         ],
                         containers=[
                             k8s_client.V1Container(
-                                name="trainer",
-                                image=self._image,
-                                command=["python", "-m", "interactors.cli.training.remote_worker"],
+                                name="worker",
+                                image=image,
+                                command=command,
                                 env=env,
                                 resources=k8s_client.V1ResourceRequirements(
-                                    requests={"cpu": "1", "memory": "4Gi"},
-                                    limits={"cpu": "4", "memory": "8Gi"},
+                                    requests={"cpu": "1", "memory": memory_request},
+                                    limits={"cpu": "4", "memory": memory_limit},
                                 ),
                             )
                         ],
@@ -294,7 +307,84 @@ class K8sTrainingAdapter(RemoteJobPort):
             ),
         )
         self._batch.create_namespaced_job(namespace=self._namespace, body=job)
+
+    def _submit_train(self, config: TrainJobSpec) -> str:
+        job_name = f"train-{uuid.uuid4().hex[:12]}"
+        db_run_id = config.experiment_name
+        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+
+        env = [
+            k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
+            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{db_run_id}"),
+            k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
+            k8s_client.V1EnvVar(name="TRAIN_DATA_KEY", value=config.train_data),
+            k8s_client.V1EnvVar(name="EVAL_DATA_KEY", value=config.eval_data),
+            k8s_client.V1EnvVar(name="MODEL", value=config.model),
+            k8s_client.V1EnvVar(name="EPOCHS", value=str(config.epochs)),
+            k8s_client.V1EnvVar(name="PATIENCE", value=str(config.patience)),
+            k8s_client.V1EnvVar(name="WARMUP_RATIO", value=str(config.warmup_ratio)),
+            *self._aws_secret_env(region),
+        ]
+
+        self._create_job(
+            job_name=job_name,
+            db_run_id=db_run_id,
+            image=self._training_image,
+            command=["python", "-m", "interactors.cli.training.remote_worker"],
+            env=env,
+            labels={"app": "llm-training"},
+        )
         log.info("Created k8s training Job: %s (db_run_id=%s)", job_name, db_run_id)
+        return job_name
+
+    def _submit_export(self, config: ExportJobSpec) -> str:
+        """Create a GGUF-export Job using the export image (which has llama.cpp).
+
+        The export Job:
+        1. Downloads the HF checkpoint from ``config.checkpoint_s3_prefix`` in S3.
+        2. Converts it to a quantised GGUF via llama.cpp (pre-built in the image).
+        3. Uploads the GGUF to ``config.gguf_s3_key`` in S3.
+
+        The Temporal worker does NOT need llama.cpp — it only submits this Job
+        and polls status() until the Job succeeds.
+        """
+        if not self._export_image:
+            raise RuntimeError(
+                "EXPORT_WORKER_IMAGE env var is required to submit an export Job. "
+                "Set it to the ECR URI of the export image (must have llama.cpp)."
+            )
+        job_name = f"export-{uuid.uuid4().hex[:12]}"
+        db_run_id = config.experiment_name
+        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+
+        env = [
+            k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
+            k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
+            k8s_client.V1EnvVar(
+                name="CHECKPOINT_S3_PREFIX", value=config.checkpoint_s3_prefix
+            ),
+            k8s_client.V1EnvVar(name="GGUF_S3_KEY", value=config.gguf_s3_key),
+            k8s_client.V1EnvVar(name="QUANTIZE", value=config.quantize),
+            *self._aws_secret_env(region),
+        ]
+
+        self._create_job(
+            job_name=job_name,
+            db_run_id=db_run_id,
+            image=self._export_image,
+            command=["python", "-m", "interactors.cli.training.k8s_export"],
+            env=env,
+            labels={"app": "llm-export"},
+            # Export is CPU-bound (llama.cpp quantisation); 8 GB is sufficient.
+            memory_request="4Gi",
+            memory_limit="8Gi",
+        )
+        log.info(
+            "Created k8s export Job: %s (db_run_id=%s, gguf_key=%s)",
+            job_name,
+            db_run_id,
+            config.gguf_s3_key,
+        )
         return job_name
 
     def status(self, run_id: str) -> Literal["pending", "running", "done", "failed"]:
