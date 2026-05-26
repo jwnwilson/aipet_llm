@@ -134,6 +134,59 @@ class TestKaggleAdapterSubmit:
         assert "{{config}}" not in content, "Template placeholder was not replaced"
         assert "'epochs': 7" in content  # injected as Python repr, not JSON
 
+    def test_notebook_contains_dataset_slug_key(self, tmp_path, monkeypatch):
+        """Rendered notebook must include the pre-slugified dataset_slug so the
+        notebook doesn't need to recompute it from the raw experiment_name."""
+        monkeypatch.setenv("KAGGLE_USERNAME", "testuser")
+        self._patch_no_wait(monkeypatch)
+        monkeypatch.setattr("adapters.compute.kaggle.adapter.subprocess.run", lambda *a, **kw: _ok())
+
+        from adapters.compute.kaggle import KaggleTrainingAdapter
+        adapter = KaggleTrainingAdapter(work_dir=tmp_path)
+        cfg = _config(experiment_name="render-test")
+        adapter.submit(cfg)
+
+        content = (tmp_path / "render-test" / "notebook.ipynb").read_text()
+        # dataset_slug must be injected as a key in CONFIG
+        assert "'dataset_slug'" in content, "dataset_slug key missing from rendered notebook config"
+        assert "render-test-data" in content, "slugified dataset_slug value missing"
+
+    def test_notebook_slug_matches_uploaded_dataset_slug(self, tmp_path, monkeypatch):
+        """The CONFIG['dataset_slug'] in the notebook must be identical to the slug
+        used when creating/versioning the Kaggle dataset — the root cause of the bug."""
+        monkeypatch.setenv("KAGGLE_USERNAME", "testuser")
+        self._patch_no_wait(monkeypatch)
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **kw):
+            calls.append(list(cmd))
+            return _ok()
+
+        monkeypatch.setattr("adapters.compute.kaggle.adapter.subprocess.run", fake_run)
+
+        from adapters.compute.kaggle import KaggleTrainingAdapter
+        from adapters.compute.kaggle.adapter import _slugify
+        adapter = KaggleTrainingAdapter(work_dir=tmp_path)
+        # Use an experiment name with underscores and uppercase — chars that _slugify changes
+        cfg = _config(experiment_name="My_Experiment_V1")
+        adapter.submit(cfg)
+
+        expected_slug = _slugify("My_Experiment_V1-data")  # "my-experiment-v1-data"
+
+        # The dataset create/version call must use the slugified name
+        dataset_calls = [c for c in calls if "datasets" in c]
+        assert any(expected_slug in str(c) for c in dataset_calls), (
+            f"Expected slugified dataset path '{expected_slug}' in dataset calls, got: {dataset_calls}"
+        )
+
+        # The notebook must contain exactly the same slug in CONFIG
+        kernel_slug = _slugify("My_Experiment_V1")
+        content = (tmp_path / kernel_slug / "notebook.ipynb").read_text()
+        assert f"'{expected_slug}'" in content, (
+            f"Notebook CONFIG must contain dataset_slug='{expected_slug}' "
+            f"to match the uploaded dataset name"
+        )
+
     def test_writes_kernel_metadata(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KAGGLE_USERNAME", "testuser")
         self._patch_no_wait(monkeypatch)
