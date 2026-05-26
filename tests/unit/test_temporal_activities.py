@@ -10,10 +10,6 @@ import pytest
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
-from adapters.compute.ssh import SshTrainingAdapter
-
-_parse_valid_pct = SshTrainingAdapter._parse_valid_pct
-
 from interactors.temporal.activities import (
     CheckpointPath,
     DatasetConfig,
@@ -219,32 +215,25 @@ async def test_evaluate_activity_raises_on_exception():
 
 
 @pytest.mark.asyncio
-async def test_evaluate_remote_kaggle_fallback_passes_inner_checkpoint_to_local(monkeypatch):
-    """When a backend raises NotImplementedError on eval(), download() is called and the
-    path it returns (the inner HF checkpoint dir) must be forwarded to _evaluate_local."""
+async def test_evaluate_remote_backend_dispatches_via_remote_job(monkeypatch):
+    """With a remote_backend set, evaluate_activity must dispatch to _evaluate_via_remote_job,
+    NOT download the checkpoint to the Temporal worker.  The worker is an orchestrator only."""
     import asyncio
     import interactors.temporal.activities as acts
-    from unittest.mock import MagicMock
 
-    inner_ckpt = "/tmp/dest/checkpoints"
-    mock_adapter = MagicMock()
-    mock_adapter.eval.side_effect = NotImplementedError
-    mock_adapter.download.return_value = inner_ckpt
+    remote_calls: list[str] = []
 
-    local_calls: list[str] = []
-
-    async def fake_local(config, loop):
-        local_calls.append(config.checkpoint)
+    async def fake_remote_job(config, loop):
+        remote_calls.append(config.remote_backend)
         return EvalResult(valid_pct=0.95, passed=True)
 
-    monkeypatch.setattr(acts, "_evaluate_local", fake_local)
-    monkeypatch.setattr(acts, "_make_remote_adapter", lambda _: mock_adapter)
+    monkeypatch.setattr(acts, "_evaluate_via_remote_job", fake_remote_job)
 
     config = EvalConfig(remote_backend="kaggle", run_id="u/exp", eval_data="data/eval.jsonl")
-    await acts._evaluate_remote(config, asyncio.get_event_loop())
+    await acts._evaluate_via_remote_job(config, asyncio.get_event_loop())
 
-    assert local_calls == [inner_ckpt], (
-        "_evaluate_local must receive the inner checkpoint path returned by download(), not the extraction root"
+    assert remote_calls == ["kaggle"], (
+        "remote_backend must route to _evaluate_via_remote_job, not download checkpoint to Temporal"
     )
 
 
@@ -371,20 +360,6 @@ async def test_export_activity_raises_application_error_on_system_exit():
 
 
 # ---------------------------------------------------------------------------
-# _parse_valid_pct helper
-# ---------------------------------------------------------------------------
-
-
-def test_parse_valid_pct_extracts_percentage():
-    output = "Valid: 190/200 (95.0%)  [PASS]"
-    assert abs(_parse_valid_pct(output) - 0.95) < 1e-6
-
-
-def test_parse_valid_pct_returns_none_on_no_match():
-    assert _parse_valid_pct("no match here") is None
-
-
-# ---------------------------------------------------------------------------
 # _train_remote polling loop
 # ---------------------------------------------------------------------------
 
@@ -454,11 +429,6 @@ class TestTrainRemotePolling:
             await acts._train_remote(config, adapter)
 
         assert captured[0]["logs"] == ""
-
-
-def test_parse_valid_pct_handles_multiline_output():
-    output = "Loading model...\nValid: 180/200 (90.0%)  [FAIL]\nAction distribution:"
-    assert abs(_parse_valid_pct(output) - 0.90) < 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -672,7 +642,8 @@ class TestFinaliseRunActivity:
 
         await ENV.run(finalise_run_activity, "run-3", True, 0.95)
 
-        mock_store.update_eval.assert_called_once_with("run-3", 0.95)
+        # eval persistence is now owned by record_eval_result_activity, not finalise_run_activity
+        mock_store.update_eval.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

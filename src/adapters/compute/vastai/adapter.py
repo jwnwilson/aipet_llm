@@ -1,11 +1,10 @@
-"""Vast.ai-backed remote training adapter implementing RemoteTrainingPort."""
+"""Vast.ai-backed remote job adapter implementing RemoteJobPort."""
 from __future__ import annotations
 
 import json
 import logging
 import os
 import shutil
-import subprocess
 import tarfile
 import uuid
 from pathlib import Path
@@ -15,8 +14,8 @@ from adapters.compute._wheel import build_wheel
 
 log = logging.getLogger(__name__)
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort
+from domain.models import EvalJobSpec, RemoteJobSpec, TrainJobSpec
+from domain.ports import RemoteJobPort, StoragePort
 
 _DEFAULT_GPU_QUERY = "num_gpus=1 gpu_name=RTX_3090 reliability>0.99"
 _DEFAULT_IMAGE = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel"
@@ -31,49 +30,53 @@ _INSTANCE_STATUS_MAP: dict[str, str | None] = {
 }
 
 
-class VastAiTrainingAdapter(RemoteTrainingPort):
-    """RemoteTrainingPort implementation that runs training on a Vast.ai GPU instance.
+class VastAiTrainingAdapter(RemoteJobPort):
+    """RemoteJobPort implementation that runs compute jobs on a Vast.ai GPU instance.
 
     Flow:
-        1. Build project wheel and upload with training data to S3 under a unique prefix.
+        1. Build project wheel and upload with data to S3 under a unique prefix.
         2. Search for the cheapest available Vast.ai offer matching VASTAI_GPU_QUERY.
-        3. Create an instance that runs training_script.py, reading config from env vars.
-        4. The instance writes status.txt and progress.json to S3 during training.
-        5. Poll S3 status.txt; fall back to Vast.ai API (via stored instance_id.txt) to detect crashes.
-        6. Download checkpoint.tar.gz from S3 when done.
+        3. Create an instance that runs bootstrap.py, routing on JOB_TYPE env var.
+        4. The instance writes status.txt and progress.json to S3 during execution.
+        5. Poll S3 status.txt; fall back to Vast.ai API (via stored instance_id.txt) for crash detection.
+        6. Download artifacts from S3 when done.
 
     run_id is an S3 key prefix, e.g. ``vastai/my-experiment-a1b2c3``.
     """
 
-    def __init__(self, work_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        storage: StoragePort | None = None,
+        work_dir: Path | None = None,
+    ) -> None:
+        from adapters.storage.s3 import S3StorageAdapter
+        self._storage = storage or S3StorageAdapter()
         self._work_dir = work_dir or Path("models/vastai_runs")
         self._work_dir.mkdir(parents=True, exist_ok=True)
         self._project_root = Path(__file__).parents[4].resolve()
-        self._bucket = os.environ["AWS_S3_BUCKET"]
-        self._s3 = self._build_s3_client()
-
-    def _build_s3_client(self):
-        import boto3
-        return boto3.client("s3")
 
     def _build_vastai_client(self):
         from vastai import VastAI
         return VastAI(api_key=os.environ["VAST_API_KEY"])
 
     # ------------------------------------------------------------------
-    # RemoteTrainingPort
+    # RemoteJobPort
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
-        run_id = f"vastai/{config.experiment_name}-{uuid.uuid4().hex[:6]}"
-        log.info("vastai submit  run_id=%s  model=%s  epochs=%s", run_id, config.model, config.epochs)
+    def submit(self, spec: RemoteJobSpec) -> str:
+        suffix = "-eval" if spec.job_type == "eval" else ""
+        run_id = f"vastai{suffix}/{spec.experiment_name}-{uuid.uuid4().hex[:6]}"
+        log.info(
+            "vastai submit  run_id=%s  job_type=%s  experiment=%s",
+            run_id, spec.job_type, spec.experiment_name,
+        )
 
-        staging = self._work_dir / config.experiment_name
-        log.info("staging files to %s", staging)
-        self._stage_files(config, staging)
+        staging = self._work_dir / spec.experiment_name
+        self._stage_files(spec, staging)
+        self._upload_staged_files(staging, run_id, spec)
 
-        log.info("uploading staged files to s3  bucket=%s  prefix=%s", self._bucket, run_id)
-        self._upload_to_s3(staging, run_id, config)
+        # Persist job type so download() can route correctly.
+        self._storage.write_bytes(f"{run_id}/job_type.txt", spec.job_type.encode())
 
         client = self._build_vastai_client()
         result = self._create_instance(
@@ -91,78 +94,57 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
                 '" && '
                 "python /tmp/llm_api_bootstrap.py"
             ),
-            env=self._build_instance_env(run_id, config),
+            env=self._build_instance_env(run_id, spec),
         )
         instance_id = str(result.get("new_contract", result.get("id", "")))
         log.info("vastai instance created  run_id=%s  instance_id=%s", run_id, instance_id)
-        self._s3.put_object(
-            Bucket=self._bucket,
-            Key=f"{run_id}/instance_id.txt",
-            Body=instance_id.encode(),
-        )
+        self._storage.write_bytes(f"{run_id}/instance_id.txt", instance_id.encode())
         return run_id
 
     def status(self, run_id: str) -> Literal["pending", "running", "done", "failed"]:
-        # Primary: read status.txt written by the instance training script
-        try:
-            raw = (
-                self._s3.get_object(Bucket=self._bucket, Key=f"{run_id}/status.txt")[
-                    "Body"
-                ]
-                .read()
-                .decode()
-                .strip()
-            )
-            if raw in ("pending", "running", "done", "failed"):
-                log.info("vastai status (s3)  run_id=%s  status=%s", run_id, raw)
-                if raw in ("done", "failed"):
-                    self._destroy_instance(run_id)
-                return raw  # type: ignore[return-value]
-        except Exception:
-            pass
+        # Primary: read status.txt written by the instance script
+        raw = self._storage.read_text(f"{run_id}/status.txt").strip()
+        if raw in ("pending", "running", "done", "failed"):
+            log.info("vastai status (storage)  run_id=%s  status=%s", run_id, raw)
+            if raw in ("done", "failed"):
+                self._destroy_instance(run_id)
+            return raw  # type: ignore[return-value]
 
         # Fallback: check Vast.ai API via stored instance_id (detects OOM / eviction)
         try:
-            instance_id = int(
-                self._s3.get_object(
-                    Bucket=self._bucket, Key=f"{run_id}/instance_id.txt"
-                )["Body"]
-                .read()
-                .decode()
-                .strip()
-            )
+            instance_id_str = self._storage.read_text(f"{run_id}/instance_id.txt").strip()
+            if not instance_id_str:
+                return "pending"
+            instance_id = int(instance_id_str)
             client = self._build_vastai_client()
             instance = client.show_instance(id=instance_id)
             actual = instance.get("actual_status", "")
             mapped = _INSTANCE_STATUS_MAP.get(actual, "pending")
-            log.info("vastai status (api)  run_id=%s  actual=%s  mapped=%s", run_id, actual, mapped or "pending")
+            log.info(
+                "vastai status (api)  run_id=%s  actual=%s  mapped=%s",
+                run_id, actual, mapped or "pending",
+            )
             return (mapped or "pending")  # type: ignore[return-value]
-        except Exception:
+        except Exception as exc:
+            log.warning("vastai status API fallback failed  run_id=%s  error=%s", run_id, exc)
             return "pending"
 
     def download(self, run_id: str, dest: Path) -> str:
         dest.mkdir(parents=True, exist_ok=True)
-        archive = dest / "checkpoint.tar.gz"
-        self._s3.download_file(
-            self._bucket, f"{run_id}/checkpoint.tar.gz", str(archive)
-        )
-        with tarfile.open(archive) as tf:
-            tf.extractall(dest, filter="data")
-        archive.unlink()
-        # Archive is created with arcname="checkpoints", so model files land in dest/checkpoints/
-        checkpoints_dir = dest / "checkpoints"
-        return str(checkpoints_dir if checkpoints_dir.exists() else dest)
+        job_type = self._storage.read_text(f"{run_id}/job_type.txt").strip() or "train"
+        if job_type == "eval":
+            result_dest = dest / "eval_results.json"
+            self._storage.download(f"{run_id}/eval_results.json", result_dest)
+            return str(result_dest)
+        return self._download_checkpoint(run_id, dest)
 
     def logs(self, run_id: str) -> str:
         try:
-            instance_id = int(
-                self._s3.get_object(
-                    Bucket=self._bucket, Key=f"{run_id}/instance_id.txt"
-                )["Body"]
-                .read()
-                .decode()
-                .strip()
-            )
+            instance_id_str = self._storage.read_text(f"{run_id}/instance_id.txt").strip()
+            if not instance_id_str:
+                return self._storage.read_text(f"{run_id}/logs.txt")
+
+            instance_id = int(instance_id_str)
             client = self._build_vastai_client()
 
             actual_status = "unknown"
@@ -185,31 +167,15 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
             ]
             body = "\n".join(lines)
             return f"{header}\n{body}" if body else header
-        except Exception:
+        except Exception as exc:
+            log.warning("vastai log retrieval failed  run_id=%s  error=%s", run_id, exc)
             return ""
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        # Eval ran on the training instance (training_script.py) and results
-        # are already on S3 by the time train_activity completes.
-        raw = (
-            self._s3.get_object(Bucket=self._bucket, Key=f"{run_id}/eval_result.json")[
-                "Body"
-            ]
-            .read()
-            .decode()
-        )
-        data = json.loads(raw)
-        return float(data["valid_pct"]), bool(data["passed"])
-
     def progress(self, run_id: str) -> tuple[float, str]:
+        raw = self._storage.read_text(f"{run_id}/progress.json")
+        if not raw:
+            return 0.0, ""
         try:
-            raw = (
-                self._s3.get_object(
-                    Bucket=self._bucket, Key=f"{run_id}/progress.json"
-                )["Body"]
-                .read()
-                .decode()
-            )
             data = json.loads(raw)
             return float(data.get("fraction", 0.0)), str(data.get("detail", ""))
         except Exception:
@@ -219,35 +185,40 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _build_instance_env(self, run_id: str, config) -> dict:
+    def _build_instance_env(self, run_id: str, spec: RemoteJobSpec) -> dict:
         env = {
             "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
             "AWS_SECRET_ACCESS_KEY": os.environ["AWS_SECRET_ACCESS_KEY"],
             "AWS_DEFAULT_REGION": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
-            "AWS_S3_BUCKET": self._bucket,
+            "AWS_S3_BUCKET": os.environ["AWS_S3_BUCKET"],
             "RUN_ID": run_id,
-            "MODEL": config.model,
-            "EPOCHS": str(config.epochs),
-            "PATIENCE": str(config.patience),
-            "WARMUP_RATIO": str(config.warmup_ratio),
+            "JOB_TYPE": spec.job_type,
         }
-        # Temporary credentials (SSO, assume-role) require a session token.
-        # Without it the key+secret pair is rejected by AWS with 403.
         if tok := os.environ.get("AWS_SESSION_TOKEN"):
             env["AWS_SESSION_TOKEN"] = tok
+
+        if isinstance(spec, TrainJobSpec):
+            env |= {
+                "MODEL": spec.model,
+                "EPOCHS": str(spec.epochs),
+                "PATIENCE": str(spec.patience),
+                "WARMUP_RATIO": str(spec.warmup_ratio),
+            }
+        elif isinstance(spec, EvalJobSpec):
+            env |= {
+                "TRAINING_ARTIFACT_REF": spec.training_artifact_ref,
+                "EVAL_DATA_S3_KEY": spec.eval_data,
+            }
         return env
 
     def _destroy_instance(self, run_id: str) -> None:
-        """Destroy the training instance for run_id (best-effort, swallows all errors)."""
+        """Destroy the instance for run_id (best-effort, swallows all errors)."""
         try:
-            instance_id = int(
-                self._s3.get_object(
-                    Bucket=self._bucket, Key=f"{run_id}/instance_id.txt"
-                )["Body"]
-                .read()
-                .decode()
-                .strip()
-            )
+            instance_id_str = self._storage.read_text(f"{run_id}/instance_id.txt").strip()
+            if not instance_id_str:
+                log.warning("vastai destroy: instance_id not found for run_id=%s", run_id)
+                return
+            instance_id = int(instance_id_str)
             log.info("vastai destroying instance  run_id=%s  instance_id=%s", run_id, instance_id)
             self._build_vastai_client().destroy_instance(id=instance_id)
             log.info("vastai instance destroyed  run_id=%s  instance_id=%s", run_id, instance_id)
@@ -257,8 +228,8 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
     def _create_instance(self, client, onstart_cmd: str, env: dict, max_retries: int = 3) -> dict:
         """Search for the cheapest matching offer and create an instance.
 
-        Retries up to max_retries times if a 400 is returned, which typically
-        means the selected offer was taken between search and create.
+        Retries up to max_retries times if a 400 is returned (offer taken between
+        search and create).
         """
         import requests
 
@@ -290,7 +261,6 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
             except requests.exceptions.HTTPError as exc:
                 if exc.response is not None and exc.response.status_code == 400:
                     body = exc.response.text or ""
-                    # Billing / account errors won't be fixed by retrying a different offer.
                     if any(kw in body.lower() for kw in ("credit", "balance", "payment", "billing", "insufficient")):
                         raise RuntimeError(
                             f"Vast.ai rejected the request — likely insufficient credits. "
@@ -306,7 +276,7 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
             f"(offer kept disappearing): {last_exc}"
         )
 
-    def _stage_files(self, config: RemoteTrainConfig, staging: Path) -> None:
+    def _stage_files(self, spec: RemoteJobSpec, staging: Path) -> None:
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
@@ -316,15 +286,15 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
         # Copy the standalone bootstrap script (no project-wheel dependency).
         shutil.copy2(Path(__file__).parent / "bootstrap.py", staging / "bootstrap.py")
 
-        train_data = Path(config.train_data)
-        if not train_data.is_absolute():
-            train_data = self._project_root / train_data
-        for jsonl in train_data.parent.glob("*.jsonl"):
-            shutil.copy2(jsonl, staging / jsonl.name)
+        # Eval jobs: checkpoint and eval data are already on S3; no local data needed.
+        if isinstance(spec, TrainJobSpec):
+            train_data = Path(spec.train_data)
+            if not train_data.is_absolute():
+                train_data = self._project_root / train_data
+            for jsonl in train_data.parent.glob("*.jsonl"):
+                shutil.copy2(jsonl, staging / jsonl.name)
 
-    def _upload_to_s3(
-        self, staging: Path, run_id: str, config: RemoteTrainConfig
-    ) -> None:
+    def _upload_staged_files(self, staging: Path, run_id: str, spec: RemoteJobSpec) -> None:  # noqa: ARG002
         for path in staging.iterdir():
             if not path.is_file():
                 continue
@@ -336,4 +306,14 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
                 key = f"{run_id}/bootstrap.py"
             else:
                 continue
-            self._s3.upload_file(str(path), self._bucket, key)
+            self._storage.upload(path, key)
+
+    def _download_checkpoint(self, run_id: str, dest: Path) -> str:
+        archive = dest / "checkpoint.tar.gz"
+        self._storage.download(f"{run_id}/checkpoint.tar.gz", archive)
+        with tarfile.open(archive) as tf:
+            tf.extractall(dest, filter="data")
+        archive.unlink()
+        # Archive is created with arcname="checkpoints"
+        checkpoints_dir = dest / "checkpoints"
+        return str(checkpoints_dir if checkpoints_dir.exists() else dest)

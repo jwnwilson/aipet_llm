@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -40,7 +40,15 @@ class InferenceResponse(BaseModel):
     confidence: float | None = None
 
 
-class RemoteTrainConfig(BaseModel):
+class EvalOutcome(str, Enum):
+    """Outcome of a discrete eval run (separate from run completion status)."""
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class TrainJobSpec(BaseModel):
+    """Job spec for a remote training job (replaces RemoteTrainConfig)."""
+    job_type: Literal["train"] = "train"
     model: str
     train_data: str
     eval_data: str
@@ -49,6 +57,29 @@ class RemoteTrainConfig(BaseModel):
     warmup_ratio: float
     experiment_name: str
     gpu_type: str = "NvidiaTeslaT4"
+
+
+# Backward-compat alias so existing code using RemoteTrainConfig continues to work.
+RemoteTrainConfig = TrainJobSpec
+
+
+class EvalJobSpec(BaseModel):
+    """Job spec for a remote eval job dispatched via RemoteJobPort."""
+    job_type: Literal["eval"] = "eval"
+    experiment_name: str
+    # Adapter-agnostic reference to the training artifact:
+    # - RunPod/VastAI: S3 run_id prefix (e.g. "runpod/exp-abc123")
+    # - Kaggle: training kernel slug (e.g. "username/exp-slug")
+    training_artifact_ref: str
+    eval_data: str   # S3 key or local path to eval.jsonl
+    gpu_type: str = "NvidiaTeslaT4"
+
+
+# Discriminated union — adapters accept either a train or eval job.
+RemoteJobSpec = Annotated[
+    Union[TrainJobSpec, EvalJobSpec],
+    Field(discriminator="job_type"),
+]
 
 
 class TrainingModelConfig(BaseModel):
@@ -106,6 +137,7 @@ class RunRecord(RunConfig):
     id: str
     status: RunStatus
     eval_valid_pct: float | None = None
+    eval_result: EvalOutcome | None = None  # None until eval runs
     progress: float | None = None
     progress_detail: str | None = None
     created_at: datetime

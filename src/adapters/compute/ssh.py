@@ -7,11 +7,11 @@ import subprocess
 from pathlib import Path
 from typing import Literal
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort
+from domain.models import RemoteJobSpec, RemoteTrainConfig, TrainJobSpec
+from domain.ports import RemoteJobPort, RemoteTrainingPort
 
 
-class SshTrainingAdapter(RemoteTrainingPort):
+class SshTrainingAdapter(RemoteJobPort):
     """RemoteTrainingPort implementation that runs training on a remote machine via SSH.
 
     Configuration is read from env vars:
@@ -52,7 +52,13 @@ class SshTrainingAdapter(RemoteTrainingPort):
     # RemoteTrainingPort
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
+    def submit(self, spec: RemoteJobSpec) -> str:  # type: ignore[override]
+        """Start training via SSH. Only job_type='train' is supported."""
+        if not isinstance(spec, TrainJobSpec):
+            raise NotImplementedError(
+                f"SshTrainingAdapter only supports job_type='train'; got {spec.job_type!r}"
+            )
+        config: TrainJobSpec = spec
         remote = f"{self._user}@{self._host}"
 
         # Step 1: sync source tree and data.
@@ -148,47 +154,3 @@ class SshTrainingAdapter(RemoteTrainingPort):
         )
         return str(dest)
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        """Run evaluation on the remote machine and return ``(valid_pct, passed)``.
-
-        Syncs the eval dataset to the remote, runs ``src.cli.evaluate`` there,
-        and parses the "Valid: N/M (P%)" summary line from stdout.
-        """
-        remote = f"{self._user}@{self._host}"
-
-        # Sync eval data to remote.
-        eval_path = Path(eval_data)
-        subprocess.run(
-            self._rsync_args() + [str(eval_path), f"{remote}:{self._work_dir}/{eval_data}"],
-            check=True,
-        )
-
-        # Run evaluate CLI on the remote checkpoint.
-        result = subprocess.run(
-            self._ssh_args() + [
-                f"cd {self._work_dir} && "
-                f"uv run python -m src.cli.evaluate"
-                f" --checkpoint models/checkpoints"
-                f" --eval-data {eval_data}"
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-        output = result.stdout + result.stderr
-        valid_pct = self._parse_valid_pct(output)
-        if valid_pct is None:
-            raise RuntimeError(f"Could not parse eval output from remote:\n{output}")
-
-        passed = valid_pct >= 0.95
-        return valid_pct, passed
-
-    @staticmethod
-    def _parse_valid_pct(output: str) -> float | None:
-        for line in output.splitlines():
-            if line.startswith("Valid:") and "(" in line and "%)" in line:
-                try:
-                    return float(line.split("(")[1].split("%")[0].strip()) / 100.0
-                except (IndexError, ValueError):
-                    pass
-        return None

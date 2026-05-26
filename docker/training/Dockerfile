@@ -15,4 +15,4 @@ COPY --from=builder /app/.venv ./.venv
 COPY src/ ./src/
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app/src
-CMD ["python", "-m", "interactors.cli.training.k8s_train_eval"]
+CMD ["python", "-m", "interactors.cli.training.k8s_train"]
