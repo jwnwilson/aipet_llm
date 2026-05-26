@@ -188,17 +188,6 @@ class VastAiTrainingAdapter(RemoteTrainingPort):
         except Exception:
             return ""
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        """Not implemented — VastAI jobs are train-only.
-
-        evaluate_activity catches NotImplementedError and falls back to
-        downloading the checkpoint then running eval locally on the worker.
-        """
-        raise NotImplementedError(
-            "VastAI training jobs do not run eval. "
-            "evaluate_activity will download the checkpoint and eval locally."
-        )
-
     def progress(self, run_id: str) -> tuple[float, str]:
         try:
             raw = (

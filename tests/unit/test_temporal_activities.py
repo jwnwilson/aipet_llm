@@ -10,10 +10,6 @@ import pytest
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
-from adapters.compute.ssh import SshTrainingAdapter
-
-_parse_valid_pct = SshTrainingAdapter._parse_valid_pct
-
 from interactors.temporal.activities import (
     CheckpointPath,
     DatasetConfig,
@@ -371,20 +367,6 @@ async def test_export_activity_raises_application_error_on_system_exit():
 
 
 # ---------------------------------------------------------------------------
-# _parse_valid_pct helper
-# ---------------------------------------------------------------------------
-
-
-def test_parse_valid_pct_extracts_percentage():
-    output = "Valid: 190/200 (95.0%)  [PASS]"
-    assert abs(_parse_valid_pct(output) - 0.95) < 1e-6
-
-
-def test_parse_valid_pct_returns_none_on_no_match():
-    assert _parse_valid_pct("no match here") is None
-
-
-# ---------------------------------------------------------------------------
 # _train_remote polling loop
 # ---------------------------------------------------------------------------
 
@@ -454,11 +436,6 @@ class TestTrainRemotePolling:
             await acts._train_remote(config, adapter)
 
         assert captured[0]["logs"] == ""
-
-
-def test_parse_valid_pct_handles_multiline_output():
-    output = "Loading model...\nValid: 180/200 (90.0%)  [FAIL]\nAction distribution:"
-    assert abs(_parse_valid_pct(output) - 0.90) < 1e-6
 
 
 # ---------------------------------------------------------------------------

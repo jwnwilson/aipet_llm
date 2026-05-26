@@ -142,15 +142,6 @@ class RemoteTrainingPort(ABC):
         """
         return 0.0, ""
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:  # noqa: ARG002
-        """Run evaluation on the remote machine and return ``(valid_pct, passed)``.
-
-        Raises ``NotImplementedError`` if the backend does not support remote
-        evaluation (e.g. Kaggle batch kernels).  ``evaluate_activity`` catches
-        this and raises an ``ApplicationError`` with a descriptive message.
-        """
-        raise NotImplementedError
-
 
 class StorePort(ABC, Generic[TDomain, TConfig]):
     """Generic CRUD base for any domain entity store."""

@@ -419,35 +419,34 @@ async def evaluate_activity(config: EvalConfig) -> EvalResult:
 
 
 async def _evaluate_remote(config: EvalConfig, loop: asyncio.AbstractEventLoop) -> EvalResult:
-    adapter = _make_remote_adapter(config.remote_backend)
-    try:
-        valid_pct, passed = await loop.run_in_executor(
-            None, lambda: adapter.eval(config.run_id, config.eval_data)
-        )
-        return EvalResult(valid_pct=valid_pct, passed=passed)
-    except NotImplementedError:
-        # Backend doesn't support remote eval (e.g. Kaggle). Download the checkpoint
-        # now and fall back to local HF eval.
-        activity.logger.info(
-            "Remote backend %r does not support remote eval — downloading checkpoint for local eval",
-            config.remote_backend,
-        )
-        dest = Path(config.output_dir) if config.output_dir else Path("models/checkpoints") / config.run_id
-        try:
-            checkpoint_path = await loop.run_in_executor(
-                None, lambda: adapter.download(config.run_id, dest)
-            )
-        except Exception as exc:
-            raise ApplicationError(
-                f"Remote eval not supported and checkpoint download failed: {exc}"
-            ) from exc
+    """Download the checkpoint from S3 then evaluate locally on the Temporal worker.
 
-        local_config = EvalConfig(
-            checkpoint=checkpoint_path,
-            eval_data=config.eval_data,
-            db_run_id=config.db_run_id,
+    All remote backends (K8s, RunPod, VastAI, Kaggle, SSH) are train-only — the
+    training job uploads the checkpoint to S3 and the worker scores it here so
+    eval always runs in a consistent environment regardless of backend.
+    """
+    adapter = _make_remote_adapter(config.remote_backend)
+    dest = Path(config.output_dir) if config.output_dir else Path("models/checkpoints") / config.run_id
+    activity.logger.info(
+        "Downloading checkpoint for eval: backend=%r  run_id=%s  dest=%s",
+        config.remote_backend, config.run_id, dest,
+    )
+    try:
+        checkpoint_path = await loop.run_in_executor(
+            None, lambda: adapter.download(config.run_id, dest)
         )
-        return await _evaluate_local(local_config, loop)
+    except Exception as exc:
+        raise ApplicationError(
+            f"Checkpoint download failed for eval "
+            f"(backend={config.remote_backend!r}, run_id={config.run_id!r}): {exc}"
+        ) from exc
+
+    local_config = EvalConfig(
+        checkpoint=checkpoint_path,
+        eval_data=config.eval_data,
+        db_run_id=config.db_run_id,
+    )
+    return await _evaluate_local(local_config, loop)
 
 
 def _normalise_report_keys(obj: object) -> object:

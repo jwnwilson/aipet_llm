@@ -83,12 +83,6 @@ def test_status_failed(adapter):
     assert adapter.status("train-abc") == "failed"
 
 
-def test_eval_raises_not_implemented(adapter):
-    """K8s jobs are train-only; evaluate_activity falls back to local eval via download."""
-    with pytest.raises(NotImplementedError):
-        adapter.eval("train-abc", "unused")
-
-
 def test_download_uses_storage_download_directory(adapter, tmp_path):
     job_meta = MagicMock()
     job_meta.metadata.annotations = {"llm-api/run-id": "db-run-id-123"}

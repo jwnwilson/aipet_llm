@@ -9,7 +9,6 @@ Storage I/O goes through the injected StoragePort — no raw boto3 here.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import uuid
@@ -186,17 +185,6 @@ class K8sTrainingAdapter(RemoteTrainingPort):
         except Exception as exc:
             log.debug("Could not fetch logs for Job %s: %s", run_id, exc)
             return ""
-
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        """Not implemented — K8s jobs are train-only.
-
-        evaluate_activity catches NotImplementedError and falls back to
-        downloading the checkpoint then running eval locally on the worker.
-        """
-        raise NotImplementedError(
-            "K8s training jobs do not run eval. "
-            "evaluate_activity will download the checkpoint and eval locally."
-        )
 
     def download(self, run_id: str, dest: Path) -> str:
         """Download checkpoint directory from S3 into dest via StoragePort."""
