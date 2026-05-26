@@ -141,8 +141,9 @@ def main() -> None:
 
     log.info("uploading checkpoint  key=%s/checkpoint.tar.gz", RUN_ID)
     storage.upload(archive, f"{RUN_ID}/checkpoint.tar.gz")
-    # Eval runs on the Temporal worker after this pod exits (evaluate_activity
-    # downloads the checkpoint and scores locally). Mark done now.
+    # Eval runs as a separate remote job dispatched by evaluate_activity after this pod
+    # exits — the checkpoint stays in S3 and is pulled by the eval pod, not the Temporal
+    # worker. Mark done now so the poll loop in _train_remote can exit.
     storage.write_bytes(
         f"{RUN_ID}/progress.json",
         json.dumps({"fraction": 1.0, "detail": "done"}).encode(),
