@@ -1,4 +1,4 @@
-import type { EvaluationData, RunRecord, RunStatus, TriggerRunRequest } from '@/types'
+import type { EvaluationData, RunLogsResponse, RunRecord, RunStatus, TemporalDetails, TriggerRunRequest } from '@/types'
 import { apiClient } from './client'
 
 const ACTIVE_STATUSES = new Set<RunStatus>([
@@ -38,5 +38,15 @@ export function isRunCancellable(run: RunRecord): boolean {
 
 export async function getRunEvaluation(id: string): Promise<EvaluationData> {
   const { data } = await apiClient.get<EvaluationData>(`/api/runs/${id}/evaluation`)
+  return data
+}
+
+export async function getRunTemporal(id: string): Promise<TemporalDetails> {
+  const { data } = await apiClient.get<TemporalDetails>(`/api/runs/${id}/temporal`)
+  return data
+}
+
+export async function getRunLogs(id: string): Promise<RunLogsResponse> {
+  const { data } = await apiClient.get<RunLogsResponse>(`/api/runs/${id}/logs`)
   return data
 }

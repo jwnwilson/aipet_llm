@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { http, HttpResponse } from 'msw'
 import { RunDetailPage } from '@/pages/RunDetailPage'
-import { RUN_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE } from '../msw/fixtures'
+import { RUN_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, TEMPORAL_DETAILS_FIXTURE } from '../msw/fixtures'
 import { server } from '../msw/server'
 
 function renderPage(runId: string) {
@@ -198,5 +198,24 @@ describe('RunDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/failed to load detailed report/i)).toBeInTheDocument()
     })
+  })
+
+  it('renders the Stage details toggle button inside the pipeline card', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
+    expect(
+      screen.getByRole('button', { name: /stage details/i })
+    ).toBeInTheDocument()
+  })
+
+  it('shows temporal workflow_id after expanding the panel', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
+    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
+    await waitFor(() =>
+      expect(
+        screen.getByText('Temporal Run ID')
+      ).toBeInTheDocument()
+    )
   })
 })

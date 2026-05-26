@@ -53,6 +53,23 @@ class ExportRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics response schemas
+# ---------------------------------------------------------------------------
+
+class TemporalDetails(BaseModel):
+    workflow_id: str
+    temporal_run_id: str
+    status: str
+    start_time: str | None
+    close_time: str | None
+
+
+class RunLogsResponse(BaseModel):
+    logs: str | None
+    source: str | None
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -161,6 +178,59 @@ async def cancel_run(
         raise HTTPException(status_code=500, detail="Failed to cancel workflow")
 
     run_store.update_status(run_id, RunStatus.CANCELLED)
+
+
+@router.get("/{run_id}/temporal", response_model=TemporalDetails)
+async def get_run_temporal(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> TemporalDetails:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    try:
+        from temporalio.client import Client
+
+        temporal_host = os.getenv("TEMPORAL_HOST", "localhost:7233")
+        client = await Client.connect(temporal_host)
+        handle = client.get_workflow_handle(run.workflow_id)
+        desc = await handle.describe()
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Failed to describe Temporal workflow %s", run.workflow_id)
+        raise HTTPException(status_code=502, detail="Temporal unreachable")
+
+    return TemporalDetails(
+        workflow_id=desc.id,
+        temporal_run_id=desc.run_id,
+        status=desc.status.name,
+        start_time=desc.start_time.isoformat() if desc.start_time else None,
+        close_time=desc.close_time.isoformat() if desc.close_time else None,
+    )
+
+
+@router.get("/{run_id}/logs", response_model=RunLogsResponse)
+def get_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> RunLogsResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = Path(f"data/workflow/{run_id}/logs.txt")
+    if not log_path.exists():
+        return RunLogsResponse(logs=None, source=None)
+
+    return RunLogsResponse(logs=log_path.read_text(), source="local")
 
 
 @router.post("/trigger", status_code=202)

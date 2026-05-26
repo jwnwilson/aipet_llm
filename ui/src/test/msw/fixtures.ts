@@ -1,5 +1,5 @@
 // apps/llm-ui/src/test/msw/fixtures.ts
-import type { Dataset, TrainingModel, RunRecord, UserContext, QualityReport, EvaluationData } from '@/types'
+import type { Dataset, EvaluationData, QualityReport, RunLogsResponse, RunRecord, TemporalDetails, TrainingModel, UserContext } from '@/types'
 
 export const TRAIN_DATASET_FIXTURE: Dataset = {
   id: 'ds-train-1',
@@ -87,4 +87,17 @@ export const EVAL_DATA_FIXTURE: EvaluationData = {
   status: 'completed',
   eval_valid_pct: 0.97,
   quality_report: QUALITY_REPORT_FIXTURE,
+}
+
+export const TEMPORAL_DETAILS_FIXTURE: TemporalDetails = {
+  workflow_id: 'training-test-model-abc12345',
+  temporal_run_id: 'temporal-run-id-abc',
+  status: 'RUNNING',
+  start_time: '2024-01-01T00:00:00.000Z',
+  close_time: null,
+}
+
+export const RUN_LOGS_FIXTURE: RunLogsResponse = {
+  logs: 'epoch 1/3  loss=0.42\n',
+  source: 'local',
 }
