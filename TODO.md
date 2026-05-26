@@ -1,6 +1,11 @@
 #TODO
 
+- Focus on kaggle + K8 for now
+    - validate training working
 - Fix kaggle and verify vastai runpod training works
+    - All erroring unable to find training data
+- Break up training and eval jobs, make eval not stop the workflow
+- Setup test from training to running inference locally on k8 or remotely on a 3rd party.
 
 ## Better llm-api architecture
 - Setup functionality to set a model to "active"
@@ -11,6 +16,7 @@
 - Handle requests to loading models and return a result or good http status with "not_ready_yet" 
 
 ## LLM API
+- Setup llm adapter to either 
 - Expose inference for each model via API tab on UI
 - Provide an apikey for a user to run inference on their model
 - Add rate limiting per user 

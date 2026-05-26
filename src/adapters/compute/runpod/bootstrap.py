@@ -43,11 +43,13 @@ def main() -> None:
     whl = Path("/tmp") / whl_key.split("/")[-1]
     print(f"[bootstrap] downloading wheel  key={whl_key}", flush=True)
     s3.download_file(BUCKET, whl_key, str(whl))
+    # Install with [training] extras so transformers, datasets, accelerate,
+    # peft, bitsandbytes, and sentencepiece are available inside the pod.
+    # These are optional deps in pyproject.toml; the base wheel omits them.
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", str(whl)],
+        [sys.executable, "-m", "pip", "install", f"{whl}[training]"],
         check=True,
     )
-
     # Route to the correct script based on JOB_TYPE env var.
     job_type = os.environ.get("JOB_TYPE", "train")
     print(f"[bootstrap] wheel installed — starting job_type={job_type}", flush=True)
