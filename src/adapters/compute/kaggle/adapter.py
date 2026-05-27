@@ -21,10 +21,20 @@ from domain.ports import RemoteJobPort
 log = logging.getLogger(__name__)
 
 
+_KAGGLE_MIN_SLUG_LEN = 5
+_KAGGLE_MAX_SLUG_LEN = 50
+
 def _slugify(name: str) -> str:
-    """Convert an arbitrary name to a Kaggle-safe slug (lowercase, hyphens, 6-50 chars)."""
+    """Convert an arbitrary name to a Kaggle-safe slug (5-50 chars, lowercase, hyphens).
+
+    Kaggle rejects dataset and kernel names shorter than 5 characters, so short
+    slugs are right-padded with hyphens to reach the minimum length.
+    """
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug[:50] or "model"
+    slug = slug[:_KAGGLE_MAX_SLUG_LEN] or "model"
+    if len(slug) < _KAGGLE_MIN_SLUG_LEN:
+        slug = slug.ljust(_KAGGLE_MIN_SLUG_LEN, "-")
+    return slug
 
 def _kaggle_bin() -> str:
     found = shutil.which("kaggle")

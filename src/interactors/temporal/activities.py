@@ -237,9 +237,6 @@ def _make_remote_adapter(backend: str) -> RemoteJobPort:
     if backend == "runpod":
         from adapters.compute.runpod import RunPodTrainingAdapter
         return RunPodTrainingAdapter(storage=_get_storage())
-    if backend == "vastai":
-        from adapters.compute.vastai import VastAiTrainingAdapter
-        return VastAiTrainingAdapter(storage=_get_storage())
     raise ApplicationError(f"Unknown remote_backend: {backend!r}")
 
 
@@ -288,7 +285,7 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
 # to their own compute environment.  These need train/eval files materialised
 # locally even when skip_generate=True provides an S3 key as train_data.
 #
-# S3-backed backends (k8s, runpod, vastai) pass the S3 key directly to the
+# S3-backed backends (k8s, runpod) pass the S3 key directly to the
 # remote job; the pod downloads from S3 itself.  Replacing the key with a local
 # path would point the pod at a key that doesn't exist → DO NOT download for them.
 _FILE_BASED_BACKENDS = frozenset({"kaggle", "colab", "ssh"})
@@ -660,7 +657,7 @@ async def export_activity(config: ExportConfig) -> GGUFPath:
         return GGUFPath(path=gguf_key)
 
     # ── Local / other-remote path: download checkpoint then export inline ──
-    # Non-k8s backends (kaggle, ssh, colab, runpod, vastai) and local runs
+    # Non-k8s backends (kaggle, ssh, colab, runpod) and local runs
     # still download the checkpoint to the worker and export inline.
     from domain.train.export import export as export_gguf
 

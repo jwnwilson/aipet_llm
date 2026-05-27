@@ -31,7 +31,7 @@ export const MODEL_FIXTURE: TrainingModel = {
   epochs: 5,
   patience: 3,
   warmup_ratio: 0.05,
-  remote_backend: 'local',
+  remote_backend: 'k8s',
   skip_generate: false,
   gguf_path: '',
   is_active: false,

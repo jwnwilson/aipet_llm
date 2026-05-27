@@ -18,6 +18,9 @@
 - Track status on active llm models to show on the ui.
 - Handle requests to loading models and return a result or good http status with "not_ready_yet" 
 
+# Better inference model UI
+- Group inference under a model and version the different models
+
 ## LLM API
 - Setup llm adapter to either 
 - Expose inference for each model via API tab on UI

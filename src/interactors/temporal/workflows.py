@@ -54,7 +54,7 @@ class ExperimentConfig:
     train_size: int = TRAIN_SIZE
     eval_size: int = EVAL_SIZE
     seed: int = SEED
-    # "local", "kaggle", or "ssh" — controls where fine-tuning runs.
+    # "k8s", "kaggle", or "ssh" — controls where fine-tuning runs.
     remote_backend: str = ""
     # None = auto-detect based on model size; True = always QLoRA; False = never QLoRA.
     force_qlora: bool | None = None

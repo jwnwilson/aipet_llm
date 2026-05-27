@@ -7,7 +7,7 @@ import sys
 
 
 _BACKEND_PREFIXES = {
-    "vastai": "vastai/",
+    "k8s": "k8s/",
     "runpod": "runpod/",
     "kaggle": "kaggle/",
     "ssh": "ssh/",
@@ -23,9 +23,9 @@ def _detect_backend(run_id: str) -> str:
 
 
 def _make_adapter(backend: str):
-    if backend == "vastai":
-        from adapters.compute.vastai import VastAiTrainingAdapter
-        return VastAiTrainingAdapter()
+    if backend == "k8s":
+        from adapters.compute.k8s.adapter import K8sTrainingAdapter
+        return K8sTrainingAdapter()
     if backend == "runpod":
         from adapters.compute.runpod import RunPodTrainingAdapter
         return RunPodTrainingAdapter()
@@ -48,11 +48,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--run-id", required=True, dest="run_id",
-        help="Opaque run ID returned by trigger_training (e.g. vastai/my-exp-a1b2c3)",
+        help="Opaque run ID returned by trigger_training (e.g. k8s/my-exp-a1b2c3)",
     )
     parser.add_argument(
         "--backend", dest="backend", default="",
-        choices=["", "vastai", "runpod", "kaggle", "ssh", "colab"],
+        choices=["", "k8s", "runpod", "kaggle", "ssh", "colab"],
         help="Remote backend; auto-detected from the run_id prefix if omitted",
     )
     parser.add_argument(

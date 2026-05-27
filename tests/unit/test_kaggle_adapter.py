@@ -128,3 +128,50 @@ class TestDownload:
             result = adapter.download("testuser/my-exp", dest)
 
         assert result == str(dest)
+
+
+class TestSlugify:
+    """Unit tests for the _slugify helper (Kaggle slug validation rules)."""
+
+    def _slugify(self, name: str) -> str:
+        from adapters.compute.kaggle.adapter import _slugify
+        return _slugify(name)
+
+    def test_normal_name_passes_through(self):
+        assert self._slugify("my-experiment") == "my-experiment"
+
+    def test_uppercase_is_lowercased(self):
+        assert self._slugify("MyExp") == "myexp"
+
+    def test_spaces_become_hyphens(self):
+        assert self._slugify("my experiment") == "my-experiment"
+
+    def test_special_chars_become_hyphens(self):
+        assert self._slugify("foo@bar!baz") == "foo-bar-baz"
+
+    def test_max_50_chars_enforced(self):
+        long_name = "a" * 60
+        result = self._slugify(long_name)
+        assert len(result) <= 50
+
+    def test_short_slug_padded_to_min_5_chars(self):
+        # "ab" → 2 chars → should be padded to 5
+        result = self._slugify("ab")
+        assert len(result) >= 5
+        assert result == "ab---"
+
+    def test_single_char_slug_padded(self):
+        result = self._slugify("x")
+        assert len(result) >= 5
+        assert result == "x----"
+
+    def test_empty_string_falls_back_to_model_then_padded(self):
+        # Empty after stripping → "model" (5 chars, exactly at minimum)
+        result = self._slugify("---")
+        assert result == "model"
+        assert len(result) >= 5
+
+    def test_exactly_5_chars_not_padded(self):
+        result = self._slugify("hello")
+        assert result == "hello"
+        assert len(result) == 5
