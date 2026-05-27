@@ -68,6 +68,9 @@ spec:
                   name: llm-api-secrets
                   key: kaggle-key
                   optional: true
+            - name: RUNPOD_IMAGE
+              # Placeholder — stamped by CI deploy workflow with the RunPod training image ref
+              value: <ECR_RUNPOD_IMAGE>
             - name: RUNPOD_API_KEY
               valueFrom:
                 secretKeyRef:

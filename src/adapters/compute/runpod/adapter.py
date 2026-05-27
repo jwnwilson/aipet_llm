@@ -94,8 +94,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
             gpu_type_id=os.getenv("RUNPOD_GPU_TYPE_ID", _DEFAULT_GPU),
             container_disk_in_gb=50,
             docker_args=(
-                f"bash -c 'pip install -q boto3 && "
-                f"echo {_BOOTSTRAP_FETCH_B64} | base64 -d | python'"
+                f"bash -c 'echo {_BOOTSTRAP_FETCH_B64} | base64 -d | python'"
             ),
             env=self._build_pod_env(run_id, spec),
         )
