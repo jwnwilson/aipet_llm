@@ -93,6 +93,9 @@ class TestRenderNotebook:
         assert "pip" in source and "install" in source
         assert "transformers" in source
         assert "datasets" in source
+        # importlib.invalidate_caches() must follow pip installs so the running process
+        # sees packages installed by subprocess pip without restarting the interpreter.
+        assert "importlib.invalidate_caches" in source
 
 
 class TestDownload:
