@@ -48,6 +48,11 @@ def _dry_run_patches(eval_passes: bool = True):
     def _fake_upload_model(storage, local_path, key: str) -> str:
         return key if key.endswith(".gz") else key + ".gz"
 
+    # Mock k8s adapter used by export_activity (remote_backend is always "k8s").
+    mock_k8s = MagicMock()
+    mock_k8s.submit.return_value = "fake-export-run-id"
+    mock_k8s.status.return_value = "done"
+
     return [
         patch("domain.train.dataset.generate", return_value=True),
         patch("domain.train.trainer.train"),
@@ -56,6 +61,7 @@ def _dry_run_patches(eval_passes: bool = True):
         patch("domain.train.evaluate.evaluate", side_effect=fake_evaluate),
         patch("domain.train.export.export"),
         patch("adapters.storage.upload_model", side_effect=_fake_upload_model),
+        patch("interactors.temporal.activities._make_remote_adapter", return_value=mock_k8s),
     ]
 
 
@@ -64,6 +70,13 @@ def _configure_mock_storage() -> MagicMock:
     storage = MagicMock()
     configure_storage(storage)
     return storage
+
+
+def _configure_mock_run_store() -> MagicMock:
+    """Wire a mock RunStorePort into the activities module and return it."""
+    run_store = MagicMock()
+    configure_run_store(run_store)
+    return run_store
 
 
 _ACTIVITIES = [
@@ -83,6 +96,7 @@ _ACTIVITIES = [
 async def test_training_pipeline_workflow_e2e_pass():
     """Happy path: all stages succeed and a GGUF is exported."""
     _configure_mock_storage()
+    _configure_mock_run_store()
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
             env.client,
@@ -96,6 +110,7 @@ async def test_training_pipeline_workflow_e2e_pass():
             try:
                 config = ExperimentConfig(
                     experiment_name="dry-run-pass",
+                    run_id="test-run-pass",
                     train_size=10,
                     eval_size=5,
                     epochs=1,
@@ -115,13 +130,15 @@ async def test_training_pipeline_workflow_e2e_pass():
     assert result.dataset_paths.eval.endswith("eval.jsonl")
     assert result.checkpoint.path != ""
     assert abs(result.eval_result.valid_pct - 0.95) < 1e-6
-    assert result.gguf_path.path.endswith(".gguf.gz")
+    # k8s export returns the S3 key directly (no .gz wrapping from upload_model)
+    assert result.gguf_path.path.endswith(".gguf")
 
 
 @pytest.mark.asyncio
 async def test_training_pipeline_workflow_e2e_eval_fail_still_exports():
     """When eval does not reach 95%, export still runs — checkpoint is never discarded."""
     _configure_mock_storage()
+    _configure_mock_run_store()
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
             env.client,
@@ -135,6 +152,7 @@ async def test_training_pipeline_workflow_e2e_eval_fail_still_exports():
             try:
                 config = ExperimentConfig(
                     experiment_name="dry-run-fail",
+                    run_id="test-run-eval-fail",
                     train_size=10,
                     eval_size=5,
                     epochs=1,
@@ -159,6 +177,7 @@ async def test_training_pipeline_workflow_e2e_eval_fail_still_exports():
 async def test_training_pipeline_workflow_e2e_skip_generate():
     """With skip_generate=True the dataset step is bypassed and existing paths are used."""
     _configure_mock_storage()
+    _configure_mock_run_store()
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
             env.client,
@@ -172,6 +191,7 @@ async def test_training_pipeline_workflow_e2e_skip_generate():
             try:
                 config = ExperimentConfig(
                     experiment_name="dry-run-skip-gen",
+                    run_id="test-run-skip-gen",
                     skip_generate=True,
                     data_dir="data",
                     epochs=1,
@@ -201,6 +221,7 @@ async def test_workflow_skip_generate_uses_explicit_train_data_s3_key():
     fell back to data/workflow/{run_id}/train.jsonl which does not exist in S3.
     """
     _configure_mock_storage()
+    _configure_mock_run_store()
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
             env.client,
@@ -214,6 +235,7 @@ async def test_workflow_skip_generate_uses_explicit_train_data_s3_key():
             try:
                 config = ExperimentConfig(
                     experiment_name="dry-run-s3-key",
+                    run_id="test-run-s3-key",
                     skip_generate=True,
                     train_data="datasets/abc123.jsonl",
                     eval_data="datasets/eval456.jsonl",
@@ -242,6 +264,7 @@ async def test_workflow_skip_generate_falls_back_to_data_dir_when_no_train_data(
     """When skip_generate=True and train_data is empty, the fallback data_dir+/train.jsonl
     path is used (backwards compatibility for runs that don't supply train_dataset_id)."""
     _configure_mock_storage()
+    _configure_mock_run_store()
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
             env.client,
@@ -255,6 +278,7 @@ async def test_workflow_skip_generate_falls_back_to_data_dir_when_no_train_data(
             try:
                 config = ExperimentConfig(
                     experiment_name="dry-run-fallback",
+                    run_id="test-run-fallback",
                     skip_generate=True,
                     train_data="",   # not set → fallback to data_dir
                     eval_data="",

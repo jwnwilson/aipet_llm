@@ -131,6 +131,12 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Prevent two deploy+smoke runs from racing against each other.
+    # cancel-in-progress: false queues the newer run rather than killing
+    # an in-flight deploy, which could leave the cluster in a partial state.
+    concurrency:
+      group: deploy-to-production
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read

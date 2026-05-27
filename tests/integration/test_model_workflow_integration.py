@@ -94,6 +94,11 @@ async def test_workflow_updates_run_status_in_db():
     mock_inference_store.create.return_value = MagicMock(id="test-inference-id")
 
     with ExitStack() as stack:
+        # Mock k8s adapter — export_activity always uses remote_backend="k8s"
+        mock_k8s = MagicMock()
+        mock_k8s.submit.return_value = "fake-export-run-id"
+        mock_k8s.status.return_value = "done"
+        stack.enter_context(patch("interactors.temporal.activities._make_remote_adapter", return_value=mock_k8s))
         stack.enter_context(patch("domain.train.dataset.generate", return_value=True))
         stack.enter_context(patch("domain.train.trainer.train"))
         stack.enter_context(patch("domain.train.evaluate.load_hf_pipeline", return_value=MagicMock()))
