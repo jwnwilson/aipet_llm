@@ -242,15 +242,15 @@ jobs:
           kubectl rollout status deployment/llm-api --timeout=600s
           kubectl rollout status deployment/temporal-worker --timeout=600s
 
-      - name: Sync Route53 DNS to current inlets exit-node IP
-        run: |
-          TUNNEL_IP=$(kubectl get tunnel ingress-nginx-controller-tunnel \
-            -o jsonpath='{.status.hostIP}' 2>/dev/null || true)
-          if [ -z "$TUNNEL_IP" ]; then
-            echo "WARNING: could not read tunnel IP — skipping DNS sync"
-            exit 0
-          fi
-          TUNNEL_IP="$TUNNEL_IP" python3 scripts/sync_route53_dns.py
+      # - name: Sync Route53 DNS to current inlets exit-node IP
+      #   run: |
+      #     TUNNEL_IP=$(kubectl get tunnel ingress-nginx-controller-tunnel \
+      #       -o jsonpath='{.status.hostIP}' 2>/dev/null || true)
+      #     if [ -z "$TUNNEL_IP" ]; then
+      #       echo "WARNING: could not read tunnel IP — skipping DNS sync"
+      #       exit 0
+      #     fi
+      #     TUNNEL_IP="$TUNNEL_IP" python3 scripts/sync_route53_dns.py
 
       - name: Install smoke test dependencies
         run: pip install httpx
