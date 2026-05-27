@@ -10,7 +10,7 @@ import json
 import sys
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, call, patch, ANY
 
 import pytest
 
@@ -109,10 +109,8 @@ class TestRemoteWorkerHappyPath:
 
         # run() must delegate to StoragePort.upload_directory so every adapter
         # gets the same consistent upload behaviour without knowing the format.
-        storage.upload_directory.assert_called_once()
-        _, key = storage.upload_directory.call_args.args
-        assert key == "runpod/test-exp-abc123/checkpoint", (
-            f"Expected 'runpod/test-exp-abc123/checkpoint', got: {key!r}"
+        storage.upload_directory.assert_called_once_with(
+            ANY, "runpod/test-exp-abc123/checkpoint"
         )
         # No tarball should be uploaded directly.
         upload_keys = [c.args[1] for c in storage.upload.call_args_list]
