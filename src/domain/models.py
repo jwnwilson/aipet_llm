@@ -61,6 +61,12 @@ class TrainJobSpec(BaseModel):
     # checkpoint.  Falls back to ``experiment_name`` when absent (legacy paths).
     db_run_id: str = ""
     gpu_type: str = "NvidiaTeslaT4"
+    # Original S3 keys for training data — populated when generate_dataset_activity
+    # uploads data with upload_to_storage=True.  Backends that access S3 directly
+    # (e.g. Kaggle with enable_internet=True) use these instead of staging local
+    # JSONL files inside their compute environment.
+    train_s3_key: str = ""
+    eval_s3_key: str = ""
 
 
 # Backward-compat alias so existing code using RemoteTrainConfig continues to work.
@@ -77,6 +83,9 @@ class EvalJobSpec(BaseModel):
     training_artifact_ref: str
     eval_data: str   # S3 key or local path to eval.jsonl
     gpu_type: str = "NvidiaTeslaT4"
+    # DB run-record UUID — used by Kaggle eval kernel to locate the checkpoint
+    # in S3 at workflow/{db_run_id}/checkpoint/ instead of pulling from kernel output.
+    db_run_id: str = ""
 
 
 class ExportJobSpec(BaseModel):

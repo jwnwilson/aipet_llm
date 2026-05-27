@@ -914,20 +914,13 @@ class TestResolveTrainingData:
         assert eval_out == str(eval_)
 
     @pytest.mark.asyncio
-    async def test_downloads_train_and_eval_when_missing_for_kaggle(self, tmp_path, monkeypatch):
-        """For Kaggle (file-based), S3 keys are downloaded to data/ when not present locally."""
+    async def test_passes_s3_keys_unchanged_for_kaggle(self, tmp_path, monkeypatch):
+        """Kaggle is no longer file-based: S3 keys are returned unchanged (no local download)."""
         import asyncio
         import interactors.temporal.activities as acts
 
-        def fake_download(key: str, dest) -> None:
-            dest = Path(dest)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text('{"prompt":"p","completion":"c"}\n')
-
         mock_storage = MagicMock()
-        mock_storage.download.side_effect = fake_download
         monkeypatch.setattr(acts, "_storage", mock_storage)
-        monkeypatch.chdir(tmp_path)
 
         config = TrainConfig(
             train_data="datasets/abc123.jsonl",
@@ -937,10 +930,9 @@ class TestResolveTrainingData:
         loop = asyncio.get_event_loop()
         train_out, eval_out = await acts._resolve_training_data(config, loop)
 
-        assert Path(train_out).name == "train.jsonl"
-        assert Path(train_out).exists()
-        assert Path(eval_out).name == "eval.jsonl"
-        assert Path(eval_out).exists()
+        assert train_out == "datasets/abc123.jsonl"
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_derives_eval_key_from_train_parent_when_eval_not_configured(
@@ -950,16 +942,7 @@ class TestResolveTrainingData:
         import asyncio
         import interactors.temporal.activities as acts
 
-        downloaded: list[str] = []
-
-        def fake_download(key: str, dest) -> None:
-            downloaded.append(key)
-            dest = Path(dest)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text("{}\n")
-
         mock_storage = MagicMock()
-        mock_storage.download.side_effect = fake_download
         monkeypatch.setattr(acts, "_storage", mock_storage)
         monkeypatch.chdir(tmp_path)
 
@@ -969,9 +952,11 @@ class TestResolveTrainingData:
             remote_backend="kaggle",
         )
         loop = asyncio.get_event_loop()
-        await acts._resolve_training_data(config, loop)
+        _, eval_out = await acts._resolve_training_data(config, loop)
 
-        assert "datasets/eval.jsonl" in downloaded
+        # Kaggle is S3-backed — keys are passed through; eval key is derived from train parent
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_skips_download_when_both_files_already_local(self, tmp_path, monkeypatch):

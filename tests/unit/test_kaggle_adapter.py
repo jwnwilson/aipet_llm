@@ -18,6 +18,9 @@ def _config(**kwargs) -> RemoteTrainConfig:
         model="HuggingFaceTB/SmolLM2-360M",
         train_data="data/train.jsonl",
         eval_data="data/eval.jsonl",
+        train_s3_key="data/workflow/test-run/train.jsonl",
+        eval_s3_key="data/workflow/test-run/eval.jsonl",
+        db_run_id="test-db-run-id",
         epochs=1,
         patience=3,
         warmup_ratio=0.05,
@@ -34,7 +37,7 @@ def _make_adapter(tmp_path: Path, monkeypatch) -> "KaggleTrainingAdapter":
 
 
 class TestRenderNotebook:
-    def test_notebook_sets_storage_backend_to_kaggle(self, tmp_path, monkeypatch):
+    def test_notebook_sets_storage_backend_to_s3(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)
         kernel_dir = tmp_path / "my-exp"
         kernel_dir.mkdir()
@@ -43,7 +46,8 @@ class TestRenderNotebook:
         nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
         source = "".join(nb["cells"][0]["source"])
         assert "STORAGE_BACKEND" in source
-        assert "'kaggle'" in source
+        assert "'s3'" in source
+        assert "'kaggle'" not in source
 
     def test_notebook_invokes_remote_worker(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)
@@ -59,7 +63,8 @@ class TestRenderNotebook:
         assert "subprocess" in source
         assert "run_module" not in source
 
-    def test_notebook_sets_kaggle_data_dir(self, tmp_path, monkeypatch):
+    def test_notebook_does_not_set_kaggle_data_dir(self, tmp_path, monkeypatch):
+        """KAGGLE_DATA_DIR must not appear — training data comes from S3."""
         adapter = _make_adapter(tmp_path, monkeypatch)
         kernel_dir = tmp_path / "my-exp"
         kernel_dir.mkdir()
@@ -67,10 +72,10 @@ class TestRenderNotebook:
 
         nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
         source = "".join(nb["cells"][0]["source"])
-        assert "KAGGLE_DATA_DIR" in source
-        assert "/kaggle/input/my-exp-data" in source
+        assert "KAGGLE_DATA_DIR" not in source
 
-    def test_notebook_sets_train_and_eval_data_keys_as_filenames(self, tmp_path, monkeypatch):
+    def test_notebook_sets_train_and_eval_data_keys_as_s3_keys(self, tmp_path, monkeypatch):
+        """TRAIN_DATA_KEY and EVAL_DATA_KEY must be the original S3 keys."""
         adapter = _make_adapter(tmp_path, monkeypatch)
         kernel_dir = tmp_path / "my-exp"
         kernel_dir.mkdir()
@@ -79,9 +84,11 @@ class TestRenderNotebook:
         nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
         source = "".join(nb["cells"][0]["source"])
         assert "TRAIN_DATA_KEY" in source
-        assert "train.jsonl" in source
+        assert "data/workflow/test-run/train.jsonl" in source
         assert "EVAL_DATA_KEY" in source
-        assert "eval.jsonl" in source
+        assert "data/workflow/test-run/eval.jsonl" in source
+        assert "S3_KEY_PREFIX" in source
+        assert "workflow/test-db-run-id" in source
 
     def test_notebook_installs_wheel_and_training_deps(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)

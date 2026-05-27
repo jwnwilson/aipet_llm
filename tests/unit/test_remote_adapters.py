@@ -34,16 +34,19 @@ def _config(**kwargs) -> RemoteTrainConfig:
 
 
 def _make_data(tmp_path: Path, **kwargs) -> RemoteTrainConfig:
-    """Create minimal train/eval files in tmp_path and return a config pointing at them.
+    """Return a config with S3 keys for train/eval data.
 
-    _stage_dataset now validates both files exist before uploading; using absolute
-    paths here avoids CWD-sensitivity and exercises the guard correctly.
+    _stage_dataset now requires train_s3_key and eval_s3_key (data comes from S3
+    directly; JSONL files are no longer staged in the Kaggle dataset).
     """
-    train = tmp_path / "train.jsonl"
-    eval_ = tmp_path / "eval.jsonl"
-    train.write_text('{"prompt":"p","completion":"c"}\n')
-    eval_.write_text('{"prompt":"p","completion":"c"}\n')
-    return _config(train_data=str(train), eval_data=str(eval_), **kwargs)
+    return _config(
+        train_data="data/workflow/test-run/train.jsonl",
+        eval_data="data/workflow/test-run/eval.jsonl",
+        train_s3_key="data/workflow/test-run/train.jsonl",
+        eval_s3_key="data/workflow/test-run/eval.jsonl",
+        db_run_id="test-db-run-id",
+        **kwargs,
+    )
 
 
 def _ok(stdout: str = "", stderr: str = "") -> MagicMock:
@@ -962,8 +965,8 @@ class TestKaggleAdapterProgress:
 class TestKaggleStagingOutput:
     """Verify _stage_dataset places the right files in staging before Kaggle upload.
 
-    If train.jsonl or eval.jsonl are missing from staging they won't exist on the
-    Kaggle filesystem and the kernel will raise the FileNotFoundError we've been chasing.
+    Training data (JSONL) is no longer staged — the Kaggle kernel downloads it from
+    S3 directly.  Only the project wheel must be present in the dataset.
     """
 
     def _stage(self, adapter, config, staging, monkeypatch, whl_name="fake.whl"):
@@ -973,21 +976,15 @@ class TestKaggleStagingOutput:
         )
         adapter._stage_dataset(config, staging, dataset_slug="test-exp-data")
 
-    def test_stage_dataset_includes_train_jsonl(self, tmp_path, monkeypatch):
+    def test_stage_dataset_does_not_include_jsonl(self, tmp_path, monkeypatch):
+        """JSONL files must NOT be staged — data comes from S3, not the Kaggle dataset."""
         adapter = KaggleTrainingAdapter()
         config = _make_data(tmp_path)
         staging = tmp_path / "staging"
         self._stage(adapter, config, staging, monkeypatch)
         staged = {f.name for f in staging.iterdir()}
-        assert "train.jsonl" in staged, f"train.jsonl missing from staging: {staged}"
-
-    def test_stage_dataset_includes_eval_jsonl(self, tmp_path, monkeypatch):
-        adapter = KaggleTrainingAdapter()
-        config = _make_data(tmp_path)
-        staging = tmp_path / "staging"
-        self._stage(adapter, config, staging, monkeypatch)
-        staged = {f.name for f in staging.iterdir()}
-        assert "eval.jsonl" in staged, f"eval.jsonl missing from staging: {staged}"
+        assert "train.jsonl" not in staged, "train.jsonl should not be staged (comes from S3)"
+        assert "eval.jsonl" not in staged, "eval.jsonl should not be staged (comes from S3)"
 
     def test_stage_dataset_includes_wheel(self, tmp_path, monkeypatch):
         adapter = KaggleTrainingAdapter()
@@ -997,15 +994,15 @@ class TestKaggleStagingOutput:
         wheels = [f for f in staging.iterdir() if f.suffix == ".whl"]
         assert wheels, f"No .whl found in staging: {list(staging.iterdir())}"
 
-    def test_stage_dataset_guard_raises_when_train_missing(self, tmp_path, monkeypatch):
-        """Pre-flight guard must fire before any upload attempt."""
+    def test_stage_dataset_guard_raises_when_s3_keys_missing(self, tmp_path, monkeypatch):
+        """Pre-flight guard must fire when train_s3_key / eval_s3_key are absent."""
         monkeypatch.setattr(
             "adapters.compute.kaggle.adapter.build_wheel",
             lambda root, dest: (dest / "fake.whl").touch(),
         )
         adapter = KaggleTrainingAdapter()
-        config = _config(train_data=str(tmp_path / "nonexistent.jsonl"))
-        with pytest.raises(FileNotFoundError, match="Training data not found"):
+        config = _config()  # no train_s3_key / eval_s3_key
+        with pytest.raises(ValueError, match="train_s3_key"):
             adapter._stage_dataset(config, tmp_path / "staging", dataset_slug="x")
 
 
@@ -1015,11 +1012,7 @@ class TestKaggleStagingOutput:
 
 
 class TestKaggleNotebookKernelSim:
-    """Simulate the Kaggle kernel environment to catch KAGGLE_DATA_DIR derivation bugs.
-
-    These tests run in milliseconds and catch the same class of errors that take
-    ~50 seconds to surface in an actual Kaggle kernel.
-    """
+    """Verify the rendered training notebook uses S3 for data and checkpoint storage."""
 
     def _cell_source(self, tmp_path) -> str:
         """Render notebook via _render_notebook and return the single cell source."""
@@ -1031,60 +1024,28 @@ class TestKaggleNotebookKernelSim:
         nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
         return "".join(nb["cells"][0]["source"])
 
-    def test_notebook_derives_data_dir_from_wheel_parent(self, tmp_path):
+    def test_notebook_sets_storage_backend_to_s3(self, tmp_path):
         source = self._cell_source(tmp_path)
-        assert "_data_dir = str(pathlib.Path(whl).parent)" in source
+        assert "'STORAGE_BACKEND': 's3'" in source
 
-    def test_notebook_sets_kaggle_data_dir_env_var(self, tmp_path):
+    def test_notebook_does_not_set_kaggle_data_dir(self, tmp_path):
+        """KAGGLE_DATA_DIR must not appear — data comes from S3, not the Kaggle dataset."""
         source = self._cell_source(tmp_path)
-        # KAGGLE_DATA_DIR is passed via the subprocess env dict, not set on os.environ directly.
-        assert "'KAGGLE_DATA_DIR': _data_dir" in source
+        assert "KAGGLE_DATA_DIR" not in source
+
+    def test_notebook_sets_s3_key_prefix(self, tmp_path):
+        source = self._cell_source(tmp_path)
+        assert "'S3_KEY_PREFIX'" in source
+        assert "workflow/test-db-run-id" in source
+
+    def test_notebook_sets_train_and_eval_s3_keys(self, tmp_path):
+        source = self._cell_source(tmp_path)
+        assert "'TRAIN_DATA_KEY'" in source
+        assert "data/workflow/test-run/train.jsonl" in source
+        assert "'EVAL_DATA_KEY'" in source
+        assert "data/workflow/test-run/eval.jsonl" in source
 
     def test_notebook_wheel_glob_covers_new_kaggle_mount_path(self, tmp_path):
         """New Kaggle path /kaggle/input/datasets/<owner>/<slug>/ needs a recursive glob."""
         source = self._cell_source(tmp_path)
         assert "recursive=True" in source
-
-    def test_data_dir_derivation_exec_with_new_mount_path(self, tmp_path):
-        """Golden end-to-end test: exec the notebook's glob logic in a controlled namespace.
-
-        Simulates the new Kaggle mount structure and verifies the full chain:
-        notebook glob → _data_dir derivation → KaggleLocalStorageAdapter.download()
-
-        This is the test that would have caught every KAGGLE_DATA_DIR bug without
-        needing to run a real Kaggle kernel.
-        """
-        slug = "smoke-test-model-data"
-        new_mount = tmp_path / "kaggle" / "input" / "datasets" / "noelwilson" / slug
-        new_mount.mkdir(parents=True)
-        (new_mount / "llm_api-0.1.0-py3-none-any.whl").touch()
-        (new_mount / "train.jsonl").write_text('{"prompt":"p","completion":"c"}\n')
-        (new_mount / "eval.jsonl").write_text('{"prompt":"p","completion":"c"}\n')
-
-        # Reproduce the notebook's wheel-discovery logic against tmp_path instead of /kaggle/input/
-        base = str(tmp_path / "kaggle" / "input")
-        ns: dict = {}
-        exec(  # noqa: S102  (intentional — testing generated notebook code)
-            f"""
-import glob, pathlib
-_whl_list = (
-    glob.glob('{base}/{slug}/*.whl') or
-    glob.glob('{base}/**/{slug}/*.whl', recursive=True)
-)
-whl = _whl_list[0] if _whl_list else None
-_data_dir = str(pathlib.Path(whl).parent) if whl else None
-""",
-            ns,
-        )
-
-        assert ns["_data_dir"] == str(new_mount), (
-            f"_data_dir={ns['_data_dir']!r} does not match expected {new_mount!r}. "
-            f"KaggleLocalStorageAdapter would look for train.jsonl in the wrong directory."
-        )
-
-        # Chain: confirm the storage adapter can download train.jsonl from that derived path
-        storage = KaggleLocalStorageAdapter(
-            data_dir=Path(ns["_data_dir"]), work_dir=tmp_path / "work"
-        )
-        storage.download("train.jsonl", tmp_path / "out.jsonl")
-        assert (tmp_path / "out.jsonl").exists()
