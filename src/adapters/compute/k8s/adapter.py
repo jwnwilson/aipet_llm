@@ -62,6 +62,7 @@ class K8sPodAdapter(PodLifecyclePort):
                 image_pull_secrets=[
                     k8s_client.V1LocalObjectReference(name=image_pull_secret)
                 ],
+                affinity=K8sTrainingAdapter._worker_node_affinity(),
                 containers=[
                     k8s_client.V1Container(
                         name="inference-worker",
@@ -261,6 +262,53 @@ class K8sTrainingAdapter(RemoteJobPort):
             ),
         ]
 
+    @staticmethod
+    def _worker_node_affinity() -> "k8s_client.V1Affinity":
+        """Return affinity that hard-excludes control-plane nodes and prefers
+        the high-memory worker (rasp-worker-16gb-05).
+
+        Prevents training/export jobs from landing on the k3s master, which
+        runs the API server + SQLite DB and has limited headroom. Scheduling a
+        4-8 Gi training container there can OOM-kill the k3s process and wipe
+        the cluster database.
+        """
+        return k8s_client.V1Affinity(
+            node_affinity=k8s_client.V1NodeAffinity(
+                # Hard rule: never schedule on master / control-plane nodes.
+                required_during_scheduling_ignored_during_execution=k8s_client.V1NodeSelector(
+                    node_selector_terms=[
+                        k8s_client.V1NodeSelectorTerm(
+                            match_expressions=[
+                                k8s_client.V1NodeSelectorRequirement(
+                                    key="node-role.kubernetes.io/control-plane",
+                                    operator="DoesNotExist",
+                                ),
+                                k8s_client.V1NodeSelectorRequirement(
+                                    key="node-role.kubernetes.io/master",
+                                    operator="DoesNotExist",
+                                ),
+                            ]
+                        )
+                    ]
+                ),
+                # Soft rule: prefer the 16 GB worker node for large training jobs.
+                preferred_during_scheduling_ignored_during_execution=[
+                    k8s_client.V1PreferredSchedulingTerm(
+                        weight=100,
+                        preference=k8s_client.V1NodeSelectorTerm(
+                            match_expressions=[
+                                k8s_client.V1NodeSelectorRequirement(
+                                    key="kubernetes.io/hostname",
+                                    operator="In",
+                                    values=["rasp-worker-16gb-05"],
+                                )
+                            ]
+                        ),
+                    )
+                ],
+            )
+        )
+
     def _create_job(
         self,
         job_name: str,
@@ -290,6 +338,7 @@ class K8sTrainingAdapter(RemoteJobPort):
                         image_pull_secrets=[
                             k8s_client.V1LocalObjectReference(name=pull_secret)
                         ],
+                        affinity=self._worker_node_affinity(),
                         containers=[
                             k8s_client.V1Container(
                                 name="worker",
