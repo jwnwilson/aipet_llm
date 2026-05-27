@@ -3,12 +3,12 @@
 - Create skill to consolidate learnings from session and update memory of claude.md then compact context.
 
 - Focus on kaggle + K8 + runpod for now
-    - validate training working
-    - runpod is working but failed due to how we are booting workers this is fixable
+    - validate export is working
+    - Need better logging visibility and progress visualisation on ui.
+        - Logs need to stream to UI.
 - Fix kaggle and verify vastai runpod training works
     - All erroring unable to find training data
 - Break up training and eval jobs, make eval not stop the workflow
-- Setup test from training to running inference locally on k8 or remotely on a 3rd party.
 
 ## Better llm-api architecture
 - Setup functionality to set a model to "active"
