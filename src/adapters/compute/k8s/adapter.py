@@ -40,8 +40,10 @@ class K8sPodAdapter(PodLifecyclePort):
             )
         try:
             k8s_config.load_incluster_config()
+            log.info("K8sPodAdapter: loaded in-cluster kubeconfig")
         except k8s_config.ConfigException:
             k8s_config.load_kube_config()
+            log.info("K8sPodAdapter: loaded local kubeconfig (~/.kube/config)")
         self._core = k8s_client.CoreV1Api()
 
     def create_pod(
@@ -55,6 +57,13 @@ class K8sPodAdapter(PodLifecyclePort):
         image = os.environ.get("INFERENCE_WORKER_IMAGE", "llm-inference:latest")
         image_pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
         labels = {"app": "llm-inference", "model-id": model_id, "pod-name": pod_name}
+
+        log.info(
+            "create_pod: pod_name=%s model_id=%s namespace=%s image=%s "
+            "model_path=%s pull_secret=%s labels=%s",
+            pod_name, model_id, namespace, image, model_path, image_pull_secret, labels,
+        )
+
         pod = k8s_client.V1Pod(
             metadata=k8s_client.V1ObjectMeta(name=pod_name, labels=labels),
             spec=k8s_client.V1PodSpec(
@@ -86,8 +95,32 @@ class K8sPodAdapter(PodLifecyclePort):
                 type="ClusterIP",
             ),
         )
-        self._core.create_namespaced_pod(namespace=namespace, body=pod)
-        self._core.create_namespaced_service(namespace=namespace, body=svc)
+
+        try:
+            result = self._core.create_namespaced_pod(namespace=namespace, body=pod)
+            log.info(
+                "create_pod: pod created — uid=%s phase=%s node=%s",
+                result.metadata.uid,
+                result.status.phase if result.status else "unknown",
+                result.spec.node_name if result.spec else "unscheduled",
+            )
+        except Exception as exc:
+            log.error(
+                "create_pod: FAILED to create pod %s in namespace %s: %s",
+                pod_name, namespace, exc,
+            )
+            raise
+
+        try:
+            self._core.create_namespaced_service(namespace=namespace, body=svc)
+            log.info("create_pod: ClusterIP service %s created in namespace %s", pod_name, namespace)
+        except Exception as exc:
+            log.error(
+                "create_pod: FAILED to create service %s in namespace %s: %s",
+                pod_name, namespace, exc,
+            )
+            raise
+
         return pod_name
 
     def pod_status(
@@ -99,6 +132,37 @@ class K8sPodAdapter(PodLifecyclePort):
         try:
             pod = self._core.read_namespaced_pod(name=pod_name, namespace=namespace)
             phase = (pod.status.phase or "").lower()
+
+            # Log container states so we can see ImagePullBackOff / CrashLoopBackOff etc.
+            if pod.status and pod.status.container_statuses:
+                for cs in pod.status.container_statuses:
+                    state = cs.state
+                    if state.waiting:
+                        log.warning(
+                            "pod_status: pod=%s container=%s WAITING reason=%s message=%s",
+                            pod_name, cs.name, state.waiting.reason, state.waiting.message,
+                        )
+                    elif state.terminated:
+                        log.warning(
+                            "pod_status: pod=%s container=%s TERMINATED exit_code=%s reason=%s message=%s",
+                            pod_name, cs.name, state.terminated.exit_code,
+                            state.terminated.reason, state.terminated.message,
+                        )
+                    else:
+                        log.debug(
+                            "pod_status: pod=%s container=%s ready=%s restarts=%s",
+                            pod_name, cs.name, cs.ready, cs.restart_count,
+                        )
+            elif pod.status and pod.status.conditions:
+                for cond in pod.status.conditions:
+                    if cond.status != "True":
+                        log.debug(
+                            "pod_status: pod=%s condition %s=%s reason=%s message=%s",
+                            pod_name, cond.type, cond.status, cond.reason, cond.message,
+                        )
+
+            log.debug("pod_status: pod=%s raw_phase=%r", pod_name, phase)
+
             if phase == "running":
                 return "running"
             if phase in ("failed", "error"):
@@ -106,7 +170,8 @@ class K8sPodAdapter(PodLifecyclePort):
             if phase in ("pending", ""):
                 return "pending"
             return "unknown"
-        except Exception:
+        except Exception as exc:
+            log.warning("pod_status: could not read pod %s in namespace %s: %s", pod_name, namespace, exc)
             return "unknown"
 
     def delete_pod(self, pod_name: str, namespace: str = "default") -> None:
