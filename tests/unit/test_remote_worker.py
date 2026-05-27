@@ -98,7 +98,7 @@ class TestRemoteWorkerHappyPath:
         assert float(kw["warmup_ratio"]) == pytest.approx(0.05)
         assert kw.get("progress_path") is not None, "progress_path must be passed"
 
-    def test_uploads_checkpoint_files_to_s3_prefix(self, monkeypatch, tmp_path):
+    def test_uploads_checkpoint_tarball_to_s3_prefix(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
         checkpoint_dir = tmp_path / "checkpoint"
         checkpoint_dir.mkdir()
@@ -107,8 +107,8 @@ class TestRemoteWorkerHappyPath:
         storage, _ = _run_worker(monkeypatch, tmp_path)
 
         upload_keys = [c.args[1] for c in storage.upload.call_args_list]
-        assert any("checkpoint/" in k for k in upload_keys), (
-            f"Expected checkpoint/ key in uploads, got: {upload_keys}"
+        assert any(k.endswith("checkpoint.tar.gz") for k in upload_keys), (
+            f"Expected checkpoint.tar.gz in uploads, got: {upload_keys}"
         )
 
     def test_calls_domain_evaluate_and_writes_eval_result(self, monkeypatch, tmp_path):

@@ -54,7 +54,10 @@ class TestRenderNotebook:
         nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
         source = "".join(nb["cells"][0]["source"])
         assert "remote_worker" in source
-        assert "run_module" in source
+        # Must use subprocess so remote_worker starts in a fresh process with
+        # packages already installed — matching K8s/RunPod behaviour.
+        assert "subprocess" in source
+        assert "run_module" not in source
 
     def test_notebook_sets_kaggle_data_dir(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)
@@ -93,16 +96,9 @@ class TestRenderNotebook:
         assert "pip" in source and "install" in source
         assert "transformers" in source
         assert "datasets" in source
-        # importlib.invalidate_caches() must follow pip installs so the running process
-        # sees packages installed by subprocess pip without restarting the interpreter.
-        assert "importlib.invalidate_caches" in source
-        # Pre-import must use the exact class names from trainer.py (not just
-        # 'import transformers' which only loads the lazy proxy and always succeeds).
-        assert "AutoModelForCausalLM" in source
-        assert "DataCollatorForSeq2Seq" in source
-        # Stale domain modules must be flushed so a reused kernel process doesn't
-        # keep trainer.py cached with _TRANSFORMERS_AVAILABLE=False.
-        assert "sys.modules" in source and "domain." in source
+        # No importlib cache hacks or domain-specific pre-imports — env setup only.
+        assert "importlib" not in source
+        assert "sys.modules" not in source
 
 
 class TestDownload:

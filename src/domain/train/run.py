@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import tarfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -162,18 +163,22 @@ def run(
         json.dumps({"fraction": 0.9, "detail": "uploading checkpoint"}).encode(),
     )
 
-    # 5. Upload checkpoint files individually via StoragePort
+    # 5. Package checkpoint into a tarball and upload to {prefix}/checkpoint.tar.gz
+    # The eval script (adapters/compute/runpod/eval_script.py) downloads this
+    # exact key and extracts it with arcname="checkpoints".
     if not checkpoint_dir.exists() or not any(checkpoint_dir.iterdir()):
         log.error("checkpoint directory empty or missing: %s", checkpoint_dir)
         storage.write_bytes(f"{prefix}/status.txt", b"failed")
         raise RuntimeError(f"Checkpoint directory not found or empty: {checkpoint_dir}")
 
-    for local_file in checkpoint_dir.rglob("*"):
-        if not local_file.is_file():
-            continue
-        s3_key = f"{prefix}/checkpoint/{local_file.relative_to(checkpoint_dir)}"
-        log.info("uploading %s → %s", local_file.name, s3_key)
-        storage.upload(local_file, s3_key)
+    archive = Path("/tmp/checkpoint.tar.gz")
+    log.info("packaging checkpoint → %s", archive)
+    with tarfile.open(archive, "w:gz") as tf:
+        tf.add(checkpoint_dir, arcname="checkpoints")
+    s3_key = f"{prefix}/checkpoint.tar.gz"
+    log.info("uploading checkpoint archive → %s", s3_key)
+    storage.upload(archive, s3_key)
+    archive.unlink(missing_ok=True)
 
     storage.write_bytes(
         f"{prefix}/progress.json",

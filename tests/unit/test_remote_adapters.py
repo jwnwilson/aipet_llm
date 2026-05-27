@@ -1037,7 +1037,8 @@ class TestKaggleNotebookKernelSim:
 
     def test_notebook_sets_kaggle_data_dir_env_var(self, tmp_path):
         source = self._cell_source(tmp_path)
-        assert "os.environ['KAGGLE_DATA_DIR'] = _data_dir" in source
+        # KAGGLE_DATA_DIR is passed via the subprocess env dict, not set on os.environ directly.
+        assert "'KAGGLE_DATA_DIR': _data_dir" in source
 
     def test_notebook_wheel_glob_covers_new_kaggle_mount_path(self, tmp_path):
         """New Kaggle path /kaggle/input/datasets/<owner>/<slug>/ needs a recursive glob."""

@@ -30,5 +30,5 @@ variable "s3_bucket" {
 variable "vps_ip" {
   description = "Public IP of the VPS / inlets exit node — used for the llm-api DNS A record"
   type        = string
-  default     = "167.71.134.141"
+  default     = "134.209.177.2"
 }

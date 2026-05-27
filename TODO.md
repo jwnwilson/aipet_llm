@@ -1,7 +1,10 @@
 #TODO
 
-- Focus on kaggle + K8 for now
+- Create skill to consolidate learnings from session and update memory of claude.md then compact context.
+
+- Focus on kaggle + K8 + runpod for now
     - validate training working
+    - runpod is working but failed due to how we are booting workers this is fixable
 - Fix kaggle and verify vastai runpod training works
     - All erroring unable to find training data
 - Break up training and eval jobs, make eval not stop the workflow
