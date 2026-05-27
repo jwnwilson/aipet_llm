@@ -31,7 +31,8 @@ from pathlib import Path
 
 _SCRIPT = Path(__file__).parent / "smoke_test.py"
 
-_ALL_BACKENDS = ["k8s", "kaggle"]
+_ALL_BACKENDS = ["k8s"]
+# _ALL_BACKENDS = ["k8s", "kaggle", "runpod"]  # enable all when runpod supports private images
 
 # ANSI colours — one per backend, falls back gracefully on dumb terminals.
 _COLOURS = {

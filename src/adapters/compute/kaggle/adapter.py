@@ -230,7 +230,6 @@ class KaggleTrainingAdapter(RemoteJobPort):
 
         self._render_eval_notebook(
             training_run_id=training_kernel_slug,
-            eval_data=spec.eval_data,
             experiment_name=experiment_name,
             kernel_dir=kernel_dir,
         )
@@ -417,7 +416,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
         (kernel_dir / "notebook.ipynb").write_text(json.dumps(notebook, indent=1))
 
     def _render_eval_notebook(
-        self, training_run_id: str, eval_data: str, experiment_name: str, kernel_dir: Path
+        self, training_run_id: str, experiment_name: str, kernel_dir: Path
     ) -> None:
         template_path = Path(__file__).parent / "eval_notebook_template.ipynb"
         notebook = json.loads(template_path.read_text())
@@ -425,7 +424,10 @@ class KaggleTrainingAdapter(RemoteJobPort):
         config_repr = repr({
             "training_run_id": training_run_id,
             "experiment_name": experiment_name,
-            "eval_data_file": Path(eval_data).name,
+            # _stage_dataset always downloads data locally as eval.jsonl before
+            # copying to Kaggle, so the dataset always contains "eval.jsonl"
+            # regardless of the S3 key name (which may be a UUID-based path).
+            "eval_data_file": "eval.jsonl",
             "dataset_slug": _slugify(f"{experiment_name}-data"),
         })
 
