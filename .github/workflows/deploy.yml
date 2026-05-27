@@ -172,6 +172,13 @@ jobs:
             --from-literal=auth0-mgmt-client-secret=${{ secrets.AUTH0_MGMT_CLIENT_SECRET }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Sync inlets-client-secret in k8s
+        run: |
+          kubectl create secret generic inlets-client-secret \
+            --from-literal=token=${{ secrets.INLETS_TOKEN }} \
+            --from-literal=license=${{ secrets.INLETS_LICENSE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Sync llm-api-db-secret in k8s
         run: |
           kubectl create secret generic llm-api-db-secret \
@@ -220,6 +227,9 @@ jobs:
             infra/k8s/temporal/worker.yaml
           sed -i "s|<TEMPORAL_UI_IMAGE>|$TEMPORAL_UI_IMAGE|g" \
             infra/k8s/temporal/server.yaml
+          # Stamp inlets exit-node IP into the static tunnel client manifest
+          sed -i "s|<INLETS_SERVER_IP>|${{ secrets.INLETS_SERVER_IP }}|g" \
+            infra/k8s/inlets/client.yaml
           # Apply and wait for the database before rolling out the app so that
           # db_migrate can resolve the "llm-api-db" hostname on first boot.
           kubectl apply -f infra/k8s/llm-api/postgres.yaml

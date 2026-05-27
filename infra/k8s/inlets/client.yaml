@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inlets-client
+  namespace: default
+  labels:
+    app: inlets-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inlets-client
+  template:
+    metadata:
+      labels:
+        app: inlets-client
+    spec:
+      containers:
+        - name: inlets-client
+          image: ghcr.io/inlets/inlets-pro:0.10.4
+          command:
+            - inlets-pro
+          args:
+            - tcp
+            - client
+            - --url=wss://<INLETS_SERVER_IP>:8123/connect
+            - --token-file=/var/inlets/token
+            - --upstream=ingress-nginx-controller
+            - --ports=80,443,8443
+            - --license-file=/var/inlets/license
+          volumeMounts:
+            - name: inlets-client-secret
+              mountPath: /var/inlets/token
+              subPath: token
+              readOnly: true
+            - name: inlets-client-secret
+              mountPath: /var/inlets/license
+              subPath: license
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: inlets-client-secret
+          secret:
+            secretName: inlets-client-secret
+      # Keep the tunnel client off the master to avoid consuming control-plane resources
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+                  - key: node-role.kubernetes.io/master
+                    operator: DoesNotExist

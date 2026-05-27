@@ -2,6 +2,16 @@ provider "aws" {
   region = var.aws_region
 }
 
+provider "digitalocean" {
+  token = var.do_token
+}
+
+module "inlets_exit_node" {
+  source         = "./modules/inlets_exit_node"
+  inlets_token   = var.inlets_token
+  inlets_license = var.inlets_license
+}
+
 module "ecr" {
   source                = "./modules/ecr"
   repo_name             = var.repo_name
@@ -77,8 +87,8 @@ module "iam" {
 }
 
 module "dns" {
-  source       = "./modules/dns"
-  vps_ip       = var.vps_ip
+  source           = "./modules/dns"
+  vps_ip           = module.inlets_exit_node.reserved_ip
   ui_cf_domain     = module.s3_ui.cloudfront_domain
   create_ui_record = true
 }

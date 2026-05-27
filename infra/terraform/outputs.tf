@@ -73,3 +73,8 @@ output "ui_fqdn" {
   description = "Public URL for the UI"
   value       = module.dns.ui_fqdn
 }
+
+output "inlets_exit_node_ip" {
+  description = "Reserved IP for the inlets exit node — set as INLETS_SERVER_IP GitHub Actions secret after apply"
+  value       = module.inlets_exit_node.reserved_ip
+}

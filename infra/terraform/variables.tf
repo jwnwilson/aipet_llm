@@ -28,7 +28,25 @@ variable "s3_bucket" {
 }
 
 variable "vps_ip" {
-  description = "Public IP of the VPS / inlets exit node — used for the llm-api DNS A record"
+  description = "Fallback public IP for the llm-api DNS A record — overridden by inlets_exit_node reserved IP when the module is applied"
   type        = string
-  default     = "134.209.177.2"
+  default     = "178.62.70.159"
+}
+
+variable "do_token" {
+  description = "DigitalOcean personal access token — set via TF_VAR_do_token or a .tfvars file (never commit the value)"
+  type        = string
+  sensitive   = true
+}
+
+variable "inlets_token" {
+  description = "Auth token for the inlets-pro tunnel (shared between the DO exit node and the k8s client Secret)"
+  type        = string
+  sensitive   = true
+}
+
+variable "inlets_license" {
+  description = "inlets-pro license key (written to the DO exit node and mounted in the k8s client pod)"
+  type        = string
+  sensitive   = true
 }
