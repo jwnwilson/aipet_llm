@@ -61,14 +61,14 @@ class _ProgressPoller(threading.Thread):
         self._prefix = prefix
         self._local_path = local_path
         self._interval = interval
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
 
     def run(self) -> None:
-        while not self._stop.wait(timeout=self._interval):
+        while not self._stop_event.wait(timeout=self._interval):
             self._upload()
 
     def stop(self) -> None:
-        self._stop.set()
+        self._stop_event.set()
         self._upload()  # final upload after training ends
 
     def _upload(self) -> None:
