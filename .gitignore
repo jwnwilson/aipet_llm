@@ -49,3 +49,4 @@ infra/terraform/**/.terraform.lock.hcl
 
 # Brainstorming visual companion
 .superpowers/
+.worktrees/

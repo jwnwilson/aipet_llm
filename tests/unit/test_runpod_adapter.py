@@ -140,6 +140,19 @@ class TestRunPodAdapterDownload:
         assert env["EVAL_DATA_KEY"] == "runpod/my-exp-abc123/data/eval.jsonl"
         assert env["STORAGE_BACKEND"] == "s3"
 
+    def test_build_pod_env_includes_runpod_api_key(self, monkeypatch, tmp_path):
+        """RUNPOD_API_KEY must be forwarded to the pod so it can self-terminate.
+
+        Without this the bootstrap cannot call runpod.terminate_pod() and the
+        pod loops indefinitely because RunPod restarts it when the process exits.
+        """
+        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+        env = adapter._build_pod_env("runpod/my-exp-abc123", _config())
+        assert "RUNPOD_API_KEY" in env, (
+            "Pod env must contain RUNPOD_API_KEY so bootstrap can self-terminate"
+        )
+        assert env["RUNPOD_API_KEY"] == "fake-runpod-key"
+
 
 class TestRunPodAdapterLogs:
     def test_terminate_pod_terminates_without_archiving_logs(self, monkeypatch, tmp_path):
