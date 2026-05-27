@@ -233,7 +233,7 @@ class TrainingPipelineWorkflow:
                     checkpoint_path=result.checkpoint.path,
                     gguf_output=config.gguf_output,
                     run_id=result.checkpoint.run_id,
-                    remote_backend=result.checkpoint.remote_backend,
+                    remote_backend="k8s",  # export always runs on k8s
                     model_id=config.model_id,
                     pipeline_run_id=config.run_id,
                     model_name=config.model_name,
@@ -391,7 +391,7 @@ class ExportWorkflow:
                     checkpoint_path=config.checkpoint_path,
                     gguf_output=config.gguf_output,
                     run_id=config.remote_run_id,
-                    remote_backend=config.remote_backend,
+                    remote_backend="k8s",  # export always runs on k8s
                     model_id=config.model_id,
                     pipeline_run_id=config.run_id,
                 ),
