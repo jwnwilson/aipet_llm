@@ -230,12 +230,64 @@ jobs:
           # db_migrate can resolve the "llm-api-db" hostname on first boot.
           kubectl apply -f infra/k8s/llm-api/postgres.yaml
           kubectl rollout status statefulset/llm-api-db --timeout=120s
-          find infra/k8s/ -name '*.yaml' ! -name '*.example.yaml' | sort | xargs -I{} kubectl apply -f {}
+          # Exclude infra/k8s/nginx/ — the ingress-nginx Service is owned by Rancher's
+          # Helm App. Applying it here strips Helm labels, triggering Rancher to delete
+          # and recreate the Service, which GC-s the inlets Tunnel CRD and forces a new
+          # DigitalOcean droplet (new IP), breaking DNS on every deploy.
+          # Use infra/k8s/nginx/service.yaml manually only during cluster-wipe recovery.
+          find infra/k8s/ -name '*.yaml' ! -name '*.example.yaml' ! -path '*/nginx/*' | sort | xargs -I{} kubectl apply -f {}
 
       - name: Wait for rollouts
         run: |
           kubectl rollout status deployment/llm-api --timeout=600s
           kubectl rollout status deployment/temporal-worker --timeout=600s
+
+      - name: Sync Route53 DNS to current inlets exit-node IP
+        run: |
+          # Read the public IP the inlets-operator has assigned to the tunnel.
+          TUNNEL_IP=$(kubectl get tunnel ingress-nginx-controller-tunnel \
+            -o jsonpath='{.status.hostIP}' 2>/dev/null || true)
+          if [ -z "$TUNNEL_IP" ]; then
+            echo "WARNING: could not read tunnel IP — skipping DNS sync"
+            exit 0
+          fi
+          echo "Tunnel IP: $TUNNEL_IP"
+
+          # Locate the hosted zone.
+          ZONE_ID=$(aws route53 list-hosted-zones \
+            --query "HostedZones[?Name=='jwnwilson.co.uk.'].Id" \
+            --output text | sed 's|/hostedzone/||')
+          echo "Zone ID: $ZONE_ID"
+
+          # Collect every A record whose value differs from the current tunnel IP
+          # and build a Route53 batch-change JSON to upsert them all at once.
+          CHANGES=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[?Type=='A'].{Name:Name,Value:ResourceRecords[0].Value}" \
+            --output json \
+            | python3 -c "
+          import json, sys
+          tunnel = '$TUNNEL_IP'
+          records = json.load(sys.stdin)
+          changes = [
+              {'Action': 'UPSERT', 'ResourceRecordSet': {
+                  'Name': r['Name'], 'Type': 'A', 'TTL': 60,
+                  'ResourceRecords': [{'Value': tunnel}]}}
+              for r in records if r['Value'] != tunnel
+          ]
+          print(json.dumps({'Changes': changes}) if changes else '')
+          ")
+
+          if [ -z "$CHANGES" ]; then
+            echo "All A records already point to $TUNNEL_IP — no update needed"
+            exit 0
+          fi
+
+          echo "Updating stale A records to $TUNNEL_IP"
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --change-batch "$CHANGES"
+          echo "DNS sync complete"
 
       - name: Install smoke test dependencies
         run: pip install httpx
