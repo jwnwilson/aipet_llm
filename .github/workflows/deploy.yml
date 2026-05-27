@@ -244,50 +244,13 @@ jobs:
 
       - name: Sync Route53 DNS to current inlets exit-node IP
         run: |
-          # Read the public IP the inlets-operator has assigned to the tunnel.
           TUNNEL_IP=$(kubectl get tunnel ingress-nginx-controller-tunnel \
             -o jsonpath='{.status.hostIP}' 2>/dev/null || true)
           if [ -z "$TUNNEL_IP" ]; then
             echo "WARNING: could not read tunnel IP — skipping DNS sync"
             exit 0
           fi
-          echo "Tunnel IP: $TUNNEL_IP"
-
-          # Locate the hosted zone.
-          ZONE_ID=$(aws route53 list-hosted-zones \
-            --query "HostedZones[?Name=='jwnwilson.co.uk.'].Id" \
-            --output text | sed 's|/hostedzone/||')
-          echo "Zone ID: $ZONE_ID"
-
-          # Collect every A record whose value differs from the current tunnel IP
-          # and build a Route53 batch-change JSON to upsert them all at once.
-          CHANGES=$(aws route53 list-resource-record-sets \
-            --hosted-zone-id "$ZONE_ID" \
-            --query "ResourceRecordSets[?Type=='A'].{Name:Name,Value:ResourceRecords[0].Value}" \
-            --output json \
-            | python3 -c "
-          import json, sys
-          tunnel = '$TUNNEL_IP'
-          records = json.load(sys.stdin)
-          changes = [
-              {'Action': 'UPSERT', 'ResourceRecordSet': {
-                  'Name': r['Name'], 'Type': 'A', 'TTL': 60,
-                  'ResourceRecords': [{'Value': tunnel}]}}
-              for r in records if r['Value'] != tunnel
-          ]
-          print(json.dumps({'Changes': changes}) if changes else '')
-          ")
-
-          if [ -z "$CHANGES" ]; then
-            echo "All A records already point to $TUNNEL_IP — no update needed"
-            exit 0
-          fi
-
-          echo "Updating stale A records to $TUNNEL_IP"
-          aws route53 change-resource-record-sets \
-            --hosted-zone-id "$ZONE_ID" \
-            --change-batch "$CHANGES"
-          echo "DNS sync complete"
+          TUNNEL_IP="$TUNNEL_IP" python3 scripts/sync_route53_dns.py
 
       - name: Install smoke test dependencies
         run: pip install httpx
