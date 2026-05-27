@@ -79,6 +79,22 @@ class StoragePort(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement download_directory")
 
+    def upload_directory(self, local_dir: Path, prefix: str) -> None:
+        """Upload all files under ``local_dir`` to storage, keyed as ``{prefix}/{relative_path}``.
+
+        ``prefix`` must NOT end with ``/``.  Symmetric counterpart to
+        ``download_directory``: calling ``upload_directory(d, p)`` followed by
+        ``download_directory(p + '/', dest)`` reproduces ``d`` under ``dest``.
+
+        The default implementation iterates files and delegates to ``self.upload()``,
+        which every concrete adapter must implement.  Adapters may override for
+        efficiency (e.g. parallel S3 multipart uploads).
+        """
+        for file_path in sorted(Path(local_dir).rglob("*")):
+            if file_path.is_file():
+                relative = file_path.relative_to(local_dir)
+                self.upload(file_path, f"{prefix}/{relative}")
+
 
 class InferencePort(ABC):
     """Abstract interface the domain layer expects from any LLM inference backend.

@@ -212,3 +212,80 @@ class TestLocalStorageAdapterDelete:
         adapter.delete("gguf/model.gguf")
 
         assert adapter.exists("gguf/model.gguf") is False
+
+
+# ---------------------------------------------------------------------------
+# StoragePort.upload_directory — default implementation
+# ---------------------------------------------------------------------------
+
+
+class TestStoragePortUploadDirectory:
+    """Tests for StoragePort.upload_directory using LocalStorageAdapter.
+
+    The default implementation lives on the base class and delegates to
+    upload() — so these tests exercise the contract that every adapter
+    inherits, not a LocalStorageAdapter-specific path.
+    """
+
+    def test_uploads_all_files_with_correct_keys(self, tmp_path: Path) -> None:
+        base = tmp_path / "store"
+        src = tmp_path / "checkpoint"
+        src.mkdir()
+        (src / "config.json").write_bytes(b'{"model_type": "gpt2"}')
+        (src / "model.safetensors").write_bytes(b"weights")
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.upload_directory(src, "workflow/abc/checkpoint")
+
+        assert (base / "workflow" / "abc" / "checkpoint" / "config.json").read_bytes() == b'{"model_type": "gpt2"}'
+        assert (base / "workflow" / "abc" / "checkpoint" / "model.safetensors").read_bytes() == b"weights"
+
+    def test_preserves_nested_directory_structure(self, tmp_path: Path) -> None:
+        base = tmp_path / "store"
+        src = tmp_path / "checkpoint"
+        (src / "sub").mkdir(parents=True)
+        (src / "config.json").write_bytes(b"{}")
+        (src / "sub" / "tokenizer.json").write_bytes(b"tok")
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.upload_directory(src, "run/checkpoint")
+
+        assert (base / "run" / "checkpoint" / "config.json").exists()
+        assert (base / "run" / "checkpoint" / "sub" / "tokenizer.json").read_bytes() == b"tok"
+
+    def test_prefix_must_not_end_with_slash(self, tmp_path: Path) -> None:
+        """upload_directory does NOT append a trailing slash; keys are {prefix}/{rel}."""
+        base = tmp_path / "store"
+        src = tmp_path / "ckpt"
+        src.mkdir()
+        (src / "config.json").write_bytes(b"{}")
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.upload_directory(src, "run/checkpoint")  # no trailing slash
+
+        stored = base / "run" / "checkpoint" / "config.json"
+        assert stored.exists(), f"File not stored at expected key: {stored}"
+
+    def test_roundtrip_upload_then_download_directory(self, tmp_path: Path) -> None:
+        """upload_directory followed by download_directory reproduces the source tree."""
+        base = tmp_path / "store"
+        src = tmp_path / "checkpoint"
+        (src / "sub").mkdir(parents=True)
+        files = {
+            "config.json": b'{"model_type": "gpt2"}',
+            "model.safetensors": b"weights",
+            "sub/tokenizer.json": b"tok",
+        }
+        for rel, content in files.items():
+            (src / rel).write_bytes(content)
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.upload_directory(src, "workflow/abc/checkpoint")
+
+        dest = tmp_path / "restored"
+        adapter.download_directory("workflow/abc/checkpoint/", dest)
+
+        for rel, content in files.items():
+            restored = dest / rel
+            assert restored.exists(), f"Missing after roundtrip: {rel}"
+            assert restored.read_bytes() == content, f"Content mismatch for {rel}"
