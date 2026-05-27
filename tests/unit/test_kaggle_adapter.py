@@ -96,6 +96,13 @@ class TestRenderNotebook:
         # importlib.invalidate_caches() must follow pip installs so the running process
         # sees packages installed by subprocess pip without restarting the interpreter.
         assert "importlib.invalidate_caches" in source
+        # Pre-import must use the exact class names from trainer.py (not just
+        # 'import transformers' which only loads the lazy proxy and always succeeds).
+        assert "AutoModelForCausalLM" in source
+        assert "DataCollatorForSeq2Seq" in source
+        # Stale domain modules must be flushed so a reused kernel process doesn't
+        # keep trainer.py cached with _TRANSFORMERS_AVAILABLE=False.
+        assert "sys.modules" in source and "domain." in source
 
 
 class TestDownload:
