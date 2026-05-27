@@ -89,11 +89,29 @@ class StoragePort(ABC):
         The default implementation iterates files and delegates to ``self.upload()``,
         which every concrete adapter must implement.  Adapters may override for
         efficiency (e.g. parallel S3 multipart uploads).
+
+        Raises:
+            ValueError: if ``prefix`` ends with ``/``.
+            RuntimeError: if one or more files fail to upload (all files are
+                attempted; failures are collected and reported together).
         """
+        if prefix.endswith("/"):
+            raise ValueError(f"prefix must not end with '/': {prefix!r}")
+
+        failed: list[tuple[Path, Exception]] = []
         for file_path in sorted(Path(local_dir).rglob("*")):
             if file_path.is_file():
                 relative = file_path.relative_to(local_dir)
-                self.upload(file_path, f"{prefix}/{relative}")
+                try:
+                    self.upload(file_path, f"{prefix}/{relative}")
+                except Exception as exc:  # noqa: BLE001
+                    failed.append((file_path, exc))
+
+        if failed:
+            details = "; ".join(f"{p.name}: {e}" for p, e in failed)
+            raise RuntimeError(
+                f"upload_directory incomplete — {len(failed)} file(s) failed: {details}"
+            )
 
 
 class InferencePort(ABC):

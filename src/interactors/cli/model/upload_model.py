@@ -83,7 +83,10 @@ def main(argv: list[str] | None = None) -> None:
         print("Uploading …")
         try:
             with tqdm(total=tmp_path.stat().st_size, unit="B", unit_scale=True, desc="upload") as bar:
-                storage.upload(tmp_path, args.s3_key, callback=bar.update)
+                # Use boto3 directly so we can pass a progress callback.
+                # storage.upload() matches the port contract (no callback) and
+                # is used everywhere else; the tqdm progress bar is upload_model-only UX.
+                storage._s3.upload_file(str(tmp_path), storage._bucket, args.s3_key, Callback=bar.update)
         except Exception as exc:
             print(f"ERROR: upload failed — {exc}", file=sys.stderr)
             sys.exit(1)

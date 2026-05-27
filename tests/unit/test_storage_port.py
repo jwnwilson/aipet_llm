@@ -266,6 +266,17 @@ class TestStoragePortUploadDirectory:
         stored = base / "run" / "checkpoint" / "config.json"
         assert stored.exists(), f"File not stored at expected key: {stored}"
 
+    def test_raises_value_error_when_prefix_ends_with_slash(self, tmp_path: Path) -> None:
+        """Trailing slash on prefix generates double-slash keys — must be rejected."""
+        base = tmp_path / "store"
+        src = tmp_path / "ckpt"
+        src.mkdir()
+        (src / "config.json").write_bytes(b"{}")
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        with pytest.raises(ValueError, match="must not end with '/'"):
+            adapter.upload_directory(src, "run/checkpoint/")
+
     def test_roundtrip_upload_then_download_directory(self, tmp_path: Path) -> None:
         """upload_directory followed by download_directory reproduces the source tree."""
         base = tmp_path / "store"
