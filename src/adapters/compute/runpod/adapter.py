@@ -180,6 +180,10 @@ class RunPodTrainingAdapter(RemoteJobPort):
             "AWS_S3_BUCKET": os.environ["AWS_S3_BUCKET"],
             "RUN_ID": run_id,
             "JOB_TYPE": spec.job_type,
+            # Passed so the pod can self-terminate after the job completes,
+            # preventing RunPod's restart loop (desiredStatus=RUNNING causes
+            # the container to restart when the process exits).
+            "RUNPOD_API_KEY": os.environ["RUNPOD_API_KEY"],
         }
         if tok := os.environ.get("AWS_SESSION_TOKEN"):
             env["AWS_SESSION_TOKEN"] = tok
