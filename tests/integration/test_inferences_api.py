@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -83,12 +84,21 @@ def _make_store(instances: list[InferenceInstance] | None = None):
         _instances[id] = updated
         return updated
 
+    def _update_pod(id: str, pod_name: str, pod_namespace: str):
+        inst = _instances.get(id)
+        if inst is None:
+            return None
+        updated = inst.model_copy(update={"pod_name": pod_name, "pod_namespace": pod_namespace})
+        _instances[id] = updated
+        return updated
+
     store.list.side_effect = _list
     store.get.side_effect = _get
     store.create.side_effect = _create
     store.delete.side_effect = _delete
     store.update_status.side_effect = _update_status
     store.update_last_used.side_effect = _update_last_used
+    store.update_pod.side_effect = _update_pod
     return store, _instances
 
 
@@ -220,6 +230,58 @@ class TestStartInference:
         c, store, pod, _ = client
         resp = await c.post("/api/inferences/missing-id/start")
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_start_persists_non_empty_pod_name_before_creating_pod(self, client):
+        """start must call update_pod with a non-empty name so stop/delete never get ''."""
+        c, store, pod, instances = client
+        # Create with no explicit pod_name so it defaults to ""
+        create_resp = await c.post("/api/inferences", json={"model_id": "m1"})
+        inst_id = create_resp.json()["id"]
+
+        await c.post(f"/api/inferences/{inst_id}/start")
+        # Allow background task to run
+        await asyncio.sleep(0.05)
+
+        store.update_pod.assert_called_once()
+        _id, pod_name, _ns = store.update_pod.call_args[0]
+        assert _id == inst_id
+        assert pod_name  # non-empty
+        assert pod_name != ""
+
+    @pytest.mark.asyncio
+    async def test_start_passes_persisted_pod_name_to_create_pod(self, client):
+        """create_pod must receive the same name that was persisted via update_pod."""
+        c, store, pod, instances = client
+        create_resp = await c.post("/api/inferences", json={"model_id": "m1"})
+        inst_id = create_resp.json()["id"]
+
+        await c.post(f"/api/inferences/{inst_id}/start")
+        await asyncio.sleep(0.05)
+
+        persisted_name = store.update_pod.call_args[0][1]
+        pod.create_pod.assert_called_once()
+        assert pod.create_pod.call_args[1]["pod_name"] == persisted_name
+
+    @pytest.mark.asyncio
+    async def test_stop_after_start_uses_persisted_pod_name(self, client):
+        """stop must delete using the name that was saved to the DB by start."""
+        c, store, pod, instances = client
+        create_resp = await c.post("/api/inferences", json={"model_id": "m1"})
+        inst_id = create_resp.json()["id"]
+
+        await c.post(f"/api/inferences/{inst_id}/start")
+        await asyncio.sleep(0.05)
+
+        persisted_name = store.update_pod.call_args[0][1]
+        # Simulate the DB now having the persisted pod_name
+        instances[inst_id] = instances[inst_id].model_copy(update={"pod_name": persisted_name})
+
+        await c.post(f"/api/inferences/{inst_id}/stop")
+        pod.delete_pod.assert_called_once_with(
+            pod_name=persisted_name,
+            namespace="default",
+        )
 
 
 class TestStopInference:

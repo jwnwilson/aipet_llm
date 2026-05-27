@@ -176,6 +176,13 @@ class K8sPodAdapter(PodLifecyclePort):
 
     def delete_pod(self, pod_name: str, namespace: str = "default") -> None:
         """Delete pod and its paired ClusterIP Service. No-op if already gone."""
+        if not pod_name or not pod_name.strip():
+            log.error(
+                "delete_pod called with empty pod_name — refusing to delete "
+                "(would wipe all services in namespace %s)",
+                namespace,
+            )
+            return
         try:
             self._core.delete_namespaced_pod(name=pod_name, namespace=namespace)
         except Exception as exc:
