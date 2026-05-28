@@ -21,7 +21,7 @@ Required env vars:
     WARMUP_RATIO     — float
 
 Optional env vars:
-    S3_KEY_PREFIX    — override artifact write prefix (K8s sets workflow/{db_run_id})
+    S3_KEY_PREFIX    — override artifact write prefix (K8s sets workflow/{run_id})
     STORAGE_BACKEND  — "s3" (default) or "kaggle"
     KAGGLE_DATA_DIR  — required when STORAGE_BACKEND=kaggle
 """

@@ -40,7 +40,7 @@ class VastAiTrainingAdapter(RemoteJobPort):
         5. Poll S3 status.txt; fall back to Vast.ai API (via stored instance_id.txt) for crash detection.
         6. Download artifacts from S3 when done.
 
-    run_id is an S3 key prefix, e.g. ``vastai/my-experiment-a1b2c3``.
+    run_id is an S3 key prefix, e.g. ``workflow/{uuid}``.
     """
 
     def __init__(
@@ -63,8 +63,7 @@ class VastAiTrainingAdapter(RemoteJobPort):
     # ------------------------------------------------------------------
 
     def submit(self, spec: RemoteJobSpec) -> str:
-        suffix = "-eval" if spec.job_type == "eval" else ""
-        run_id = f"vastai{suffix}/{spec.experiment_name}-{uuid.uuid4().hex[:6]}"
+        run_id = f"workflow/{spec.run_id}" if spec.run_id else f"workflow/{uuid.uuid4().hex}"
         log.info(
             "vastai submit  run_id=%s  job_type=%s  experiment=%s",
             run_id, spec.job_type, spec.experiment_name,
@@ -74,7 +73,8 @@ class VastAiTrainingAdapter(RemoteJobPort):
         self._stage_files(spec, staging)
         self._upload_staged_files(staging, run_id, spec)
 
-        # Persist job type so download() can route correctly.
+        # Persist metadata so check_training CLI can auto-detect backend and job type.
+        self._storage.write_bytes(f"{run_id}/backend.txt", b"vastai")
         self._storage.write_bytes(f"{run_id}/job_type.txt", spec.job_type.encode())
 
         client = self._build_vastai_client()

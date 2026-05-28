@@ -31,13 +31,13 @@ from pathlib import Path
 
 _SCRIPT = Path(__file__).parent / "smoke_test.py"
 
-_ALL_BACKENDS = ["k8s"]
-# _ALL_BACKENDS = ["k8s", "kaggle", "runpod"]  # enable all when runpod supports private images
+_ALL_BACKENDS = ["k8s", "kaggle", "runpod"]
 
 # ANSI colours — one per backend, falls back gracefully on dumb terminals.
 _COLOURS = {
     "k8s":    "\033[36m",   # cyan
     "kaggle": "\033[33m",   # yellow
+    "runpod": "\033[35m",   # magenta
 }
 _RESET = "\033[0m"
 _GREEN = "\033[32m"

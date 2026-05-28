@@ -52,7 +52,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
         4. Poll S3 status.txt; fall back to RunPod API (via stored pod_id.txt) for crash detection.
         5. Download artifacts from S3 when done.
 
-    run_id is an S3 key prefix, e.g. ``runpod/my-experiment-a1b2c3``.
+    run_id is an S3 key prefix, e.g. ``workflow/{uuid}``.
     """
 
     def __init__(
@@ -78,14 +78,14 @@ class RunPodTrainingAdapter(RemoteJobPort):
     def submit(self, spec: RemoteJobSpec) -> str:
         runpod = self._configure_runpod()
 
-        suffix = "-eval" if spec.job_type == "eval" else ""
-        run_id = f"runpod{suffix}/{spec.experiment_name}-{uuid.uuid4().hex[:6]}"
+        run_id = f"workflow/{spec.run_id}" if spec.run_id else f"workflow/{uuid.uuid4().hex}"
         staging = self._work_dir / spec.experiment_name
 
         self._stage_files(spec, staging)
         self._upload_staged_files(staging, run_id, spec)
 
-        # Persist job type so download() can route correctly without re-reading spec.
+        # Persist metadata so check_training CLI can auto-detect backend and job type.
+        self._storage.write_bytes(f"{run_id}/backend.txt", b"runpod")
         self._storage.write_bytes(f"{run_id}/job_type.txt", spec.job_type.encode())
 
         pod = runpod.create_pod(
@@ -94,8 +94,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
             gpu_type_id=os.getenv("RUNPOD_GPU_TYPE_ID", _DEFAULT_GPU),
             container_disk_in_gb=50,
             docker_args=(
-                f"bash -c 'pip install -q boto3 && "
-                f"echo {_BOOTSTRAP_FETCH_B64} | base64 -d | python'"
+                f"bash -c 'echo {_BOOTSTRAP_FETCH_B64} | base64 -d | python'"
             ),
             env=self._build_pod_env(run_id, spec),
         )
