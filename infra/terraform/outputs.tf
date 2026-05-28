@@ -54,17 +54,6 @@ output "llm_api_aws_secret_access_key" {
   sensitive   = true
 }
 
-output "kaggle_training_aws_access_key_id" {
-  description = "Access key ID for the Kaggle training IAM user — set as KAGGLE_AWS_ACCESS_KEY_ID secret on the Temporal worker"
-  value       = module.iam.kaggle_training_aws_access_key_id
-}
-
-output "kaggle_training_aws_secret_access_key" {
-  description = "Secret access key for the Kaggle training IAM user — set as KAGGLE_AWS_SECRET_ACCESS_KEY secret on the Temporal worker"
-  value       = module.iam.kaggle_training_aws_secret_access_key
-  sensitive   = true
-}
-
 output "llm_api_fqdn" {
   description = "DNS name for the llm-api LLM API"
   value       = module.dns.fqdn
