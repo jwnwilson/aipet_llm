@@ -161,7 +161,7 @@ class TrainingPipelineWorkflow:
                     dry_run=config.dry_run,
                     remote_backend=config.remote_backend,
                     experiment_name=config.experiment_name,
-                    db_run_id=config.run_id,
+                    run_id=config.run_id,
                     force_qlora=config.force_qlora,
                 ),
                 start_to_close_timeout=timedelta(hours=6),
@@ -187,10 +187,10 @@ class TrainingPipelineWorkflow:
                     EvalConfig(
                         checkpoint=result.checkpoint.path,
                         eval_data=result.dataset_paths.eval,
-                        run_id=result.checkpoint.run_id,
+                        artifact_run_id=result.checkpoint.run_id,
                         remote_backend=result.checkpoint.remote_backend,
                         output_dir=config.output_dir,
-                        db_run_id=config.run_id,
+                        run_id=config.run_id,
                     ),
                     start_to_close_timeout=timedelta(minutes=30),
                     heartbeat_timeout=timedelta(minutes=2),
@@ -326,10 +326,10 @@ class EvaluateWorkflow:
                 EvalConfig(
                     checkpoint=config.checkpoint_path,
                     eval_data=config.eval_data,
-                    run_id=config.remote_run_id,
+                    artifact_run_id=config.remote_run_id,
                     remote_backend=config.remote_backend,
                     output_dir=config.output_dir,
-                    db_run_id=config.run_id,
+                    run_id=config.run_id,
                 ),
                 start_to_close_timeout=timedelta(minutes=30),
                 heartbeat_timeout=timedelta(minutes=2),
@@ -390,7 +390,7 @@ class ExportWorkflow:
                 ExportConfig(
                     checkpoint_path=config.checkpoint_path,
                     gguf_output=config.gguf_output,
-                    run_id=config.remote_run_id,
+                    artifact_run_id=config.remote_run_id,
                     remote_backend="k8s",  # export always runs on k8s
                     model_id=config.model_id,
                     pipeline_run_id=config.run_id,

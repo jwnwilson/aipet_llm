@@ -97,7 +97,7 @@ class TrainConfig:
     # Remote backend: "" or "local" → run locally; "kaggle" or "ssh" → remote.
     remote_backend: str = ""
     experiment_name: str = ""
-    db_run_id: str = ""  # DB RunRecord.id for progress updates; "" = no tracking
+    run_id: str = ""  # DB RunRecord.id — also used as the S3 key prefix for this run
     # None = auto-detect based on model size; True = always QLoRA; False = never QLoRA.
     force_qlora: bool | None = None
 
@@ -113,10 +113,10 @@ class CheckpointPath:
 class EvalConfig:
     checkpoint: str = ""
     eval_data: str = "data/eval.jsonl"
-    run_id: str = ""          # training adapter run_id (S3 prefix / kernel slug)
+    artifact_run_id: str = ""  # training adapter run_id (S3 prefix / kernel slug)
     remote_backend: str = ""  # non-empty → dispatch eval as EvalJobSpec to the remote GPU
     output_dir: str = ""      # local dir for downloaded eval_results.json
-    db_run_id: str = ""       # DB RunRecord.id for progress updates; "" = no tracking
+    run_id: str = ""       # DB RunRecord.id for progress updates; "" = no tracking
 
 
 @dataclass
@@ -153,13 +153,13 @@ async def _heartbeat_loop(stage: str, interval: int = 30) -> None:
         await asyncio.sleep(interval)
 
 
-async def _poll_local_progress(db_run_id: str, output_dir: str, interval: int = 30) -> None:
+async def _poll_local_progress(run_id: str, output_dir: str, interval: int = 30) -> None:
     """Heartbeat loop for local training: also polls progress.json and persists it."""
     import json as _json
     progress_path = Path(output_dir) / "progress.json"
     while True:
         activity.heartbeat({"stage": "train_local"})
-        if db_run_id:
+        if run_id:
             try:
                 data = _json.loads(progress_path.read_text())
                 step = data.get("step", 0)
@@ -170,7 +170,7 @@ async def _poll_local_progress(db_run_id: str, output_dir: str, interval: int = 
                 for key in ("loss", "eval_loss"):
                     if key in data:
                         parts.append(f"{key}={data[key]:.4f}")
-                _get_run_store().update_progress(db_run_id, frac, "  ".join(parts))
+                _get_run_store().update_progress(run_id, frac, "  ".join(parts))
             except Exception:
                 pass
         await asyncio.sleep(interval)
@@ -256,7 +256,7 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
 
     loop = asyncio.get_event_loop()
     heartbeat_task = asyncio.ensure_future(
-        _poll_local_progress(config.db_run_id, config.output_dir)
+        _poll_local_progress(config.run_id, config.output_dir)
     )
     try:
         await loop.run_in_executor(
@@ -370,9 +370,7 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
         experiment_name=config.experiment_name or "llm-api",
-        # Thread the DB run-record UUID so K8s can use it as the S3 key prefix,
-        # ensuring the training upload and export download use the same path.
-        db_run_id=config.db_run_id,
+        run_id=config.run_id,
         # Original S3 keys for backends that access storage directly (e.g. Kaggle).
         train_s3_key=original_train_key,
         eval_s3_key=original_eval_key,
@@ -434,23 +432,23 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
                 activity.logger.info("Instance output:\n%s", logs)
                 log.info("Instance output (run_id=%s):\n%s", run_id, logs)
 
-            if logs and config.db_run_id:
+            if logs and config.run_id:
                 try:
-                    log_path = Path(f"data/workflow/{config.db_run_id}/logs.txt")
+                    log_path = Path(f"data/workflow/{config.run_id}/logs.txt")
                     log_path.parent.mkdir(parents=True, exist_ok=True)
                     log_path.write_text(logs)
                 except Exception:
-                    log.warning("Failed to persist training logs for run %s", config.db_run_id)
+                    log.warning("Failed to persist training logs for run %s", config.run_id)
 
             # Detailed heartbeat after each poll (background loop covers gaps between polls).
             # run_id is included so a restarted worker can resume polling without resubmitting.
             activity.heartbeat({"status": status, "elapsed_s": elapsed_s, "logs": logs, "run_id": run_id})
 
-            if config.db_run_id:
+            if config.run_id:
                 try:
                     frac, detail = await loop.run_in_executor(None, lambda: adapter.progress(run_id))
                     if frac > 0:
-                        _get_run_store().update_progress(config.db_run_id, frac, detail)
+                        _get_run_store().update_progress(config.run_id, frac, detail)
                 except Exception:
                     pass
 
@@ -520,12 +518,10 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
 
     adapter = _make_remote_adapter(config.remote_backend)
     spec = EvalJobSpec(
-        experiment_name=f"eval-{config.db_run_id or 'standalone'}",
-        training_artifact_ref=config.run_id,
+        experiment_name=f"eval-{config.run_id or 'standalone'}",
+        training_artifact_ref=config.artifact_run_id,
         eval_data=config.eval_data,
-        # db_run_id lets the Kaggle eval kernel locate the checkpoint in S3 at
-        # workflow/{db_run_id}/checkpoint/ rather than pulling from kernel output.
-        db_run_id=config.db_run_id,
+        run_id=config.run_id,
     )
     eval_run_id = await loop.run_in_executor(None, lambda: adapter.submit(spec))
     activity.logger.info(
@@ -590,7 +586,7 @@ async def _evaluate_local(config: EvalConfig, loop: asyncio.AbstractEventLoop) -
         None, lambda: evaluate(Path(config.eval_data), infer_fn_raw)
     )
 
-    if config.db_run_id:
+    if config.run_id:
         from adapters.prompt import build_prompt, parse_response
         from domain.train.quality_report import run_quality_report
 
@@ -599,7 +595,7 @@ async def _evaluate_local(config: EvalConfig, loop: asyncio.AbstractEventLoop) -
             None, lambda: run_quality_report(infer_fn_rich)
         )
         report = _normalise_report_keys(report)
-        report_path = Path(f"data/workflow/{config.db_run_id}/quality_report.json")
+        report_path = Path(f"data/workflow/{config.run_id}/quality_report.json")
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report))
         activity.logger.info("Quality report saved: %s", report_path)
@@ -611,11 +607,11 @@ async def _evaluate_local(config: EvalConfig, loop: asyncio.AbstractEventLoop) -
 async def export_activity(config: ExportConfig) -> GGUFPath:
     # Determine the destination GGUF storage key upfront — shared by all paths.
     if config.model_name:
-        gguf_key = f"gguf/{config.model_name}.gguf"
+        gguf_key = f"model/{config.model_name}.gguf"
     elif config.pipeline_run_id:
         gguf_key = f"workflow/{config.pipeline_run_id}/model.gguf"
     elif config.model_id:
-        gguf_key = f"gguf/{config.model_id}.gguf"
+        gguf_key = f"model/{config.model_id}.gguf"
     else:
         gguf_key = config.gguf_output
 
@@ -627,15 +623,15 @@ async def export_activity(config: ExportConfig) -> GGUFPath:
     # GGUF back to S3 — the worker only needs to submit + poll.
     if config.remote_backend == "k8s":
         from domain.models import ExportJobSpec
-        db_run_id = config.pipeline_run_id
-        if not db_run_id:
+        run_id = config.pipeline_run_id
+        if not run_id:
             raise ApplicationError(
                 "export_activity: pipeline_run_id is required for K8s export "
                 "(it is the DB run_id used as the S3 key prefix)."
             )
         spec = ExportJobSpec(
-            experiment_name=db_run_id,
-            checkpoint_s3_prefix=f"workflow/{db_run_id}/checkpoint/",
+            experiment_name=run_id,
+            checkpoint_s3_prefix=f"workflow/{run_id}/checkpoint/",
             gguf_s3_key=gguf_key,
         )
         adapter = _make_remote_adapter("k8s")
@@ -644,9 +640,9 @@ async def export_activity(config: ExportConfig) -> GGUFPath:
         try:
             export_run_id = await loop.run_in_executor(None, lambda: adapter.submit(spec))
             activity.logger.info(
-                "K8s export Job submitted: %s (db_run_id=%s, gguf_key=%s)",
+                "K8s export Job submitted: %s (run_id=%s, gguf_key=%s)",
                 export_run_id,
-                db_run_id,
+                run_id,
                 gguf_key,
             )
             while True:

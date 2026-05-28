@@ -217,8 +217,8 @@ class KaggleTrainingAdapter(RemoteJobPort):
         The blocking poll loop from the old ``eval()`` method is intentionally removed.
         Temporal activities poll ``status()`` in the same async loop used for training.
         ``training_artifact_ref`` is the training kernel slug (e.g. "username/exp-slug").
-        ``spec.db_run_id`` is used to locate the checkpoint in S3 at
-        ``workflow/{db_run_id}/checkpoint/``.
+        ``spec.run_id`` is used to locate the checkpoint in S3 at
+        ``workflow/{run_id}/checkpoint/``.
         """
         training_kernel_slug = spec.training_artifact_ref
         # Derive dataset ref from the training run slug (same dataset used for training).
@@ -234,7 +234,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
             training_run_id=training_kernel_slug,
             experiment_name=experiment_name,
             kernel_dir=kernel_dir,
-            db_run_id=spec.db_run_id,
+            run_id=spec.run_id,
             eval_s3_key=spec.eval_data,
         )
 
@@ -392,7 +392,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         f"        'PATIENCE': {str(config.patience)!r},\n",
                         f"        'WARMUP_RATIO': {str(config.warmup_ratio)!r},\n",
                         "        'STORAGE_BACKEND': 's3',\n",
-                        f"        'S3_KEY_PREFIX': 'workflow/{config.db_run_id}',\n",
+                        f"        'S3_KEY_PREFIX': 'workflow/{config.run_id}',\n",
                         f"        'AWS_S3_BUCKET': {os.environ.get('AWS_S3_BUCKET', '')!r},\n",
                         f"        'AWS_ACCESS_KEY_ID': {os.environ.get('KAGGLE_AWS_ACCESS_KEY_ID', os.environ.get('AWS_ACCESS_KEY_ID', ''))!r},\n",
                         f"        'AWS_SECRET_ACCESS_KEY': {os.environ.get('KAGGLE_AWS_SECRET_ACCESS_KEY', os.environ.get('AWS_SECRET_ACCESS_KEY', ''))!r},\n",
@@ -413,7 +413,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
         training_run_id: str,
         experiment_name: str,
         kernel_dir: Path,
-        db_run_id: str = "",
+        run_id: str = "",
         eval_s3_key: str = "",
     ) -> None:
         template_path = Path(__file__).parent / "eval_notebook_template.ipynb"
@@ -426,7 +426,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
             "dataset_slug": _slugify(f"{experiment_name}-data"),
             # S3 config — eval kernel downloads checkpoint and eval data from S3
             # rather than from Kaggle kernel output or the dataset.
-            "checkpoint_s3_prefix": f"workflow/{db_run_id}/checkpoint/",
+            "checkpoint_s3_prefix": f"workflow/{run_id}/checkpoint/",
             "eval_s3_key": eval_s3_key,
             "s3_bucket": os.environ.get("AWS_S3_BUCKET", ""),
             "aws_access_key_id": os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "")),

@@ -56,11 +56,10 @@ class TrainJobSpec(BaseModel):
     patience: int
     warmup_ratio: float
     experiment_name: str
-    # DB run-record UUID — when set, used as the S3 key prefix
-    # (``workflow/{db_run_id}/checkpoint/``) so the export job can locate the
-    # checkpoint.  Falls back to ``experiment_name`` when absent (legacy paths).
-    db_run_id: str = ""
     gpu_type: str = "NvidiaTeslaT4"
+    # DB run-record UUID used as the S3 key prefix (workflow/{run_id}/) so all
+    # backends write to the same path.  Adapters fall back to a random UUID when empty.
+    run_id: str = ""
     # Original S3 keys for training data — populated when generate_dataset_activity
     # uploads data with upload_to_storage=True.  Backends that access S3 directly
     # (e.g. Kaggle with enable_internet=True) use these instead of staging local
@@ -78,14 +77,14 @@ class EvalJobSpec(BaseModel):
     job_type: Literal["eval"] = "eval"
     experiment_name: str
     # Adapter-agnostic reference to the training artifact:
-    # - RunPod/VastAI: S3 run_id prefix (e.g. "runpod/exp-abc123")
+    # - RunPod/VastAI: S3 run_id prefix (e.g. "workflow/abc123")
     # - Kaggle: training kernel slug (e.g. "username/exp-slug")
     training_artifact_ref: str
     eval_data: str   # S3 key or local path to eval.jsonl
     gpu_type: str = "NvidiaTeslaT4"
-    # DB run-record UUID — used by Kaggle eval kernel to locate the checkpoint
-    # in S3 at workflow/{db_run_id}/checkpoint/ instead of pulling from kernel output.
-    db_run_id: str = ""
+    # DB run-record UUID used as the S3 key prefix (workflow/{run_id}/) so the
+    # Kaggle eval kernel can locate the checkpoint at workflow/{run_id}/checkpoint/.
+    run_id: str = ""
 
 
 class ExportJobSpec(BaseModel):

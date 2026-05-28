@@ -20,7 +20,7 @@ def _config(**kwargs) -> RemoteTrainConfig:
         eval_data="data/eval.jsonl",
         train_s3_key="data/workflow/test-run/train.jsonl",
         eval_s3_key="data/workflow/test-run/eval.jsonl",
-        db_run_id="test-db-run-id",
+        run_id="test-run-id",
         epochs=1,
         patience=3,
         warmup_ratio=0.05,
@@ -88,7 +88,7 @@ class TestRenderNotebook:
         assert "EVAL_DATA_KEY" in source
         assert "data/workflow/test-run/eval.jsonl" in source
         assert "S3_KEY_PREFIX" in source
-        assert "workflow/test-db-run-id" in source
+        assert "workflow/test-run-id" in source
 
     def test_notebook_installs_wheel_and_training_deps(self, tmp_path, monkeypatch):
         adapter = _make_adapter(tmp_path, monkeypatch)

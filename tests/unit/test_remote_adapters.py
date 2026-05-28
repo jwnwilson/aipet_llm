@@ -44,7 +44,7 @@ def _make_data(tmp_path: Path, **kwargs) -> RemoteTrainConfig:
         eval_data="data/workflow/test-run/eval.jsonl",
         train_s3_key="data/workflow/test-run/train.jsonl",
         eval_s3_key="data/workflow/test-run/eval.jsonl",
-        db_run_id="test-db-run-id",
+        run_id="test-run-id",
         **kwargs,
     )
 
@@ -1036,7 +1036,7 @@ class TestKaggleNotebookKernelSim:
     def test_notebook_sets_s3_key_prefix(self, tmp_path):
         source = self._cell_source(tmp_path)
         assert "'S3_KEY_PREFIX'" in source
-        assert "workflow/test-db-run-id" in source
+        assert "workflow/test-run-id" in source
 
     def test_notebook_sets_train_and_eval_s3_keys(self, tmp_path):
         source = self._cell_source(tmp_path)

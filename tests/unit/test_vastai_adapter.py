@@ -63,7 +63,7 @@ class TestVastAiAdapterSubmit:
 
         run_id = adapter.submit(_config())
 
-        assert run_id.startswith("vastai/test-exp-")
+        assert run_id.startswith("workflow/")
         # Cheapest offer id=222 (dph_total=0.3) must be chosen
         mock_client.create_instance.assert_called_once()
         call_kwargs = mock_client.create_instance.call_args.kwargs
@@ -100,13 +100,13 @@ class TestVastAiAdapterStatus:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = "done"
 
-        assert adapter.status("vastai/test-exp-aabbcc") == "done"
+        assert adapter.status("workflow/test-exp-aabbcc") == "done"
 
     def test_returns_pending_when_no_status_txt_and_no_instance_id(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = ""   # nothing in storage
 
-        assert adapter.status("vastai/test-exp-aabbcc") == "pending"
+        assert adapter.status("workflow/test-exp-aabbcc") == "pending"
 
     def test_falls_back_to_vastai_api_when_no_status_txt(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
@@ -123,7 +123,7 @@ class TestVastAiAdapterStatus:
         mock_client.show_instance.return_value = {"actual_status": "loading"}
         adapter._build_vastai_client = lambda: mock_client
 
-        assert adapter.status("vastai/test-exp-aabbcc") == "pending"
+        assert adapter.status("workflow/test-exp-aabbcc") == "pending"
 
     def test_maps_exited_status_to_pending_when_no_status_txt(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
@@ -141,7 +141,7 @@ class TestVastAiAdapterStatus:
         adapter._build_vastai_client = lambda: mock_client
 
         # exited with no status.txt → we don't know if done or failed → pending
-        assert adapter.status("vastai/test-exp-aabbcc") == "pending"
+        assert adapter.status("workflow/test-exp-aabbcc") == "pending"
 
 
 class TestVastAiAdapterDownload:
@@ -149,10 +149,10 @@ class TestVastAiAdapterDownload:
         adapter, mock_storage = _make_adapter(monkeypatch, tmp_path)
 
         dest = tmp_path / "output"
-        result = adapter.download("vastai/test-exp-aabbcc", dest)
+        result = adapter.download("workflow/test-exp-aabbcc", dest)
 
         mock_storage.download_directory.assert_called_once_with(
-            "vastai/test-exp-aabbcc/checkpoint/", dest
+            "workflow/test-exp-aabbcc/checkpoint/", dest
         )
         assert result == str(dest)
 
@@ -166,9 +166,9 @@ class TestVastAiAdapterDownload:
             eval_data="data/eval.jsonl",
             epochs=1, patience=3, warmup_ratio=0.05,
         )
-        env = adapter._build_instance_env("vastai/my-exp-abc123", config)
-        assert env["TRAIN_DATA_KEY"] == "vastai/my-exp-abc123/data/train.jsonl"
-        assert env["EVAL_DATA_KEY"] == "vastai/my-exp-abc123/data/eval.jsonl"
+        env = adapter._build_instance_env("workflow/my-exp-abc123", config)
+        assert env["TRAIN_DATA_KEY"] == "workflow/my-exp-abc123/data/train.jsonl"
+        assert env["EVAL_DATA_KEY"] == "workflow/my-exp-abc123/data/eval.jsonl"
         assert env["STORAGE_BACKEND"] == "s3"
 
 
@@ -177,7 +177,7 @@ class TestVastAiAdapterProgress:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = json.dumps({"fraction": 0.75, "detail": "epoch=2"})
 
-        fraction, detail = adapter.progress("vastai/test-exp-aabbcc")
+        fraction, detail = adapter.progress("workflow/test-exp-aabbcc")
 
         assert fraction == pytest.approx(0.75)
         assert detail == "epoch=2"
@@ -186,7 +186,7 @@ class TestVastAiAdapterProgress:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = ""
 
-        fraction, detail = adapter.progress("vastai/test-exp-aabbcc")
+        fraction, detail = adapter.progress("workflow/test-exp-aabbcc")
 
         assert fraction == 0.0
         assert detail == ""
@@ -201,7 +201,7 @@ class TestVastAiAdapterLogs:
         mock_client.logs.return_value = "training step 1/10"
         adapter._build_vastai_client = lambda: mock_client
 
-        result = adapter.logs("vastai/test-exp-aabbcc")
+        result = adapter.logs("workflow/test-exp-aabbcc")
 
         assert result.startswith("[vastai] instance_id=12345  actual_status=running")
         assert "training step 1/10" in result
@@ -211,4 +211,4 @@ class TestVastAiAdapterLogs:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.side_effect = Exception("connection error")
 
-        assert adapter.logs("vastai/test-exp-aabbcc") == ""
+        assert adapter.logs("workflow/test-exp-aabbcc") == ""
