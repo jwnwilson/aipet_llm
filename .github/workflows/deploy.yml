@@ -19,6 +19,7 @@ env:
   ECR_TRAINING_REPOSITORY: llm-api-training
   ECR_EXPORT_REPOSITORY: llm-api-export
   ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
+  ECR_RUNPOD_REPOSITORY: llm-api-runpod
 
 jobs:
   # ── Build: push ARM64 images to ECR ───────────────────────────────────────
@@ -30,6 +31,7 @@ jobs:
       inference_image: ${{ steps.inference-image.outputs.image }}
       training_image: ${{ steps.training-image.outputs.image }}
       export_image: ${{ steps.export-image.outputs.image }}
+      runpod_image: ${{ steps.runpod-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +44,12 @@ jobs:
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Login to Amazon ECR Public (for RunPod image — public registry, us-east-1 only)
+        id: login-ecr-public
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
 
       - name: Set up QEMU (required for linux/arm64 cross-compilation)
         uses: docker/setup-qemu-action@v3
@@ -127,6 +135,25 @@ jobs:
         run: |
           echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
+      # ── RunPod training image (AMD64 + CUDA — public ECR, no auth required) ──
+      - name: Build and push RunPod training image (AMD64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/runpod/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:latest
+          cache-from: type=registry,ref=${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache,mode=max
+
+      - name: Export RunPod image ref
+        id: runpod-image
+        run: |
+          echo "image=${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
   deploy:
     needs: build
@@ -145,6 +172,7 @@ jobs:
       INFERENCE_IMAGE: ${{ needs.build.outputs.inference_image }}
       TRAINING_IMAGE: ${{ needs.build.outputs.training_image }}
       EXPORT_IMAGE: ${{ needs.build.outputs.export_image }}
+      RUNPOD_IMAGE: ${{ needs.build.outputs.runpod_image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -223,6 +251,8 @@ jobs:
           sed -i "s|<ECR_TRAINING_IMAGE>|$TRAINING_IMAGE|g" \
             infra/k8s/temporal/worker.yaml
           sed -i "s|<ECR_EXPORT_IMAGE>|$EXPORT_IMAGE|g" \
+            infra/k8s/temporal/worker.yaml
+          sed -i "s|<ECR_RUNPOD_IMAGE>|$RUNPOD_IMAGE|g" \
             infra/k8s/temporal/worker.yaml
           sed -i "s|<TEMPORAL_UI_IMAGE>|$TEMPORAL_UI_IMAGE|g" \
             infra/k8s/temporal/server.yaml

@@ -38,6 +38,14 @@ module "ecr_export" {
   image_retention_count = var.image_retention_count
 }
 
+# Public ECR repository for the RunPod training image (AMD64 + CUDA).
+# ECR Public allows RunPod to pull without credentials or token refresh.
+# Must stay in us-east-1 — ECR Public's API endpoint is region-locked there.
+module "ecr_public_runpod" {
+  source    = "./modules/ecr_public"
+  repo_name = "llm-api-runpod"
+}
+
 module "acm_ui" {
   source = "./modules/acm"
   domain = "llm.jwnwilson.co.uk"
@@ -62,6 +70,7 @@ module "iam" {
     module.ecr_inference.ecr_push_policy_arn,
     module.ecr_training.ecr_push_policy_arn,
     module.ecr_export.ecr_push_policy_arn,
+    module.ecr_public_runpod.ecr_public_push_policy_arn,
   ]
   ecr_pull_repo_arns = [
     module.ecr.repository_arn,
