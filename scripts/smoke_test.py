@@ -97,6 +97,7 @@ def trigger_run(
 
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_MAX_CONSECUTIVE_ERRORS = 5
 
 
 def poll_run_to_completion(
@@ -113,8 +114,30 @@ def poll_run_to_completion(
     Returns the final run record on success (status == 'completed').
     """
     deadline = time.monotonic() + timeout_seconds
+    consecutive_errors = 0
     while True:
-        resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
+        try:
+            resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
+            consecutive_errors = 0
+        except httpx.TransportError as exc:
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                print(
+                    f"ERROR: {consecutive_errors} consecutive transport errors polling run {run_id}: {exc}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(
+                f"   WARN: transport error ({exc}) — retrying"
+                f" ({consecutive_errors}/{_MAX_CONSECUTIVE_ERRORS})..."
+            )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                print(f"ERROR: run {run_id} did not complete within {timeout_seconds}s", file=sys.stderr)
+                sys.exit(1)
+            time.sleep(min(poll_interval, remaining))
+            continue
+
         run = check(f"GET /api/runs/{run_id}", resp)
         status = run.get("status", "")
         if status in _TERMINAL_STATUSES:
@@ -187,8 +210,34 @@ def poll_inference_available(
     Returns the instance record when available.
     """
     deadline = time.monotonic() + timeout_seconds
+    consecutive_errors = 0
     while True:
-        resp = client.get(f"{api_url}/api/inferences/{instance_id}", headers=headers)
+        try:
+            resp = client.get(f"{api_url}/api/inferences/{instance_id}", headers=headers)
+            consecutive_errors = 0
+        except httpx.TransportError as exc:
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                print(
+                    f"ERROR: {consecutive_errors} consecutive transport errors polling inference"
+                    f" {instance_id}: {exc}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(
+                f"   WARN: transport error ({exc}) — retrying"
+                f" ({consecutive_errors}/{_MAX_CONSECUTIVE_ERRORS})..."
+            )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                print(
+                    f"ERROR: inference instance {instance_id} not available after {timeout_seconds}s",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            time.sleep(min(poll_interval, remaining))
+            continue
+
         instance = check(f"GET /api/inferences/{instance_id}", resp)
         status = instance.get("status", "")
         if status == "available":

@@ -38,6 +38,11 @@ output "export_repository_url" {
   value       = module.ecr_export.repository_url
 }
 
+output "runpod_repository_uri" {
+  description = "ECR Public URI for the RunPod training image — set as ECR_RUNPOD_REPOSITORY Actions variable after apply"
+  value       = module.ecr_public_runpod.repository_uri
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC — set this as the AWS_ROLE_ARN repository secret"
   value       = module.iam.github_actions_role_arn

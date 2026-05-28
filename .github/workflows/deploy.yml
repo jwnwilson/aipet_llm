@@ -19,7 +19,7 @@ env:
   ECR_TRAINING_REPOSITORY: llm-api-training
   ECR_EXPORT_REPOSITORY: llm-api-export
   ECR_TEMPORAL_UI_REPOSITORY: llm-api-temporal-ui
-  ECR_RUNPOD_REPOSITORY: llm-api-runpod
+  ECR_RUNPOD_REPOSITORY: ${{ vars.ECR_RUNPOD_REPOSITORY }}
 
 jobs:
   # ── Build: push ARM64 images to ECR ───────────────────────────────────────
