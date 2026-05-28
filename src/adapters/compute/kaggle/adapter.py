@@ -212,11 +212,13 @@ class KaggleTrainingAdapter(RemoteJobPort):
         return slug
 
     def _submit_eval(self, spec: EvalJobSpec) -> str:
-        """Push an eval kernel that downloads checkpoint from the training dataset and scores it.
+        """Push an eval kernel that downloads checkpoint and eval data from S3 and scores it.
 
         The blocking poll loop from the old ``eval()`` method is intentionally removed.
         Temporal activities poll ``status()`` in the same async loop used for training.
         ``training_artifact_ref`` is the training kernel slug (e.g. "username/exp-slug").
+        ``spec.run_id`` is used to locate the checkpoint in S3 at
+        ``workflow/{run_id}/checkpoint/``.
         """
         training_kernel_slug = spec.training_artifact_ref
         # Derive dataset ref from the training run slug (same dataset used for training).
@@ -232,6 +234,8 @@ class KaggleTrainingAdapter(RemoteJobPort):
             training_run_id=training_kernel_slug,
             experiment_name=experiment_name,
             kernel_dir=kernel_dir,
+            run_id=spec.run_id,
+            eval_s3_key=spec.eval_data,
         )
 
         metadata = {
@@ -255,38 +259,25 @@ class KaggleTrainingAdapter(RemoteJobPort):
     def _stage_dataset(
         self, config: TrainJobSpec, staging: Path, dataset_slug: str
     ) -> None:
-        """Build a project wheel and stage it with the training data for Kaggle upload.
+        """Build a project wheel and stage it for Kaggle upload.
 
-        All files are placed flat in the staging directory (no subdirectories) to
-        avoid Kaggle CLI upload reliability issues with nested directory structures.
+        Training data is no longer staged here — the Kaggle kernel downloads it
+        directly from S3 (enable_internet=True).  Only the project wheel is needed
+        in the dataset so the kernel can install the project code.
         """
+        if not config.train_s3_key or not config.eval_s3_key:
+            raise ValueError(
+                "Kaggle S3 backend requires train_s3_key and eval_s3_key in TrainJobSpec. "
+                "Ensure generate_dataset_activity ran with upload_to_storage=True before "
+                f"train_activity (train_data={config.train_data!r})."
+            )
+
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
 
-        # Build a wheel of the project and copy it into staging
+        # Build a wheel of the project and copy it into staging.
         build_wheel(self._project_root, staging)
-
-        # Copy flat .jsonl training data files.
-        # Resolve relative paths from CWD (where the Temporal worker runs), NOT from
-        # _project_root — that resolves to the Python site-packages dir when the
-        # project is installed as a wheel, which is never where train.jsonl lives.
-        train_data = Path(config.train_data)
-        if not train_data.is_absolute():
-            train_data = Path.cwd() / train_data
-
-        # Fail early with a clear message rather than uploading an empty dataset
-        # and discovering the problem deep inside the Kaggle kernel.
-        missing = [p for p in (train_data, train_data.parent / "eval.jsonl") if not p.exists()]
-        if missing:
-            raise FileNotFoundError(
-                f"Training data not found before Kaggle upload: {[str(p) for p in missing]}. "
-                f"Ensure generate_dataset_activity ran successfully before train_activity "
-                f"(cwd={Path.cwd()}, configured train_data={config.train_data!r})."
-            )
-
-        for jsonl in train_data.parent.glob("*.jsonl"):
-            shutil.copy2(jsonl, staging / jsonl.name)
 
         meta = {
             "title": f"{config.experiment_name} Training Data",
@@ -375,8 +366,6 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "if not _whl_list:\n",
                         f'    raise FileNotFoundError("No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset")\n',
                         "whl = _whl_list[0]\n",
-                        "# Derive data dir from the wheel — correct regardless of Kaggle mount convention.\n",
-                        "_data_dir = str(pathlib.Path(whl).parent)\n",
                         "\n",
                         "# Install the project wheel (provides domain/adapter code).\n",
                         "subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', whl], check=True)\n",
@@ -389,21 +378,25 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "\n",
                         "# Run the training worker in a fresh subprocess so it starts with all packages\n",
                         "# already installed — identical to K8s/RunPod where packages are pre-installed\n",
-                        "# in the image. The subprocess inherits os.environ set below.\n",
+                        "# in the image. Training data and checkpoint artifacts go to S3 (same as K8s).\n",
                         "subprocess.run(\n",
                         "    [sys.executable, '-m', 'interactors.cli.training.remote_worker'],\n",
                         "    check=True,\n",
                         "    env={\n",
                         "        **os.environ,\n",
                         f"        'RUN_ID': {config.experiment_name!r},\n",
-                        "        'TRAIN_DATA_KEY': 'train.jsonl',\n",
-                        "        'EVAL_DATA_KEY': 'eval.jsonl',\n",
+                        f"        'TRAIN_DATA_KEY': {config.train_s3_key!r},\n",
+                        f"        'EVAL_DATA_KEY': {config.eval_s3_key!r},\n",
                         f"        'MODEL': {config.model!r},\n",
                         f"        'EPOCHS': {str(config.epochs)!r},\n",
                         f"        'PATIENCE': {str(config.patience)!r},\n",
                         f"        'WARMUP_RATIO': {str(config.warmup_ratio)!r},\n",
-                        "        'STORAGE_BACKEND': 'kaggle',\n",
-                        "        'KAGGLE_DATA_DIR': _data_dir,\n",
+                        "        'STORAGE_BACKEND': 's3',\n",
+                        f"        'S3_KEY_PREFIX': 'workflow/{config.run_id}',\n",
+                        f"        'AWS_S3_BUCKET': {os.environ.get('AWS_S3_BUCKET', '')!r},\n",
+                        f"        'AWS_ACCESS_KEY_ID': {os.environ.get('KAGGLE_AWS_ACCESS_KEY_ID', os.environ.get('AWS_ACCESS_KEY_ID', ''))!r},\n",
+                        f"        'AWS_SECRET_ACCESS_KEY': {os.environ.get('KAGGLE_AWS_SECRET_ACCESS_KEY', os.environ.get('AWS_SECRET_ACCESS_KEY', ''))!r},\n",
+                        f"        'AWS_DEFAULT_REGION': {os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')!r},\n",
                         "    },\n",
                         ")\n",
                     ],
@@ -416,7 +409,12 @@ class KaggleTrainingAdapter(RemoteJobPort):
         (kernel_dir / "notebook.ipynb").write_text(json.dumps(notebook, indent=1))
 
     def _render_eval_notebook(
-        self, training_run_id: str, experiment_name: str, kernel_dir: Path
+        self,
+        training_run_id: str,
+        experiment_name: str,
+        kernel_dir: Path,
+        run_id: str = "",
+        eval_s3_key: str = "",
     ) -> None:
         template_path = Path(__file__).parent / "eval_notebook_template.ipynb"
         notebook = json.loads(template_path.read_text())
@@ -424,11 +422,16 @@ class KaggleTrainingAdapter(RemoteJobPort):
         config_repr = repr({
             "training_run_id": training_run_id,
             "experiment_name": experiment_name,
-            # _stage_dataset always downloads data locally as eval.jsonl before
-            # copying to Kaggle, so the dataset always contains "eval.jsonl"
-            # regardless of the S3 key name (which may be a UUID-based path).
             "eval_data_file": "eval.jsonl",
             "dataset_slug": _slugify(f"{experiment_name}-data"),
+            # S3 config — eval kernel downloads checkpoint and eval data from S3
+            # rather than from Kaggle kernel output or the dataset.
+            "checkpoint_s3_prefix": f"workflow/{run_id}/checkpoint/",
+            "eval_s3_key": eval_s3_key,
+            "s3_bucket": os.environ.get("AWS_S3_BUCKET", ""),
+            "aws_access_key_id": os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "")),
+            "aws_secret_access_key": os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "")),
+            "aws_region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
         })
 
         replacements = {"{{config}}": config_repr}
