@@ -288,7 +288,9 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
 # S3-backed backends (k8s, runpod) pass the S3 key directly to the
 # remote job; the pod downloads from S3 itself.  Replacing the key with a local
 # path would point the pod at a key that doesn't exist → DO NOT download for them.
-_FILE_BASED_BACKENDS = frozenset({"kaggle", "colab", "ssh"})
+# Note: Kaggle is intentionally excluded here — it accesses training data from S3
+# directly (enable_internet=True) rather than requiring local staging.
+_FILE_BASED_BACKENDS = frozenset({"colab", "ssh"})
 
 
 async def _resolve_training_data(
@@ -350,9 +352,14 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
     loop = asyncio.get_event_loop()
 
-    # If train/eval paths are S3 keys (skip_generate=True), download them locally
-    # before building remote_config — file-based backends (Kaggle, Colab, SSH) need
-    # the data on the local filesystem to stage it into their compute environment.
+    # Capture original keys before resolution — backends that access S3 directly
+    # (Kaggle, K8s, RunPod) use these to configure the remote worker without
+    # staging data on the local filesystem.
+    original_train_key = config.train_data
+    original_eval_key = config.eval_data
+
+    # If train/eval paths are S3 keys, download them locally for file-based
+    # backends (Colab, SSH) that stage data into their compute environment.
     train_data, eval_data = await _resolve_training_data(config, loop)
 
     remote_config = TrainJobSpec(
@@ -364,6 +371,9 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         warmup_ratio=config.warmup_ratio,
         experiment_name=config.experiment_name or "llm-api",
         run_id=config.run_id,
+        # Original S3 keys for backends that access storage directly (e.g. Kaggle).
+        train_s3_key=original_train_key,
+        eval_s3_key=original_eval_key,
     )
 
     # Resume from a prior attempt if the remote job was already submitted.
