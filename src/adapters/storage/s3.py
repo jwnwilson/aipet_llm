@@ -1,10 +1,13 @@
 """AWS S3 implementation of StoragePort."""
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from domain.ports import StoragePort
+
+log = logging.getLogger(__name__)
 
 
 class S3StorageAdapter(StoragePort):
@@ -21,34 +24,50 @@ class S3StorageAdapter(StoragePort):
         self._s3 = boto3.client("s3")
 
     def upload(self, local_path: Path, key: str) -> None:
+        log.debug("s3 upload  bucket=%s  key=%s  src=%s", self._bucket, key, local_path)
         self._s3.upload_file(str(local_path), self._bucket, key)
+        log.info("s3 upload ok  bucket=%s  key=%s", self._bucket, key)
 
     def download(self, key: str, dest: Path) -> None:
+        log.debug("s3 download  bucket=%s  key=%s  dest=%s", self._bucket, key, dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        self._s3.download_file(self._bucket, key, str(dest))
+        try:
+            self._s3.download_file(self._bucket, key, str(dest))
+            log.info("s3 download ok  bucket=%s  key=%s", self._bucket, key)
+        except Exception as exc:
+            log.error("s3 download failed  bucket=%s  key=%s  dest=%s  error=%s", self._bucket, key, dest, exc)
+            raise
 
     def exists(self, key: str) -> bool:
         try:
             self._s3.head_object(Bucket=self._bucket, Key=key)
+            log.debug("s3 exists=True  bucket=%s  key=%s", self._bucket, key)
             return True
         except Exception:
+            log.debug("s3 exists=False  bucket=%s  key=%s", self._bucket, key)
             return False
 
     def delete(self, key: str) -> None:
         try:
             self._s3.delete_object(Bucket=self._bucket, Key=key)
-        except Exception:
-            pass
+            log.info("s3 delete ok  bucket=%s  key=%s", self._bucket, key)
+        except Exception as exc:
+            log.warning("s3 delete failed  bucket=%s  key=%s  error=%s", self._bucket, key, exc)
 
     def write_bytes(self, key: str, content: bytes) -> None:
         """Write raw bytes to ``key`` in S3 (creates or overwrites)."""
+        log.debug("s3 write_bytes  bucket=%s  key=%s  size=%d", self._bucket, key, len(content))
         self._s3.put_object(Bucket=self._bucket, Key=key, Body=content)
+        log.info("s3 write_bytes ok  bucket=%s  key=%s", self._bucket, key)
 
     def read_text(self, key: str, *, encoding: str = "utf-8") -> str:
         """Read ``key`` from S3 and decode; returns empty string if key is absent."""
         try:
-            return self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read().decode(encoding)
-        except Exception:
+            value = self._s3.get_object(Bucket=self._bucket, Key=key)["Body"].read().decode(encoding)
+            log.debug("s3 read_text ok  bucket=%s  key=%s  size=%d", self._bucket, key, len(value))
+            return value
+        except Exception as exc:
+            log.debug("s3 read_text not found  bucket=%s  key=%s  error=%s", self._bucket, key, exc)
             return ""
 
     def download_directory(self, prefix: str, dest: Path) -> None:
@@ -59,7 +78,9 @@ class S3StorageAdapter(StoragePort):
         """
         dest = Path(dest)
         dest.mkdir(parents=True, exist_ok=True)
+        log.debug("s3 download_directory  bucket=%s  prefix=%s  dest=%s", self._bucket, prefix, dest)
         paginator = self._s3.get_paginator("list_objects_v2")
+        count = 0
         for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
             for obj in page.get("Contents", []):
                 key: str = obj["Key"]
@@ -73,4 +94,10 @@ class S3StorageAdapter(StoragePort):
                         f"S3 key {key!r} would escape the destination directory"
                     )
                 local.parent.mkdir(parents=True, exist_ok=True)
+                log.debug("s3 download_directory file  key=%s  dest=%s", key, local)
                 self._s3.download_file(self._bucket, key, str(local))
+                count += 1
+        if count == 0:
+            log.warning("s3 download_directory empty  bucket=%s  prefix=%s  dest=%s", self._bucket, prefix, dest)
+        else:
+            log.info("s3 download_directory ok  bucket=%s  prefix=%s  files=%d", self._bucket, prefix, count)
