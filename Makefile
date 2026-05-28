@@ -21,7 +21,7 @@ GITHUB_REPO     ?= jwnwilson/aipet_llm_api
 TF_DIR          ?= infra/terraform
 TF_BOOTSTRAP_DIR ?= infra/terraform/bootstrap
 
-.PHONY: serve ui dev sync test test-unit test-integration test-cli test-all smoke-test smoke-test-k8s smoke-test-kaggle smoke-test-vastai smoke-test-runpod data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy aws-env upload-test-model help
+.PHONY: serve ui dev sync test test-unit test-integration test-cli test-all smoke-test smoke-test-k8s smoke-test-kaggle smoke-test-vastai smoke-test-runpod data data-fast train train-fast evaluate evaluate-gguf evaluate-remote export export-remote evaluate-export-remote infer setup-llama docker-build docker-run docker-export docker-deploy temporal-up temporal-down temporal-worker temporal-trigger temporal-trigger-fast kaggle-train runpod-train vastai-train db-migrate db-revision seed-models tf-setup tf-init tf-plan tf-apply tf-deploy tf-output set-kaggle-secrets aws-env upload-test-model help
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -310,6 +310,18 @@ tf-deploy: tf-apply ## Apply infra then set AWS_ROLE_ARN secret on GitHub  (requ
 	set -a && . ./.env && set +a && gh secret set AWS_ROLE_ARN \
 		--repo $(GITHUB_REPO) \
 		--body "$$(terraform -chdir=$(TF_DIR) output -raw github_actions_role_arn)"
+
+tf-output: ## Print all Terraform outputs
+	set -a && . ./.env && set +a && terraform -chdir=$(TF_DIR) output
+
+set-kaggle-secrets: ## Push Kaggle training IAM credentials to GitHub secrets  (requires gh CLI + terraform apply)
+	set -a && . ./.env && set +a && \
+	gh secret set KAGGLE_AWS_ACCESS_KEY_ID \
+		--repo $(GITHUB_REPO) \
+		--body "$$(terraform -chdir=$(TF_DIR) output -raw kaggle_training_aws_access_key_id)" && \
+	gh secret set KAGGLE_AWS_SECRET_ACCESS_KEY \
+		--repo $(GITHUB_REPO) \
+		--body "$$(terraform -chdir=$(TF_DIR) output -raw kaggle_training_aws_secret_access_key)"
 
 request: ## Send a test /infer request to the running API server  (HOST/PORT to override)
 	curl -s -X POST http://$(HOST):$(PORT)/infer \
