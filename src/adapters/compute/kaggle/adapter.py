@@ -394,8 +394,8 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "        'STORAGE_BACKEND': 's3',\n",
                         f"        'S3_KEY_PREFIX': 'workflow/{config.db_run_id}',\n",
                         f"        'AWS_S3_BUCKET': {os.environ.get('AWS_S3_BUCKET', '')!r},\n",
-                        f"        'AWS_ACCESS_KEY_ID': {os.environ.get('AWS_ACCESS_KEY_ID', '')!r},\n",
-                        f"        'AWS_SECRET_ACCESS_KEY': {os.environ.get('AWS_SECRET_ACCESS_KEY', '')!r},\n",
+                        f"        'AWS_ACCESS_KEY_ID': {os.environ.get('KAGGLE_AWS_ACCESS_KEY_ID', os.environ.get('AWS_ACCESS_KEY_ID', ''))!r},\n",
+                        f"        'AWS_SECRET_ACCESS_KEY': {os.environ.get('KAGGLE_AWS_SECRET_ACCESS_KEY', os.environ.get('AWS_SECRET_ACCESS_KEY', ''))!r},\n",
                         f"        'AWS_DEFAULT_REGION': {os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')!r},\n",
                         "    },\n",
                         ")\n",
@@ -429,8 +429,8 @@ class KaggleTrainingAdapter(RemoteJobPort):
             "checkpoint_s3_prefix": f"workflow/{db_run_id}/checkpoint/",
             "eval_s3_key": eval_s3_key,
             "s3_bucket": os.environ.get("AWS_S3_BUCKET", ""),
-            "aws_access_key_id": os.environ.get("AWS_ACCESS_KEY_ID", ""),
-            "aws_secret_access_key": os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+            "aws_access_key_id": os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "")),
+            "aws_secret_access_key": os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "")),
             "aws_region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
         })
 
