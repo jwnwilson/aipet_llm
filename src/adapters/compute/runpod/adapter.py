@@ -84,7 +84,8 @@ class RunPodTrainingAdapter(RemoteJobPort):
         self._stage_files(spec, staging)
         self._upload_staged_files(staging, run_id, spec)
 
-        # Persist job type so download() can route correctly without re-reading spec.
+        # Persist metadata so check_training CLI can auto-detect backend and job type.
+        self._storage.write_bytes(f"{run_id}/backend.txt", b"runpod")
         self._storage.write_bytes(f"{run_id}/job_type.txt", spec.job_type.encode())
 
         pod = runpod.create_pod(

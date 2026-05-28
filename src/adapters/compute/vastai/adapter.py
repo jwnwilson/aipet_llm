@@ -73,7 +73,8 @@ class VastAiTrainingAdapter(RemoteJobPort):
         self._stage_files(spec, staging)
         self._upload_staged_files(staging, run_id, spec)
 
-        # Persist job type so download() can route correctly.
+        # Persist metadata so check_training CLI can auto-detect backend and job type.
+        self._storage.write_bytes(f"{run_id}/backend.txt", b"vastai")
         self._storage.write_bytes(f"{run_id}/job_type.txt", spec.job_type.encode())
 
         client = self._build_vastai_client()
