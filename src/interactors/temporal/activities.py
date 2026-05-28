@@ -97,7 +97,7 @@ class TrainConfig:
     # Remote backend: "" or "local" → run locally; "kaggle" or "ssh" → remote.
     remote_backend: str = ""
     experiment_name: str = ""
-    db_run_id: str = ""  # DB RunRecord.id for progress updates; "" = no tracking
+    db_run_id: str = ""  # DB RunRecord.id — also used as the S3 key prefix for this run
     # None = auto-detect based on model size; True = always QLoRA; False = never QLoRA.
     force_qlora: bool | None = None
 
@@ -363,9 +363,8 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
         experiment_name=config.experiment_name or "llm-api",
-        # Thread the DB run-record UUID so K8s can use it as the S3 key prefix,
-        # ensuring the training upload and export download use the same path.
         db_run_id=config.db_run_id,
+        run_id=config.db_run_id,
     )
 
     # Resume from a prior attempt if the remote job was already submitted.
@@ -513,6 +512,7 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
         experiment_name=f"eval-{config.db_run_id or 'standalone'}",
         training_artifact_ref=config.run_id,
         eval_data=config.eval_data,
+        run_id=config.db_run_id,
     )
     eval_run_id = await loop.run_in_executor(None, lambda: adapter.submit(spec))
     activity.logger.info(

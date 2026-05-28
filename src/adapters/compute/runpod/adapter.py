@@ -78,7 +78,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
     def submit(self, spec: RemoteJobSpec) -> str:
         runpod = self._configure_runpod()
 
-        run_id = f"workflow/{uuid.uuid4().hex}"
+        run_id = spec.run_id if spec.run_id else f"workflow/{uuid.uuid4().hex}"
         staging = self._work_dir / spec.experiment_name
 
         self._stage_files(spec, staging)

@@ -63,7 +63,7 @@ class VastAiTrainingAdapter(RemoteJobPort):
     # ------------------------------------------------------------------
 
     def submit(self, spec: RemoteJobSpec) -> str:
-        run_id = f"workflow/{uuid.uuid4().hex}"
+        run_id = spec.run_id if spec.run_id else f"workflow/{uuid.uuid4().hex}"
         log.info(
             "vastai submit  run_id=%s  job_type=%s  experiment=%s",
             run_id, spec.job_type, spec.experiment_name,
