@@ -73,7 +73,7 @@ def run() -> None:
             "Checkpoint download incomplete: config.json not found in %s. "
             "S3 prefix used: %r. Files present: %s. "
             "Verify that CHECKPOINT_S3_PREFIX matches the S3_KEY_PREFIX used "
-            "by the training job (workflow/{db_run_id}/checkpoint/).",
+            "by the training job (workflow/{run_id}/checkpoint/).",
             checkpoint_dir,
             checkpoint_prefix,
             [str(f.relative_to(checkpoint_dir)) for f in files] if files else "(none)",

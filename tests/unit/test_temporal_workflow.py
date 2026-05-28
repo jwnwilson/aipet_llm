@@ -300,11 +300,11 @@ async def test_workflow_skip_generate_falls_back_to_data_dir_when_no_train_data(
 
 
 @pytest.mark.asyncio
-async def test_evaluate_workflow_passes_db_run_id():
-    """EvaluateWorkflow must pass db_run_id to EvalConfig so quality report is written."""
+async def test_evaluate_workflow_passes_run_id():
+    """EvaluateWorkflow must pass run_id to EvalConfig so quality report is written."""
     storage = _configure_mock_storage()
 
-    # Track calls to storage.write to verify quality_report.json is written with db_run_id
+    # Track calls to storage.write to verify quality_report.json is written with run_id
     written_files = {}
 
     def capture_write(path, content):
@@ -353,8 +353,8 @@ async def test_evaluate_workflow_passes_db_run_id():
                     p.stop()
 
     # Verify that the evaluation completed successfully
-    # The presence of quality report logs confirms db_run_id was passed to EvalConfig
-    # (The evaluate_activity only saves a quality report when config.db_run_id is non-empty)
+    # The presence of quality report logs confirms run_id was passed to EvalConfig
+    # (The evaluate_activity only saves a quality report when config.run_id is non-empty)
     assert result.passed is True
     assert abs(result.valid_pct - 0.96) < 1e-6
 
