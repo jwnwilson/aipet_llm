@@ -144,15 +144,15 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}
-            ${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:latest
-          cache-from: type=registry,ref=${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache,mode=max
+            ${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}
+            ${{ env.ECR_RUNPOD_REPOSITORY }}:latest
+          cache-from: type=registry,ref=${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache
+          cache-to: type=registry,ref=${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache,mode=max
 
       - name: Export RunPod image ref
         id: runpod-image
         run: |
-          echo "image=${{ steps.login-ecr-public.outputs.registry }}/${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "image=${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
   deploy:
