@@ -50,6 +50,18 @@ spec:
                 secretKeyRef:
                   name: llm-api-secrets
                   key: aws-secret-access-key
+            - name: KAGGLE_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-secrets
+                  key: kaggle-aws-access-key-id
+                  optional: true
+            - name: KAGGLE_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-secrets
+                  key: kaggle-aws-secret-access-key
+                  optional: true
             - name: KAGGLE_USERNAME
               valueFrom:
                 secretKeyRef:
