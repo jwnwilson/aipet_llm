@@ -52,7 +52,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
         4. Poll S3 status.txt; fall back to RunPod API (via stored pod_id.txt) for crash detection.
         5. Download artifacts from S3 when done.
 
-    run_id is an S3 key prefix, e.g. ``runpod/my-experiment-a1b2c3``.
+    run_id is an S3 key prefix, e.g. ``workflow/{uuid}``.
     """
 
     def __init__(
@@ -78,8 +78,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
     def submit(self, spec: RemoteJobSpec) -> str:
         runpod = self._configure_runpod()
 
-        suffix = "-eval" if spec.job_type == "eval" else ""
-        run_id = f"runpod{suffix}/{spec.experiment_name}-{uuid.uuid4().hex[:6]}"
+        run_id = f"workflow/{uuid.uuid4().hex}"
         staging = self._work_dir / spec.experiment_name
 
         self._stage_files(spec, staging)

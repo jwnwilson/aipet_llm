@@ -598,11 +598,11 @@ async def _evaluate_local(config: EvalConfig, loop: asyncio.AbstractEventLoop) -
 async def export_activity(config: ExportConfig) -> GGUFPath:
     # Determine the destination GGUF storage key upfront — shared by all paths.
     if config.model_name:
-        gguf_key = f"gguf/{config.model_name}.gguf"
+        gguf_key = f"model/{config.model_name}.gguf"
     elif config.pipeline_run_id:
         gguf_key = f"workflow/{config.pipeline_run_id}/model.gguf"
     elif config.model_id:
-        gguf_key = f"gguf/{config.model_id}.gguf"
+        gguf_key = f"model/{config.model_id}.gguf"
     else:
         gguf_key = config.gguf_output
 
