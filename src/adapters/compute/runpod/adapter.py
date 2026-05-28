@@ -238,10 +238,12 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 shutil.copy2(jsonl, staging / jsonl.name)
 
             if not staged:
-                # spec.train_data / eval_data are S3 keys (e.g. "datasets/{id}.jsonl")
-                # from a pre-uploaded dataset — the files don't exist locally.
-                # Download them and rename to the canonical names expected by the
-                # training command (--train-data data/train.jsonl, --eval-data data/eval.jsonl).
+                if not (spec.train_data.startswith("datasets/") or spec.train_data.startswith("workflow/")):
+                    raise ValueError(
+                        f"No local training data at {train_data.parent} and "
+                        f"'{spec.train_data}' is not a recognised S3 key. "
+                        "Provide a train_dataset_id or set skip_generate=False."
+                    )
                 log.info(
                     "Local train data not found at %s; downloading from S3: %s",
                     train_data.parent,
