@@ -384,7 +384,7 @@ class K8sTrainingAdapter(RemoteJobPort):
     def _create_job(
         self,
         job_name: str,
-        db_run_id: str,
+        run_id: str,
         image: str,
         command: list[str],
         env: list,
@@ -398,7 +398,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             metadata=k8s_client.V1ObjectMeta(
                 name=job_name,
                 namespace=self._namespace,
-                annotations={_JOB_ANNOTATION: db_run_id},
+                annotations={_JOB_ANNOTATION: run_id},
                 labels=labels,
             ),
             spec=k8s_client.V1JobSpec(
@@ -432,14 +432,14 @@ class K8sTrainingAdapter(RemoteJobPort):
     def _submit_train(self, config: TrainJobSpec) -> str:
         job_name = f"train-{uuid.uuid4().hex[:12]}"
         # Prefer the explicit DB run-record UUID over experiment_name so the
-        # training upload (workflow/{db_run_id}/checkpoint/) lands at the same
+        # training upload (workflow/{run_id}/checkpoint/) lands at the same
         # S3 path that export_activity uses when building checkpoint_s3_prefix.
-        db_run_id = config.db_run_id or config.experiment_name
+        run_id = config.run_id or config.experiment_name
         region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
         env = [
-            k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
-            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{db_run_id}"),
+            k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
+            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{run_id}"),
             k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
             k8s_client.V1EnvVar(name="TRAIN_DATA_KEY", value=config.train_data),
             k8s_client.V1EnvVar(name="EVAL_DATA_KEY", value=config.eval_data),
@@ -452,13 +452,13 @@ class K8sTrainingAdapter(RemoteJobPort):
 
         self._create_job(
             job_name=job_name,
-            db_run_id=db_run_id,
+            run_id=run_id,
             image=self._training_image,
             command=["python", "-m", "interactors.cli.training.remote_worker"],
             env=env,
             labels={"app": "llm-training"},
         )
-        log.info("Created k8s training Job: %s (db_run_id=%s)", job_name, db_run_id)
+        log.info("Created k8s training Job: %s (run_id=%s)", job_name, run_id)
         return job_name
 
     def _submit_export(self, config: ExportJobSpec) -> str:
@@ -478,11 +478,11 @@ class K8sTrainingAdapter(RemoteJobPort):
                 "Set it to the ECR URI of the export image (must have llama.cpp)."
             )
         job_name = f"export-{uuid.uuid4().hex[:12]}"
-        db_run_id = config.experiment_name
+        run_id = config.experiment_name
         region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
         env = [
-            k8s_client.V1EnvVar(name="RUN_ID", value=db_run_id),
+            k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
             k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
             k8s_client.V1EnvVar(
                 name="CHECKPOINT_S3_PREFIX", value=config.checkpoint_s3_prefix
@@ -494,7 +494,7 @@ class K8sTrainingAdapter(RemoteJobPort):
 
         self._create_job(
             job_name=job_name,
-            db_run_id=db_run_id,
+            run_id=run_id,
             image=self._export_image,
             command=["python", "-m", "interactors.cli.training.k8s_export"],
             env=env,
@@ -504,9 +504,9 @@ class K8sTrainingAdapter(RemoteJobPort):
             memory_limit="8Gi",
         )
         log.info(
-            "Created k8s export Job: %s (db_run_id=%s, gguf_key=%s)",
+            "Created k8s export Job: %s (run_id=%s, gguf_key=%s)",
             job_name,
-            db_run_id,
+            run_id,
             config.gguf_s3_key,
         )
         return job_name
@@ -545,8 +545,8 @@ class K8sTrainingAdapter(RemoteJobPort):
 
     def download(self, run_id: str, dest: Path) -> str:
         """Download checkpoint directory from S3 into dest via StoragePort."""
-        db_run_id = self._db_run_id(run_id)
-        prefix = f"workflow/{db_run_id}/checkpoint/"
+        run_id = self._run_id(run_id)
+        prefix = f"workflow/{run_id}/checkpoint/"
         self._storage.download_directory(prefix, dest)
         log.info("Checkpoint downloaded to %s", dest)
         return str(dest)
@@ -555,7 +555,7 @@ class K8sTrainingAdapter(RemoteJobPort):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _db_run_id(self, job_name: str) -> str:
+    def _run_id(self, job_name: str) -> str:
         """Return the DB run ID stored in the job annotation."""
         job = self._batch.read_namespaced_job(
             name=job_name, namespace=self._namespace

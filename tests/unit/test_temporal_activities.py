@@ -272,7 +272,7 @@ async def test_export_activity_uses_model_name_for_storage_key(mock_storage):
             ),
         )
 
-    assert result.path == "gguf/my-pet-v2.gguf.gz"
+    assert result.path == "model/my-pet-v2.gguf.gz"
 
 
 @pytest.mark.asyncio
@@ -288,7 +288,7 @@ async def test_export_activity_model_name_takes_precedence_over_pipeline_run_id(
             ),
         )
 
-    assert result.path == "gguf/my-pet-v2.gguf.gz"
+    assert result.path == "model/my-pet-v2.gguf.gz"
     assert "r1" not in result.path
 
 
@@ -335,7 +335,7 @@ async def test_export_activity_falls_back_to_model_id_when_no_pipeline_run_id(mo
             ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/gguf/m.gguf", model_id="m"),
         )
 
-    assert result == GGUFPath(path="gguf/m.gguf.gz")
+    assert result == GGUFPath(path="model/m.gguf.gz")
     mock_storage.mock_upload_model.assert_called_once()
 
 
@@ -437,7 +437,7 @@ class TestTrainRemotePolling:
 
 
 class TestTrainRemoteProgress:
-    """Verify _train_remote calls adapter.progress() and persists it when db_run_id is set."""
+    """Verify _train_remote calls adapter.progress() and persists it when run_id is set."""
 
     def _make_adapter(self, statuses, progress_return=(0.0, ""), download_path="/tmp/ckpt"):
         adapter = MagicMock()
@@ -461,13 +461,13 @@ class TestTrainRemoteProgress:
         return acts
 
     @pytest.mark.asyncio
-    async def test_calls_adapter_progress_and_persists_when_db_run_id_set(self, monkeypatch):
+    async def test_calls_adapter_progress_and_persists_when_run_id_set(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0  loss=0.4312"))
-        config = TrainConfig(db_run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
@@ -481,7 +481,7 @@ class TestTrainRemoteProgress:
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.0, ""))
-        config = TrainConfig(db_run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
@@ -489,13 +489,13 @@ class TestTrainRemoteProgress:
         mock_store.update_progress.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_progress_entirely_when_no_db_run_id(self, monkeypatch):
+    async def test_skips_progress_entirely_when_no_run_id(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.75, "epoch=2.0"))
-        config = TrainConfig(db_run_id="", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
@@ -510,7 +510,7 @@ class TestTrainRemoteProgress:
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0"))
-        config = TrainConfig(db_run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             result = await acts._train_remote(config, adapter)
 
@@ -565,7 +565,7 @@ class TestPollLocalProgress:
         assert "eval_loss=0.3210" in call_args[0][2]
 
     @pytest.mark.asyncio
-    async def test_skips_update_when_db_run_id_is_empty(self, monkeypatch, tmp_path):
+    async def test_skips_update_when_run_id_is_empty(self, monkeypatch, tmp_path):
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -760,7 +760,7 @@ class TestFailRunActivity:
 
 @pytest.mark.asyncio
 async def test_evaluate_local_saves_quality_report(tmp_path, monkeypatch):
-    """Quality report is saved to data/workflow/{db_run_id}/quality_report.json."""
+    """Quality report is saved to data/workflow/{run_id}/quality_report.json."""
     monkeypatch.chdir(tmp_path)
 
     fake_report = {
@@ -787,7 +787,7 @@ async def test_evaluate_local_saves_quality_report(tmp_path, monkeypatch):
             EvalConfig(
                 checkpoint="some-checkpoint",
                 eval_data="data/eval.jsonl",
-                db_run_id="test-run-123",
+                run_id="test-run-123",
             ),
         )
 
@@ -805,8 +805,8 @@ async def test_evaluate_local_saves_quality_report(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_evaluate_local_skips_quality_report_without_db_run_id(tmp_path, monkeypatch):
-    """No quality_report.json is written when db_run_id is empty."""
+async def test_evaluate_local_skips_quality_report_without_run_id(tmp_path, monkeypatch):
+    """No quality_report.json is written when run_id is empty."""
     monkeypatch.chdir(tmp_path)
 
     with (

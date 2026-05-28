@@ -143,7 +143,7 @@ class TestRemoteWorkerHappyPath:
         assert b"done" in status_values
 
     def test_s3_key_prefix_env_var_overrides_run_id_for_writes(self, monkeypatch, tmp_path):
-        """K8s passes S3_KEY_PREFIX=workflow/{db_run_id}."""
+        """K8s passes S3_KEY_PREFIX=workflow/{run_id}."""
         _setup_env(monkeypatch, run_id="my-db-run-id")
         monkeypatch.setenv("S3_KEY_PREFIX", "workflow/my-db-run-id")
         storage, _ = _run_worker(monkeypatch, tmp_path)

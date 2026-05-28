@@ -79,7 +79,7 @@ class TestRunPodAdapterSubmit:
 
         run_id = adapter.submit(_config())
 
-        assert run_id.startswith("runpod/test-exp-")
+        assert run_id.startswith("workflow/")
         mock_runpod.create_pod.assert_called_once()
         # pod_id.txt and job_type.txt written via StoragePort
         write_calls = {call.args[0]: call.args[1] for call in s3.write_bytes.call_args_list}
@@ -93,13 +93,13 @@ class TestRunPodAdapterStatus:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = "running"
 
-        assert adapter.status("runpod/test-exp-aabbcc") == "running"
+        assert adapter.status("workflow/test-exp-aabbcc") == "running"
 
     def test_returns_pending_when_no_status_txt_and_no_pod_id(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = ""   # nothing in storage
 
-        assert adapter.status("runpod/test-exp-aabbcc") == "pending"
+        assert adapter.status("workflow/test-exp-aabbcc") == "pending"
 
     def test_falls_back_to_runpod_api_on_missing_status_txt(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
@@ -118,7 +118,7 @@ class TestRunPodAdapterStatus:
         mock_runpod.get_pod.return_value = {"desiredStatus": "RUNNING"}
         sys.modules["runpod"] = mock_runpod
 
-        assert adapter.status("runpod/test-exp-aabbcc") == "running"
+        assert adapter.status("workflow/test-exp-aabbcc") == "running"
 
 
 class TestRunPodAdapterDownload:
@@ -126,18 +126,18 @@ class TestRunPodAdapterDownload:
         adapter, mock_storage = _make_adapter(monkeypatch, tmp_path)
 
         dest = tmp_path / "output"
-        result = adapter.download("runpod/test-exp-aabbcc", dest)
+        result = adapter.download("workflow/test-exp-aabbcc", dest)
 
         mock_storage.download_directory.assert_called_once_with(
-            "runpod/test-exp-aabbcc/checkpoint/", dest
+            "workflow/test-exp-aabbcc/checkpoint/", dest
         )
         assert result == str(dest)
 
     def test_build_pod_env_includes_data_keys(self, monkeypatch, tmp_path):
         adapter, _ = _make_adapter(monkeypatch, tmp_path)
-        env = adapter._build_pod_env("runpod/my-exp-abc123", _config())
-        assert env["TRAIN_DATA_KEY"] == "runpod/my-exp-abc123/data/train.jsonl"
-        assert env["EVAL_DATA_KEY"] == "runpod/my-exp-abc123/data/eval.jsonl"
+        env = adapter._build_pod_env("workflow/my-exp-abc123", _config())
+        assert env["TRAIN_DATA_KEY"] == "workflow/my-exp-abc123/data/train.jsonl"
+        assert env["EVAL_DATA_KEY"] == "workflow/my-exp-abc123/data/eval.jsonl"
         assert env["STORAGE_BACKEND"] == "s3"
 
     def test_build_pod_env_includes_runpod_api_key(self, monkeypatch, tmp_path):
@@ -147,7 +147,7 @@ class TestRunPodAdapterDownload:
         pod loops indefinitely because RunPod restarts it when the process exits.
         """
         adapter, _ = _make_adapter(monkeypatch, tmp_path)
-        env = adapter._build_pod_env("runpod/my-exp-abc123", _config())
+        env = adapter._build_pod_env("workflow/my-exp-abc123", _config())
         assert "RUNPOD_API_KEY" in env, (
             "Pod env must contain RUNPOD_API_KEY so bootstrap can self-terminate"
         )
@@ -164,7 +164,7 @@ class TestRunPodAdapterLogs:
         mock_runpod = MagicMock(spec=["terminate_pod"])
         sys.modules["runpod"] = mock_runpod
 
-        adapter._terminate_pod("runpod/test-exp-aabbcc")
+        adapter._terminate_pod("workflow/test-exp-aabbcc")
 
         mock_runpod.terminate_pod.assert_called_once_with("pod-xyz")
         storage.write_bytes.assert_not_called()
@@ -179,16 +179,16 @@ class TestRunPodAdapterLogs:
 
         storage.read_text.side_effect = read_text
 
-        result = adapter.logs("runpod/test-exp-aabbcc")
+        result = adapter.logs("workflow/test-exp-aabbcc")
 
         assert result == "epoch 1 loss=0.5\nepoch 2 loss=0.3\n"
-        storage.read_text.assert_called_with("runpod/test-exp-aabbcc/logs.txt")
+        storage.read_text.assert_called_with("workflow/test-exp-aabbcc/logs.txt")
 
     def test_logs_returns_empty_string_when_no_log_in_storage(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = ""
 
-        result = adapter.logs("runpod/test-exp-aabbcc")
+        result = adapter.logs("workflow/test-exp-aabbcc")
 
         assert result == ""
 
@@ -198,7 +198,7 @@ class TestRunPodAdapterProgress:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = json.dumps({"fraction": 0.5, "detail": "epoch=1"})
 
-        fraction, detail = adapter.progress("runpod/test-exp-aabbcc")
+        fraction, detail = adapter.progress("workflow/test-exp-aabbcc")
 
         assert fraction == pytest.approx(0.5)
         assert detail == "epoch=1"
@@ -207,7 +207,7 @@ class TestRunPodAdapterProgress:
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
         storage.read_text.return_value = ""
 
-        fraction, detail = adapter.progress("runpod/test-exp-aabbcc")
+        fraction, detail = adapter.progress("workflow/test-exp-aabbcc")
 
         assert fraction == 0.0
         assert detail == ""

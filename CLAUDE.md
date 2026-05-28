@@ -55,6 +55,18 @@ models/
   model.gguf           # quantised Q4_K_M export for RPi
 ```
 
+### S3 path structure
+
+All compute backends share a single S3 bucket with these canonical namespaces:
+
+| Prefix | Contents |
+|--------|----------|
+| `workflow/{run_id}/` | Per-run artefacts: `status.txt`, `progress.json`, `logs.txt`, `checkpoint/`, `data/train.jsonl`, `data/eval.jsonl`, `bootstrap.py`, `model.gguf` |
+| `model/{model_id}.gguf` | Named GGUF exports addressable by model name or ID |
+| `dataset/{dataset_id}/` | Shared reusable datasets (`train.jsonl`, `eval.jsonl`) |
+
+`run_id` is always a full UUID hex string (e.g. `workflow/a3f1...`). Adapters **must not** prefix it with their backend name (`runpod/`, `vastai/`, etc.) — this ensures artefacts are identical regardless of which compute backend ran the job.
+
 > **Placement rules:**
 > - Ports (interfaces) belong in `src/domain/ports.py`.
 > - Business logic belongs in `src/domain/` — no argparse, no I/O, no adapter imports.

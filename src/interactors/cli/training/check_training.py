@@ -7,8 +7,6 @@ import sys
 
 
 _BACKEND_PREFIXES = {
-    "k8s": "k8s/",
-    "runpod": "runpod/",
     "kaggle": "kaggle/",
     "ssh": "ssh/",
     "colab": "colab/",
@@ -19,6 +17,14 @@ def _detect_backend(run_id: str) -> str:
     for backend, prefix in _BACKEND_PREFIXES.items():
         if run_id.startswith(prefix):
             return backend
+    if run_id.startswith("workflow/"):
+        # k8s, runpod, and vastai all share the workflow/ namespace.
+        # Read backend.txt written by submit() to identify which backend created this run.
+        try:
+            from adapters.storage.s3 import S3StorageAdapter
+            return S3StorageAdapter().read_text(f"{run_id}/backend.txt").strip()
+        except Exception:
+            pass
     return ""
 
 
@@ -29,6 +35,9 @@ def _make_adapter(backend: str):
     if backend == "runpod":
         from adapters.compute.runpod import RunPodTrainingAdapter
         return RunPodTrainingAdapter()
+    if backend == "vastai":
+        from adapters.compute.vastai.adapter import VastAiTrainingAdapter
+        return VastAiTrainingAdapter()
     if backend == "kaggle":
         from adapters.compute.kaggle import KaggleTrainingAdapter
         return KaggleTrainingAdapter()
@@ -52,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--backend", dest="backend", default="",
-        choices=["", "k8s", "runpod", "kaggle", "ssh", "colab"],
+        choices=["", "k8s", "runpod", "vastai", "kaggle", "ssh", "colab"],
         help="Remote backend; auto-detected from the run_id prefix if omitted",
     )
     parser.add_argument(
