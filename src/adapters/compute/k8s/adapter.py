@@ -164,6 +164,9 @@ class K8sPodAdapter(PodLifecyclePort):
             log.debug("pod_status: pod=%s raw_phase=%r", pod_name, phase)
 
             if phase == "running":
+                if pod.status and pod.status.container_statuses:
+                    if not all(cs.ready for cs in pod.status.container_statuses):
+                        return "pending"
                 return "running"
             if phase in ("failed", "error"):
                 return "failed"
