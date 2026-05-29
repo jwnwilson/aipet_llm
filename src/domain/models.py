@@ -256,6 +256,7 @@ class InferenceStatus(str, Enum):
 
 class InferenceInstanceConfig(BaseModel):
     model_id: str
+    model_path: str = ""
     pod_name: str = ""
     pod_namespace: str = "default"
     idle_timeout_minutes: int = 120

@@ -19,7 +19,9 @@ async def startup() -> None:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ready" if _adapter else "unloaded", "model": os.environ.get("GGUF_PATH", "")}
+    if _adapter is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    return {"status": "ready", "model": os.environ.get("GGUF_PATH", "")}
 
 
 @app.post("/infer", response_model=InferenceResponse)
