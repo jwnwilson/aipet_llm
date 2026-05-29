@@ -13,6 +13,14 @@ import pytest
 from domain.models import RemoteTrainConfig
 
 
+@pytest.fixture(autouse=True)
+def _aws_env(monkeypatch):
+    """Inject dummy Kaggle-specific AWS credentials so the _stage_dataset guard doesn't fire."""
+    monkeypatch.setenv("KAGGLE_AWS_ACCESS_KEY_ID", "test-key-id")
+    monkeypatch.setenv("KAGGLE_AWS_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
+
+
 def _config(**kwargs) -> RemoteTrainConfig:
     defaults = dict(
         model="HuggingFaceTB/SmolLM2-360M",
