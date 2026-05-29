@@ -10,6 +10,8 @@ import pytest
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
+from domain.ports import SubmitRetryConfig as _SubmitRetryConfig
+
 from interactors.temporal.activities import (
     CheckpointPath,
     DatasetConfig,
@@ -370,6 +372,7 @@ class TestTrainRemotePolling:
     def _make_adapter(self, statuses, log_output="step 10 loss=0.5", download_path="/tmp/ckpt"):
         adapter = MagicMock()
         adapter.submit.return_value = "run-42"
+        adapter.submit_retry_config.return_value = _SubmitRetryConfig()
         adapter.status.side_effect = list(statuses)
         adapter.logs.return_value = log_output
         adapter.download.return_value = download_path
@@ -442,6 +445,7 @@ class TestTrainRemoteProgress:
     def _make_adapter(self, statuses, progress_return=(0.0, ""), download_path="/tmp/ckpt"):
         adapter = MagicMock()
         adapter.submit.return_value = "run-42"
+        adapter.submit_retry_config.return_value = _SubmitRetryConfig()
         adapter.status.side_effect = list(statuses)
         adapter.logs.return_value = ""
         adapter.progress.return_value = progress_return
@@ -1028,3 +1032,171 @@ class TestResolveTrainingData:
         assert train_out == "datasets/abc123.jsonl"
         assert eval_out == "datasets/eval.jsonl"
         mock_storage.download.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _is_retryable_submit_error and _retryable_submit
+# ---------------------------------------------------------------------------
+
+
+import asyncio as _asyncio
+import interactors.temporal.activities as _acts
+
+
+async def _noop_heartbeat_loop(*args, **kwargs):  # noqa: D401
+    pass
+
+
+_RETRYABLE_CFG = _SubmitRetryConfig(
+    max_retries=2,
+    base_delay_s=0.0,
+    retryable_errors=("rate limit", "temporarily unavailable", "timeout"),
+)
+
+
+class TestIsRetryableSubmitError:
+    def test_matches_rate_limit(self):
+        assert _acts._is_retryable_submit_error(RuntimeError("rate limit exceeded"), _RETRYABLE_CFG)
+
+    def test_matches_case_insensitively(self):
+        assert _acts._is_retryable_submit_error(RuntimeError("RATE LIMIT HIT"), _RETRYABLE_CFG)
+
+    def test_matches_timeout(self):
+        assert _acts._is_retryable_submit_error(RuntimeError("connection timeout"), _RETRYABLE_CFG)
+
+    def test_rejects_auth_failure(self):
+        assert not _acts._is_retryable_submit_error(RuntimeError("authentication failed"), _RETRYABLE_CFG)
+
+    def test_rejects_disk_quota(self):
+        assert not _acts._is_retryable_submit_error(RuntimeError("disk quota exceeded"), _RETRYABLE_CFG)
+
+
+class TestRetryableSubmit:
+    def _make_adapter(self, config: _SubmitRetryConfig = _RETRYABLE_CFG):
+        adapter = MagicMock()
+        adapter.submit_retry_config.return_value = config
+        return adapter
+
+    @pytest.mark.asyncio
+    async def test_succeeds_on_first_attempt(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.return_value = "run-ok"
+
+        result = await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert result == "run-ok"
+        assert adapter.submit.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retries_on_retryable_error_and_succeeds(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = [RuntimeError("rate limit exceeded"), "run-after-retry"]
+
+        result = await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert result == "run-after-retry"
+        assert adapter.submit.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_raises_immediately_on_non_retryable_error(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("authentication failed")
+
+        with pytest.raises(ApplicationError, match="non-retryable"):
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert adapter.submit.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_flag_set_on_immediate_failure(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("disk quota exceeded")
+
+        with pytest.raises(ApplicationError) as exc_info:
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert exc_info.value.non_retryable is True
+
+    @pytest.mark.asyncio
+    async def test_exhausts_all_retries_and_includes_history(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("temporarily unavailable")
+
+        with pytest.raises(ApplicationError) as exc_info:
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        err_msg = str(exc_info.value)
+        assert "attempt 1" in err_msg
+        assert adapter.submit.call_count == _RETRYABLE_CFG.max_retries + 1
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_flag_set_on_exhaustion(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("temporarily unavailable")
+
+        with pytest.raises(ApplicationError) as exc_info:
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert exc_info.value.non_retryable is True
+
+    @pytest.mark.asyncio
+    async def test_backoff_grows_exponentially(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        sleep_calls: list[float] = []
+
+        async def record_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(_asyncio, "sleep", record_sleep)
+        cfg = _SubmitRetryConfig(max_retries=3, base_delay_s=5.0, retryable_errors=("timeout",))
+        adapter = self._make_adapter(cfg)
+        adapter.submit.side_effect = [
+            RuntimeError("timeout"),
+            RuntimeError("timeout"),
+            "run-eventual",
+        ]
+
+        await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert sleep_calls[0] == pytest.approx(5.0)   # 5 * 2^0
+        assert sleep_calls[1] == pytest.approx(10.0)  # 5 * 2^1
+
+    @pytest.mark.asyncio
+    async def test_uses_adapter_specific_config(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        custom_cfg = _SubmitRetryConfig(
+            max_retries=1,
+            base_delay_s=0.0,
+            retryable_errors=("custom error",),
+        )
+        adapter = self._make_adapter(custom_cfg)
+        adapter.submit.side_effect = [RuntimeError("custom error"), "run-custom"]
+
+        result = await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert result == "run-custom"
+        assert adapter.submit.call_count == 2
+
+
+class TestAdapterSubmitRetryConfig:
+    def test_runpod_returns_submit_retry_config(self):
+        from adapters.compute.runpod.adapter import RunPodTrainingAdapter
+        adapter = RunPodTrainingAdapter.__new__(RunPodTrainingAdapter)
+        cfg = adapter.submit_retry_config()
+        assert isinstance(cfg, _SubmitRetryConfig)
+        assert cfg.max_retries > 0
+        assert len(cfg.retryable_errors) > 0
+
+    def test_vastai_returns_submit_retry_config(self):
+        from adapters.compute.vastai.adapter import VastAiTrainingAdapter
+        adapter = VastAiTrainingAdapter.__new__(VastAiTrainingAdapter)
+        cfg = adapter.submit_retry_config()
+        assert isinstance(cfg, _SubmitRetryConfig)
+        assert cfg.max_retries > 0
+        assert len(cfg.retryable_errors) > 0
