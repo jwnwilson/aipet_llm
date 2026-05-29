@@ -14,7 +14,7 @@ from temporalio import activity
 log = logging.getLogger(__name__)
 from temporalio.exceptions import ApplicationError
 
-from domain.ports import ModelStorePort, RemoteJobPort, RemoteTrainingPort, RunStorePort, StoragePort
+from domain.ports import ModelStorePort, RemoteJobPort, RemoteTrainingPort, RunStorePort, StoragePort, SubmitRetryConfig
 from domain.train.dataset import EVAL_SIZE, SEED, TRAIN_SIZE
 from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DIR, DEFAULT_PATIENCE, DEFAULT_WARMUP_RATIO
 
@@ -151,6 +151,58 @@ async def _heartbeat_loop(stage: str, interval: int = 30) -> None:
     while True:
         activity.heartbeat({"stage": stage})
         await asyncio.sleep(interval)
+
+
+def _is_retryable_submit_error(exc: Exception, config: SubmitRetryConfig) -> bool:
+    msg = str(exc).lower()
+    return any(pattern in msg for pattern in config.retryable_errors)
+
+
+async def _retryable_submit(
+    adapter: RemoteJobPort,
+    remote_config: object,
+    loop: asyncio.AbstractEventLoop,
+) -> str:
+    """Submit with exponential-backoff retries for transient errors.
+
+    Retry constraints come from adapter.submit_retry_config() — each backend
+    declares its own retryable strings, max attempts, and base delay.
+    The heartbeat task stays alive across all backoff sleeps.
+    """
+    config = adapter.submit_retry_config()
+    errors: list[str] = []
+    heartbeat_task = asyncio.ensure_future(_heartbeat_loop("train_submit"))
+    try:
+        for attempt in range(1, config.max_retries + 2):  # 1..max+1 inclusive
+            try:
+                return await loop.run_in_executor(None, lambda: adapter.submit(remote_config))
+            except Exception as exc:
+                if not _is_retryable_submit_error(exc, config):
+                    raise ApplicationError(
+                        f"Remote submit failed (non-retryable): {exc}",
+                        non_retryable=True,
+                    ) from exc
+
+                errors.append(f"attempt {attempt}: {exc}")
+                log.warning(
+                    "Remote submit attempt %d/%d failed (retryable): %s",
+                    attempt, config.max_retries + 1, exc,
+                )
+
+                if attempt > config.max_retries:
+                    raise ApplicationError(
+                        f"Remote submit failed after {attempt} attempt(s): {'; '.join(errors)}",
+                        non_retryable=True,
+                    ) from exc
+
+                delay = config.base_delay_s * (2 ** (attempt - 1))
+                log.info("Backing off %.1fs before submit retry %d", delay, attempt + 1)
+                await asyncio.sleep(delay)
+    finally:
+        heartbeat_task.cancel()
+        await asyncio.gather(heartbeat_task, return_exceptions=True)
+
+    raise RuntimeError("unreachable")
 
 
 async def _poll_local_progress(run_id: str, output_dir: str, interval: int = 30) -> None:
@@ -391,15 +443,7 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         )
         run_id = prior_run_id
     else:
-        # Run submit in an executor — it calls subprocess + time.sleep (blocks event loop).
-        heartbeat_task = asyncio.ensure_future(_heartbeat_loop("train_submit"))
-        try:
-            run_id = await loop.run_in_executor(None, lambda: adapter.submit(remote_config))
-        except Exception as exc:
-            raise ApplicationError(f"Remote submit failed: {exc}") from exc
-        finally:
-            heartbeat_task.cancel()
-            await asyncio.gather(heartbeat_task, return_exceptions=True)
+        run_id = await _retryable_submit(adapter, remote_config, loop)
 
         activity.logger.info("Remote job submitted: adapter=%s run_id=%s", type(adapter).__name__, run_id)
 

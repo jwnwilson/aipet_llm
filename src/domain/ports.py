@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
@@ -138,6 +139,21 @@ class InferencePort(ABC):
         """
 
 
+@dataclass
+class SubmitRetryConfig:
+    """Retry constraints for adapter.submit(). Each backend overrides submit_retry_config()."""
+
+    max_retries: int = 3
+    base_delay_s: float = 5.0
+    retryable_errors: tuple[str, ...] = field(default_factory=lambda: (
+        "rate limit",
+        "temporarily unavailable",
+        "timeout",
+        "too many requests",
+        "service unavailable",
+    ))
+
+
 class RemoteJobPort(ABC):
     """Abstract interface for dispatching compute jobs (train, eval, …) to remote backends.
 
@@ -186,6 +202,10 @@ class RemoteJobPort(ABC):
         relative to the current stage (e.g. step/max_steps during training).
         """
         return 0.0, ""
+
+    def submit_retry_config(self) -> SubmitRetryConfig:
+        """Return retry constraints for submit(). Override per backend to customise."""
+        return SubmitRetryConfig()
 
 
 # Backward-compat alias — existing code using RemoteTrainingPort continues to work.

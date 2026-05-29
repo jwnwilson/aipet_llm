@@ -15,7 +15,7 @@ from adapters.compute._wheel import build_wheel
 log = logging.getLogger(__name__)
 
 from domain.models import EvalJobSpec, RemoteJobSpec, TrainJobSpec
-from domain.ports import RemoteJobPort, StoragePort
+from domain.ports import RemoteJobPort, StoragePort, SubmitRetryConfig
 
 _DEFAULT_GPU = "NVIDIA GeForce RTX 3090"
 _DEFAULT_IMAGE = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel"
@@ -156,6 +156,21 @@ class RunPodTrainingAdapter(RemoteJobPort):
         except Exception as exc:
             log.warning("runpod log retrieval failed  run_id=%s  error=%s", run_id, exc)
             return ""
+
+    def submit_retry_config(self) -> SubmitRetryConfig:
+        return SubmitRetryConfig(
+            max_retries=3,
+            base_delay_s=10.0,
+            retryable_errors=(
+                "rate limit",
+                "timeout",
+                "temporarily unavailable",
+                "too many requests",
+                "service unavailable",
+                "runpod error",
+                "there are no longer any instances available",
+            ),
+        )
 
     def progress(self, run_id: str) -> tuple[float, str]:
         raw = self._storage.read_text(f"{run_id}/progress.json")
