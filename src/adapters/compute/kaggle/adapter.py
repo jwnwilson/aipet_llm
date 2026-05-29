@@ -272,22 +272,22 @@ class KaggleTrainingAdapter(RemoteJobPort):
                 f"train_activity (train_data={config.train_data!r})."
             )
 
-        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", ""))
-        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
+        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", "")
+        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", "")
         _aws_bucket = os.environ.get("AWS_S3_BUCKET", "")
         if not _aws_key or not _aws_secret or not _aws_bucket:
             missing = ", ".join(
                 k for k, v in [
-                    ("KAGGLE_AWS_ACCESS_KEY_ID / AWS_ACCESS_KEY_ID", _aws_key),
-                    ("KAGGLE_AWS_SECRET_ACCESS_KEY / AWS_SECRET_ACCESS_KEY", _aws_secret),
+                    ("KAGGLE_AWS_ACCESS_KEY_ID", _aws_key),
+                    ("KAGGLE_AWS_SECRET_ACCESS_KEY", _aws_secret),
                     ("AWS_S3_BUCKET", _aws_bucket),
                 ] if not v
             )
             raise ValueError(
-                f"Kaggle S3 backend requires AWS credentials on the Temporal worker. "
+                f"Kaggle S3 backend requires dedicated Kaggle IAM credentials on the Temporal worker. "
                 f"Missing: {missing}. "
-                "Set KAGGLE_AWS_ACCESS_KEY_ID + KAGGLE_AWS_SECRET_ACCESS_KEY (preferred) "
-                "or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, plus AWS_S3_BUCKET."
+                "Set KAGGLE_AWS_ACCESS_KEY_ID and KAGGLE_AWS_SECRET_ACCESS_KEY (the least-privilege "
+                "Kaggle training IAM user) plus AWS_S3_BUCKET. Do not use the default AWS credentials."
             )
 
         if staging.exists():
@@ -359,8 +359,8 @@ class KaggleTrainingAdapter(RemoteJobPort):
         self, config: TrainJobSpec, kernel_dir: Path, dataset_slug: str
     ) -> None:
         """Render a notebook that invokes remote_worker via runpy after installing the wheel."""
-        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", ""))
-        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
+        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", "")
+        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", "")
         _aws_bucket = os.environ.get("AWS_S3_BUCKET", "")
         notebook = {
             "nbformat": 4,
