@@ -272,6 +272,24 @@ class KaggleTrainingAdapter(RemoteJobPort):
                 f"train_activity (train_data={config.train_data!r})."
             )
 
+        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", "")
+        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", "")
+        _aws_bucket = os.environ.get("AWS_S3_BUCKET", "")
+        if not _aws_key or not _aws_secret or not _aws_bucket:
+            missing = ", ".join(
+                k for k, v in [
+                    ("KAGGLE_AWS_ACCESS_KEY_ID", _aws_key),
+                    ("KAGGLE_AWS_SECRET_ACCESS_KEY", _aws_secret),
+                    ("AWS_S3_BUCKET", _aws_bucket),
+                ] if not v
+            )
+            raise ValueError(
+                f"Kaggle S3 backend requires dedicated Kaggle IAM credentials on the Temporal worker. "
+                f"Missing: {missing}. "
+                "Set KAGGLE_AWS_ACCESS_KEY_ID and KAGGLE_AWS_SECRET_ACCESS_KEY (the least-privilege "
+                "Kaggle training IAM user) plus AWS_S3_BUCKET. Do not use the default AWS credentials."
+            )
+
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
@@ -341,6 +359,9 @@ class KaggleTrainingAdapter(RemoteJobPort):
         self, config: TrainJobSpec, kernel_dir: Path, dataset_slug: str
     ) -> None:
         """Render a notebook that invokes remote_worker via runpy after installing the wheel."""
+        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", "")
+        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", "")
+        _aws_bucket = os.environ.get("AWS_S3_BUCKET", "")
         notebook = {
             "nbformat": 4,
             "nbformat_minor": 5,
@@ -376,6 +397,19 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "    'transformers', 'datasets', 'accelerate', 'sentencepiece', 'peft', 'bitsandbytes',\n",
                         "], check=True)\n",
                         "\n",
+                        "# Credential fast-fail: ensure credentials were baked in at notebook-render time.\n",
+                        "# If any value is empty the kernel was submitted before secrets reached the pod;\n",
+                        "# cancel this Temporal workflow and re-trigger training.\n",
+                        f"_baked_creds = {{'AWS_ACCESS_KEY_ID': {_aws_key!r}, 'AWS_SECRET_ACCESS_KEY': {_aws_secret!r}, 'AWS_S3_BUCKET': {_aws_bucket!r}}}\n",
+                        "_missing_creds = [k for k, v in _baked_creds.items() if not v]\n",
+                        "if _missing_creds:\n",
+                        "    raise EnvironmentError(\n",
+                        "        f'Notebook was rendered without AWS credentials for: {_missing_creds}. '\n",
+                        "        'Cancel this Temporal workflow and re-trigger training after setting '\n",
+                        "        'KAGGLE_AWS_ACCESS_KEY_ID and KAGGLE_AWS_SECRET_ACCESS_KEY on the worker pod.'\n",
+                        "    )\n",
+                        "print('[init] AWS credentials present — key prefix:', _baked_creds['AWS_ACCESS_KEY_ID'][:4], '*** bucket:', _baked_creds['AWS_S3_BUCKET'])\n",
+                        "\n",
                         "# Run the training worker in a fresh subprocess so it starts with all packages\n",
                         "# already installed — identical to K8s/RunPod where packages are pre-installed\n",
                         "# in the image. Training data and checkpoint artifacts go to S3 (same as K8s).\n",
@@ -393,9 +427,9 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         f"        'WARMUP_RATIO': {str(config.warmup_ratio)!r},\n",
                         "        'STORAGE_BACKEND': 's3',\n",
                         f"        'S3_KEY_PREFIX': 'workflow/{config.run_id}',\n",
-                        f"        'AWS_S3_BUCKET': {os.environ.get('AWS_S3_BUCKET', '')!r},\n",
-                        f"        'AWS_ACCESS_KEY_ID': {os.environ.get('KAGGLE_AWS_ACCESS_KEY_ID', os.environ.get('AWS_ACCESS_KEY_ID', ''))!r},\n",
-                        f"        'AWS_SECRET_ACCESS_KEY': {os.environ.get('KAGGLE_AWS_SECRET_ACCESS_KEY', os.environ.get('AWS_SECRET_ACCESS_KEY', ''))!r},\n",
+                        f"        'AWS_S3_BUCKET': {_aws_bucket!r},\n",
+                        f"        'AWS_ACCESS_KEY_ID': {_aws_key!r},\n",
+                        f"        'AWS_SECRET_ACCESS_KEY': {_aws_secret!r},\n",
                         f"        'AWS_DEFAULT_REGION': {os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')!r},\n",
                         "    },\n",
                         ")\n",

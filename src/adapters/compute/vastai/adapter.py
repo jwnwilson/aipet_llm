@@ -14,7 +14,7 @@ from adapters.compute._wheel import build_wheel
 log = logging.getLogger(__name__)
 
 from domain.models import EvalJobSpec, RemoteJobSpec, TrainJobSpec
-from domain.ports import RemoteJobPort, StoragePort
+from domain.ports import RemoteJobPort, StoragePort, SubmitRetryConfig
 
 _DEFAULT_GPU_QUERY = "num_gpus=1 gpu_name=RTX_3090 reliability>0.99"
 _DEFAULT_IMAGE = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel"
@@ -179,6 +179,20 @@ class VastAiTrainingAdapter(RemoteJobPort):
             return float(data.get("fraction", 0.0)), str(data.get("detail", ""))
         except Exception:
             return 0.0, ""
+
+    def submit_retry_config(self) -> SubmitRetryConfig:
+        return SubmitRetryConfig(
+            max_retries=3,
+            base_delay_s=5.0,
+            retryable_errors=(
+                "rate limit",
+                "timeout",
+                "temporarily unavailable",
+                "too many requests",
+                "service unavailable",
+                "no offers found",
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Helpers

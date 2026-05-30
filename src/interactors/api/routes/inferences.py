@@ -76,7 +76,7 @@ async def start_instance(
             pod_adapter.create_pod(
                 pod_name=with_pod.pod_name,
                 model_id=with_pod.model_id,
-                model_path="",
+                model_path=with_pod.model_path,
                 namespace=with_pod.pod_namespace,
             )
         except Exception:

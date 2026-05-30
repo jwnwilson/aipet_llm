@@ -1,4 +1,4 @@
-# llm-api
+# LLM Training Service
 
 LLM training and hosting service. Train lightweight models on a Raspberry Pi 5 k8s cluster or on 3rd party services like kaggle, runpod and vastai, manage them via a React web UI, and expose them for inference via a per-user API key.
 

@@ -36,7 +36,7 @@ class S3StorageAdapter(StoragePort):
             log.info("s3 download ok  bucket=%s  key=%s", self._bucket, key)
         except Exception as exc:
             log.error("s3 download failed  bucket=%s  key=%s  dest=%s  error=%s", self._bucket, key, dest, exc)
-            raise
+            raise RuntimeError(f"s3://{self._bucket}/{key}: {exc}") from exc
 
     def exists(self, key: str) -> bool:
         try:
