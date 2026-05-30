@@ -1,58 +1,65 @@
 # llm-api
 
-AI pet companion inference service. Takes a simplified 3D scene and pet stats (hunger, boredom, social, toilet, tiredness) and returns a valid action + optional target object to drive a browser game character.
+LLM training and hosting service. Train lightweight models on a Raspberry Pi 5 k8s cluster or on 3rd party services like kaggle, runpod and vastai, manage them via a React web UI, and expose them for inference via a per-user API key.
 
-Runs a quantised GGUF model via llama-cpp-python — designed for a Raspberry Pi 5 (8GB, ARM64, no GPU).
+The web UI (`ui/`) lets users log in with Auth0, upload training and eval datasets, trigger training runs on remote GPU backends (RunPod, Vast.ai, Kaggle, SSH), monitor pipeline progress, review eval metrics, and manage inference instances. New users require admin approval before accessing the app.
 
-## Quick start (local dev)
+The first supported model type is an AI pet companion — takes a 3D scene + pet stats and returns a valid action + target object.
+
+## Stack
+
+- Python 3.12+, `uv`, FastAPI + uvicorn
+- Inference: llama-cpp-python (GGUF, no GPU, ARM64) or OpenRouter
+- Training: HuggingFace Transformers + Datasets + PyTorch (dev dep)
+- Orchestration: Temporal
+- Auth: Auth0 JWT
+- Storage: AWS S3
+- Compute backends: RunPod, Vast.ai, Kaggle, SSH
+- Tests: pytest + httpx + pytest-asyncio
+
+## Quick start
 
 ```bash
 uv sync
-make serve                        # starts uvicorn on :8000 with hot-reload
-make request                      # sends a test /infer request
+make serve          # uvicorn on :8000 with hot-reload
+make request        # POST a test /infer request
 ```
 
-## Available commands
+## Architecture
+
+Three-layer hexagonal design:
+
+| Layer | Path | Role |
+|-------|------|------|
+| Interactors | `src/interactors/` | Entry points — wire adapters + domain, no business logic |
+| Domain | `src/domain/` | Pure business logic, no I/O |
+| Adapters | `src/adapters/` | Concrete port implementations (DB, storage, compute, auth) |
+
+### S3 path structure
+
+| Prefix | Contents |
+|--------|----------|
+| `workflow/{run_id}/` | Per-run artefacts: status, logs, checkpoint, data, GGUF |
+| `model/{model_id}.gguf` | Named GGUF exports |
+| `dataset/{dataset_id}/` | Shared datasets (`train.jsonl`, `eval.jsonl`) |
+
+`run_id` is always a UUID hex string. Adapters must not prefix it with backend name.
+
+## Training pipeline
+
+Run the full dataset → train → evaluate → export lifecycle as a Temporal workflow.
 
 ```bash
-make help
-```
+# Start infrastructure
+docker compose up temporal -d        # Temporal + web UI on :8233
+docker compose up temporal-worker    # activity worker
 
-## Temporal training pipeline (orchestrated)
-
-Run the full dataset → train → evaluate → export lifecycle as a durable Temporal workflow.
-
-### Start infrastructure
-
-```bash
-docker compose up temporal -d       # Temporal server + web UI on :8233
-docker compose up temporal-worker   # activity worker (connects to Temporal)
-```
-
-### Trigger an experiment
-
-```bash
-# Generate a fresh dataset, train for 10 epochs, export GGUF if eval passes
+# Trigger a run (via API or CLI)
 python -m src.cli.trigger_training --experiment-name run-001 --epochs 10 --patience 3
-
-# Reuse the existing dataset (hyperparameter sweep — skips generate step)
 python -m src.cli.trigger_training --experiment-name sweep-lr --epochs 5 --skip-generate
 ```
 
-The CLI prints the workflow ID and a direct link to the Temporal Web UI:
-
-```
-Workflow started
-  ID     : training-run-001-a1b2c3d4
-  Run ID : <uuid>
-  UI     : http://localhost:8233/namespaces/default/workflows/training-run-001-a1b2c3d4
-```
-
-### Inspect workflow history
-
-Open http://localhost:8233 in your browser. Each pipeline stage appears as a separate activity event with its inputs, outputs, and retry history. A failed evaluation is surfaced in the workflow result (`passed=False`) without terminating with an exception — the GGUF export is simply skipped.
-
-### Pipeline stages
+Pipeline stages:
 
 | Stage | Activity | Timeout | Retries |
 |-------|----------|---------|---------|
@@ -61,85 +68,70 @@ Open http://localhost:8233 in your browser. Each pipeline stage appears as a sep
 | Evaluate | `evaluate_activity` | 30 min | 3 |
 | Export GGUF | `export_activity` | 1 h | 1 (only if eval passes) |
 
----
+Workflow UI: http://localhost:8233
 
-## Training pipeline (manual)
+## Manual training commands
 
 ```bash
-make data                         # generate 2000 train + 200 eval examples
-make train                        # fine-tune SmolLM-360M (3 epochs, ~2h on M1)
-make train DRY_RUN=1              # 1-step smoke test
-make evaluate                     # score HF checkpoint (target: ≥ 95% parse rate)
-make setup-llama                  # clone + build llama.cpp (required for export)
-make export                       # convert checkpoint → models/model.gguf (Q4_K_M)
-make evaluate-gguf                # score the GGUF model
+make data                      # generate 2000 train + 200 eval examples
+make train                     # fine-tune SmolLM-360M
+make train DRY_RUN=1           # 1-step smoke test
+make evaluate                  # score HF checkpoint (target: ≥ 95% parse rate)
+make setup-llama               # clone + build llama.cpp
+make export                    # convert checkpoint → models/model.gguf (Q4_K_M)
+make evaluate-gguf             # score the GGUF model
 ```
 
-## CI/CD (GitHub Actions)
+## CI/CD
 
-The deploy workflow builds an ARM64 image, pushes it to ECR, and applies k8s manifests. It reads credentials from GitHub Actions secrets.
+Triggers on merge to `main`: builds ARM64 image, pushes to ECR, applies k8s manifests.
 
 ### Required secrets
 
 | Secret | Description |
 |--------|-------------|
-| `AWS_ROLE_ARN` | IAM role for OIDC auth — `terraform -chdir=infra/terraform output -raw github_actions_role_arn` |
+| `AWS_ROLE_ARN` | IAM role for OIDC — `terraform -chdir=infra/terraform output -raw github_actions_role_arn` |
 | `AWS_S3_BUCKET` | S3 bucket for training artefacts |
 | `LLM_API_AWS_ACCESS_KEY_ID` | AWS access key for the llm-api service account |
 | `LLM_API_AWS_SECRET_ACCESS_KEY` | AWS secret key for the llm-api service account |
-| `AUTH0_DOMAIN` | Auth0 tenant domain (e.g. `yourapp.auth0.com`) |
-| `AUTH0_AUDIENCE` | Auth0 API audience identifier |
+| `AUTH0_DOMAIN` | Auth0 tenant domain |
+| `AUTH0_AUDIENCE` | Auth0 API audience |
 | `AUTH0_CLIENT_ID` | Auth0 application client ID |
-| `AUTH0_MGMT_CLIENT_ID` | Auth0 M2M app client ID (for Management API role assignment) |
+| `AUTH0_MGMT_CLIENT_ID` | Auth0 M2M app client ID |
 | `AUTH0_MGMT_CLIENT_SECRET` | Auth0 M2M app client secret |
-| `CORS_ORIGINS` | Comma-separated allowed origins (e.g. `https://yourapp.com`) |
-| `KUBE_CONFIG` | Base64-encoded kubeconfig for the cluster — `base64 -i ~/.kube/config.yaml` |
+| `CORS_ORIGINS` | Comma-separated allowed origins |
+| `KUBE_CONFIG` | Base64-encoded kubeconfig — `base64 -i ~/.kube/config.yaml` |
 
-### Setting secrets for a new repo
+### Seeding secrets for a new repo
 
-1. Copy `.env.example` to `.env` and fill in your values.
-2. Run the helper script:
-   ```bash
-   ./scripts/set_github_secrets.sh
-   # Or for a fork / different repo:
-   ./scripts/set_github_secrets.sh --repo owner/repo
-   ```
-   This sets all secrets that can be read from `.env`. `AWS_ROLE_ARN` and `KUBE_CONFIG` must be set manually (they are not in `.env`):
-   ```bash
-   gh secret set AWS_ROLE_ARN --body "arn:aws:iam::123456789:role/your-role"
-   gh secret set KUBE_CONFIG < <(base64 -i ~/.kube/config.yaml)
-   ```
-3. Verify:
-   ```bash
-   gh secret list
-   ```
-4. Trigger a deploy:
-   ```bash
-   gh workflow run deploy.yml
-   ```
-
----
+```bash
+cp .env.example .env            # fill in values
+./scripts/set_github_secrets.sh
+# AWS_ROLE_ARN and KUBE_CONFIG must be set manually:
+gh secret set AWS_ROLE_ARN --body "arn:aws:iam::123456789:role/your-role"
+gh secret set KUBE_CONFIG < <(base64 -i ~/.kube/config.yaml)
+gh secret list                  # verify
+gh workflow run deploy.yml      # trigger deploy
+```
 
 ## Deployment (Raspberry Pi 5)
 
 ### Prerequisites
 
-- Docker with `buildx` and QEMU support for ARM64 cross-compilation:
-  ```bash
-  docker buildx create --use
-  docker run --privileged --rm tonistiigi/binfmt --install arm64
-  ```
-- SSH access to the RPi as user `pi` (default host: `raspberrypi.local`).
-- Docker installed on the RPi.
+```bash
+docker buildx create --use
+docker run --privileged --rm tonistiigi/binfmt --install arm64
+```
+
+SSH access to the RPi as `pi` (default: `raspberrypi.local`).
 
 ### Deploy
 
 ```bash
-# Build the ARM64 image and push it to the RPi in one step:
 make docker-deploy RPI_HOST=raspberrypi.local
 
-# Or step by step:
-make docker-build               # build linux/arm64 image locally
+# Step by step:
+make docker-build               # build linux/arm64 image
 make docker-export              # save as llm-api.tar.gz
 scp llm-api.tar.gz pi@raspberrypi.local:~/
 
@@ -154,11 +146,67 @@ docker compose up -d
 curl http://raspberrypi.local:8000/health
 ```
 
-### Swap the model without rebuilding
+### Hot-swap model without rebuilding
 
-The `models/` directory is mounted as a volume, so you can update the GGUF without rebuilding the image:
+`models/` is a mounted volume:
 
 ```bash
 scp models/model.gguf pi@raspberrypi.local:~/models/
 ssh pi@raspberrypi.local "docker compose restart"
 ```
+
+## Web UI (`ui/`)
+
+React + TypeScript frontend served alongside the API.
+
+**Stack:** Vite, React 19, React Router, TanStack Query, Auth0, Tailwind CSS, Radix UI, Zod
+
+**Pages:**
+
+| Route | Page |
+|-------|------|
+| `/models` | List and create models |
+| `/models/:id` | Model detail — trigger runs, upload datasets, run inference |
+| `/datasets` | Upload and manage training/eval datasets |
+| `/runs` | List all runs with status |
+| `/runs/:id` | Run detail — pipeline stages, logs, eval metrics |
+| `/inferences` | Manage inference instances (start/stop, status) |
+| `/admin/users` | User approval (admin only) |
+
+Auth0 login is required. New users land on an "access pending" screen until approved by an admin. In local dev (`APP_ENV=development`) auth is bypassed entirely.
+
+### Run the UI locally
+
+```bash
+cd ui
+npm install
+npm run dev             # Vite dev server on :5173
+npm test                # Vitest unit tests
+npm run test:coverage   # coverage report
+npm run build           # production build → ui/dist/
+```
+
+The UI expects the API at `http://localhost:8000` by default. Set `VITE_API_BASE_URL` to override.
+
+### Auth0 environment variables (UI)
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_AUTH0_DOMAIN` | Auth0 tenant domain |
+| `VITE_AUTH0_CLIENT_ID` | Auth0 SPA client ID |
+| `VITE_AUTH0_AUDIENCE` | Auth0 API audience |
+
+Copy `ui/.env.example` to `ui/.env.local` and fill in values for local development.
+
+---
+
+## Development
+
+```bash
+make help              # list all make targets
+uv run pytest          # run tests
+uv run pytest tests/unit/
+uv run pytest tests/integration/
+```
+
+Local dev auth is bypassed when `APP_ENV=development` (uses `FakeAuthAdapter`).
