@@ -1,8 +1,8 @@
-# llm-api
+# LLM Training Service
 
-AI pet companion inference service. Takes a simplified 3D scene and pet stats (hunger, boredom, social, toilet, tiredness) and returns a valid action + optional target object to drive a browser game character.
+A system to take training and eval datasets to fine tune models for use by applications, currently designed to create small specialised models for me to use to power a web game I'm developing. Runs a quantised GGUF model via llama-cpp-python — designed for a Raspberry Pi 5 (8GB, ARM64, no GPU).
 
-Runs a quantised GGUF model via llama-cpp-python — designed for a Raspberry Pi 5 (8GB, ARM64, no GPU).
+The game is an AI pet companion inference service. Takes a simplified 3D scene and pet stats (hunger, boredom, social, toilet, tiredness) and returns a valid action + optional target object to drive a browser game character.
 
 ## Quick start (local dev)
 
