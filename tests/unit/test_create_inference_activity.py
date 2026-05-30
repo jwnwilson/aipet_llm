@@ -28,6 +28,39 @@ class TestCreateInferenceActivity:
         assert call_args.model_id == "model-42"
 
     @pytest.mark.asyncio
+    async def test_creates_instance_with_model_path(self):
+        """Activity passes model_path through to InferenceInstanceConfig."""
+        mock_instance = MagicMock()
+        mock_instance.id = "inst-def456"
+
+        mock_store = MagicMock()
+        mock_store.create.return_value = mock_instance
+
+        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+            from interactors.temporal.activities import create_inference_activity
+            result = await create_inference_activity("model-42", "workflow/abc/model.gguf")
+
+        call_args = mock_store.create.call_args[0][0]
+        assert call_args.model_id == "model-42"
+        assert call_args.model_path == "workflow/abc/model.gguf"
+
+    @pytest.mark.asyncio
+    async def test_creates_instance_with_empty_model_path_by_default(self):
+        """model_path defaults to empty string when not supplied."""
+        mock_instance = MagicMock()
+        mock_instance.id = "inst-ghi789"
+
+        mock_store = MagicMock()
+        mock_store.create.return_value = mock_instance
+
+        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+            from interactors.temporal.activities import create_inference_activity
+            await create_inference_activity("model-42")
+
+        call_args = mock_store.create.call_args[0][0]
+        assert call_args.model_path == ""
+
+    @pytest.mark.asyncio
     async def test_returns_new_instance_id(self):
         """Activity returns the id of the newly created InferenceInstance."""
         mock_instance = MagicMock()

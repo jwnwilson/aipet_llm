@@ -162,33 +162,31 @@ def poll_run_to_completion(
         time.sleep(min(poll_interval, remaining))
 
 
-def start_inference_pod(
+def find_pipeline_inference_instance(
     client: httpx.Client,
     api_url: str,
     headers: dict[str, str],
     model_id: str,
 ) -> dict:
-    """Find or create an inference instance for model_id, then POST /start.
+    """Find the inference instance created by the training pipeline for model_id, then POST /start.
 
+    Fails with a clear error if the pipeline did not create one — this validates the
+    end-to-end pipeline behaviour rather than masking a missing inference record.
     Returns the inference instance record after starting.
     """
-    # Find existing instance for this model
     instances_resp = client.get(f"{api_url}/api/inferences", headers=headers)
     instances = check("GET /api/inferences", instances_resp)
 
     instance = next((i for i in instances if i.get("model_id") == model_id), None)
-
     if instance is None:
-        # Create a new inference instance
-        create_resp = client.post(
-            f"{api_url}/api/inferences",
-            json={"model_id": model_id},
-            headers=headers,
+        print(
+            f"ERROR: no inference instance found for model_id={model_id}."
+            " Expected the training pipeline to create one after export.",
+            file=sys.stderr,
         )
-        instance = check("POST /api/inferences", create_resp, expected_status=201)
+        sys.exit(1)
 
     instance_id = instance["id"]
-    # Start the pod
     start_resp = client.post(
         f"{api_url}/api/inferences/{instance_id}/start",
         headers=headers,
@@ -359,9 +357,9 @@ def main() -> None:
         run = poll_run_to_completion(client, api_url, auth_headers, run_id)
         print(f"OK — run status={run.get('status')}\n")
 
-        # 8. Start an inference pod for the trained model
-        print("   Starting inference pod for trained model...")
-        instance = start_inference_pod(client, api_url, auth_headers, model_id)
+        # 8. Find the inference instance created by the pipeline and start it
+        print("   Finding pipeline-created inference instance and starting pod...")
+        instance = find_pipeline_inference_instance(client, api_url, auth_headers, model_id)
         instance_id = instance["id"]
         print(f"OK — inference instance started: instance_id={instance_id}\n")
 
