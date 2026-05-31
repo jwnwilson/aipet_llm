@@ -1,10 +1,26 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ModelsListPage } from '@/pages/ModelsListPage'
 import { MODEL_FIXTURE } from '../msw/fixtures'
+
+function mockMobile() {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+}
 
 function renderPage() {
   const client = new QueryClient({
@@ -52,5 +68,32 @@ describe('ModelsListPage', () => {
       screen.getByRole('button', { name: new RegExp(`trigger run for ${MODEL_FIXTURE.name}`, 'i') })
     )
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+})
+
+describe('ModelsListPage — mobile view', () => {
+  it('renders model name as a card on mobile', async () => {
+    mockMobile()
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getByTestId('model-mobile-card')).toBeInTheDocument()
+    )
+    expect(screen.getByTestId('model-mobile-card')).toHaveTextContent(MODEL_FIXTURE.name)
+  })
+
+  it('does not render the table on mobile', async () => {
+    mockMobile()
+    renderPage()
+    await waitFor(() => screen.getByTestId('model-mobile-card'))
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('renders Run button in mobile card', async () => {
+    mockMobile()
+    renderPage()
+    await waitFor(() => screen.getByTestId('model-mobile-card'))
+    expect(
+      screen.getByRole('button', { name: new RegExp(`trigger run for ${MODEL_FIXTURE.name}`, 'i') })
+    ).toBeInTheDocument()
   })
 })

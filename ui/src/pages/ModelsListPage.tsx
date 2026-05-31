@@ -8,6 +8,7 @@ import { RunModal } from '@/components/RunModal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import type { TrainingModel } from '@/types'
 
 function LoadingState() {
@@ -42,6 +43,81 @@ function EmptyState() {
   )
 }
 
+function ModelMobileCard({
+  model,
+  index,
+  onRun,
+  onDelete,
+  deletePending,
+}: {
+  model: TrainingModel
+  index: number
+  onRun: () => void
+  onDelete: () => void
+  deletePending: boolean
+}) {
+  const navigate = useNavigate()
+  return (
+    <div
+      data-testid="model-mobile-card"
+      className="border-b border-[#e5e3d8] px-4 py-4 bg-white last:border-b-0 cursor-pointer"
+      onClick={() => navigate(`/models/${model.id}`)}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888]">
+              {String(index + 1).padStart(2, '0')}
+            </span>
+            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888]">
+              {model.base_model}
+            </span>
+          </div>
+          <h3 className="font-['DM_Serif_Display'] text-[1.05rem] text-[#1a1a1a] leading-tight">
+            {model.name}
+          </h3>
+          {model.description && (
+            <p className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-1">
+              {model.description}
+            </p>
+          )}
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#3a3a36]">
+              {model.remote_backend}
+            </span>
+            <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
+              {model.epochs} epochs
+            </span>
+            {model.is_active && <RunStatusBadge status="completed" />}
+          </div>
+        </div>
+        <div
+          className="flex flex-col gap-1.5 shrink-0"
+          onClick={e => e.stopPropagation()}
+        >
+          <Button size="sm" onClick={onRun} aria-label={`Trigger run for ${model.name}`}>
+            <Play className="h-3 w-3" />Run
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link to={`/models/${model.id}/edit`} aria-label={`Edit ${model.name}`}>
+              <Pencil className="h-3 w-3" />Edit
+            </Link>
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={onDelete}
+            disabled={deletePending}
+            aria-label={`Delete ${model.name}`}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function ModelsListPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -70,6 +146,8 @@ export function ModelsListPage() {
       m.base_model.toLowerCase().includes(q)
     )
   })
+
+  const isMobile = useMediaQuery('(max-width: 767px)')
 
   if (isLoading) return <LoadingState />
 
@@ -119,105 +197,127 @@ export function ModelsListPage() {
             </span>
           </div>
 
-          {/* Editorial table */}
           <div className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
-            <table className="ed-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '4rem' }}>№</th>
-                  <th>Model</th>
-                  <th>Base</th>
-                  <th>Backend</th>
-                  <th style={{ width: '5rem' }}>Epochs</th>
-                  <th>Status</th>
-                  <th style={{ width: '14rem' }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
+            {isMobile ? (
+              filtered.length === 0 ? (
+                <div className="px-4 py-10 text-center">
+                  <span className="font-['DM_Serif_Display'] italic text-[#888888]">
+                    No models match "{search}"
+                  </span>
+                </div>
+              ) : (
+                filtered.map((model, i) => (
+                  <ModelMobileCard
+                    key={model.id}
+                    model={model}
+                    index={i}
+                    onRun={() => setRunTarget(model)}
+                    onDelete={() => deleteMutation.mutate(model.id)}
+                    deletePending={
+                      deleteMutation.isPending && deleteMutation.variables === model.id
+                    }
+                  />
+                ))
+              )
+            ) : (
+              <table className="ed-table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="text-center py-10">
-                      <span className="font-['DM_Serif_Display'] italic text-[#888888]">
-                        No models match "{search}"
-                      </span>
-                    </td>
+                    <th style={{ width: '4rem' }}>№</th>
+                    <th>Model</th>
+                    <th>Base</th>
+                    <th>Backend</th>
+                    <th style={{ width: '5rem' }}>Epochs</th>
+                    <th>Status</th>
+                    <th style={{ width: '14rem' }}></th>
                   </tr>
-                ) : (
-                  filtered.map((model, i) => (
-                    <tr
-                      key={model.id}
-                      className="cursor-pointer"
-                      onClick={() => navigate(`/models/${model.id}`)}
-                    >
-                      <td>
-                        <span className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#888888]">
-                          {String(i + 1).padStart(2, '0')}
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-10">
+                        <span className="font-['DM_Serif_Display'] italic text-[#888888]">
+                          No models match "{search}"
                         </span>
                       </td>
-                      <td>
-                        <div className="font-['DM_Serif_Display'] text-[1.05rem] text-[#1a1a1a] leading-tight">
-                          {model.name}
-                        </div>
-                        {model.description && (
-                          <div className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-1 max-w-md">
-                            {model.description}
-                          </div>
-                        )}
-                      </td>
-                      <td className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#3a3a36]">
-                        {model.base_model}
-                      </td>
-                      <td className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#3a3a36]">
-                        {model.remote_backend}
-                      </td>
-                      <td className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a]">
-                        {model.epochs}
-                      </td>
-                      <td>
-                        {model.is_active ? (
-                          <RunStatusBadge status="completed" />
-                        ) : (
-                          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#b3b1a6]">
-                            —
-                          </span>
-                        )}
-                      </td>
-                      <td onClick={e => e.stopPropagation()}>
-                        <div className="flex gap-2 justify-end">
-                          <Button
-                            size="sm"
-                            onClick={() => setRunTarget(model)}
-                            aria-label={`Trigger run for ${model.name}`}
-                          >
-                            <Play className="h-3 w-3" />Run
-                          </Button>
-                          <Button size="sm" variant="outline" asChild>
-                            <Link
-                              to={`/models/${model.id}/edit`}
-                              aria-label={`Edit ${model.name}`}
-                            >
-                              <Pencil className="h-3 w-3" />Edit
-                            </Link>
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => deleteMutation.mutate(model.id)}
-                            disabled={
-                              deleteMutation.isPending &&
-                              deleteMutation.variables === model.id
-                            }
-                            aria-label={`Delete ${model.name}`}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filtered.map((model, i) => (
+                      <tr
+                        key={model.id}
+                        className="cursor-pointer"
+                        onClick={() => navigate(`/models/${model.id}`)}
+                      >
+                        <td>
+                          <span className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#888888]">
+                            {String(i + 1).padStart(2, '0')}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="font-['DM_Serif_Display'] text-[1.05rem] text-[#1a1a1a] leading-tight">
+                            {model.name}
+                          </div>
+                          {model.description && (
+                            <div className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-1 max-w-md">
+                              {model.description}
+                            </div>
+                          )}
+                        </td>
+                        <td className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#3a3a36]">
+                          {model.base_model}
+                        </td>
+                        <td className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#3a3a36]">
+                          {model.remote_backend}
+                        </td>
+                        <td className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a]">
+                          {model.epochs}
+                        </td>
+                        <td>
+                          {model.is_active ? (
+                            <RunStatusBadge status="completed" />
+                          ) : (
+                            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#b3b1a6]">
+                              —
+                            </span>
+                          )}
+                        </td>
+                        <td onClick={e => e.stopPropagation()}>
+                          <div className="flex gap-2 justify-end">
+                            <Button
+                              size="sm"
+                              onClick={() => setRunTarget(model)}
+                              aria-label={`Trigger run for ${model.name}`}
+                            >
+                              <Play className="h-3 w-3" />Run
+                            </Button>
+                            <Button size="sm" variant="outline" asChild>
+                              <Link
+                                to={`/models/${model.id}/edit`}
+                                aria-label={`Edit ${model.name}`}
+                              >
+                                <Pencil className="h-3 w-3" />Edit
+                              </Link>
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => deleteMutation.mutate(model.id)}
+                              disabled={
+                                deleteMutation.isPending &&
+                                deleteMutation.variables === model.id
+                              }
+                              aria-label={`Delete ${model.name}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
           <Pagination page={page} pages={modelsData?.pages ?? 1} onPageChange={setPage} />
         </>
