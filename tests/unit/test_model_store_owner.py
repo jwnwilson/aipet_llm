@@ -80,6 +80,32 @@ class TestListWithOwnerFilter:
     def test_list_returns_empty_when_store_is_empty(self, store):
         assert store.list(owner_id="user-1") == []
 
+    def test_list_includes_null_owner_models_when_filtering_by_owner(self, store):
+        # Arrange — legacy model with no owner (created before auth was enforced)
+        store.create(_config(name="legacy-model", owner_id=None))
+        store.create(_config(name="owned-model", owner_id="user-1"))
+        store.create(_config(name="other-user-model", owner_id="user-2"))
+
+        # Act
+        results = store.list(owner_id="user-1")
+
+        # Assert — user-1's own model AND the null-owner model are returned
+        assert len(results) == 2
+        names = {m.name for m in results}
+        assert names == {"owned-model", "legacy-model"}
+
+    def test_count_includes_null_owner_models_when_filtering_by_owner(self, store):
+        # Arrange
+        store.create(_config(name="legacy-model", owner_id=None))
+        store.create(_config(name="owned-model", owner_id="user-1"))
+        store.create(_config(name="other-user-model", owner_id="user-2"))
+
+        # Act
+        count = store.count(owner_id="user-1")
+
+        # Assert
+        assert count == 2
+
     def test_list_ordered_by_created_at_descending(self, store):
         # Arrange — insert in order, expect reverse order returned
         store.create(_config(name="first", owner_id="user-1"))

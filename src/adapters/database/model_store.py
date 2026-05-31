@@ -76,7 +76,10 @@ class SQLAlchemyModelStore(ModelStorePort):
         with Session(self._engine) as db:
             stmt = select(_TrainingModelRow)
             if owner_id is not None:
-                stmt = stmt.where(_TrainingModelRow.owner_id == owner_id)
+                stmt = stmt.where(
+                    (_TrainingModelRow.owner_id == owner_id)
+                    | (_TrainingModelRow.owner_id.is_(None))
+                )
             stmt = stmt.order_by(_TrainingModelRow.created_at.desc()).offset(offset).limit(limit)
             rows = db.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
@@ -85,7 +88,10 @@ class SQLAlchemyModelStore(ModelStorePort):
         with Session(self._engine) as db:
             stmt = select(func.count()).select_from(_TrainingModelRow)
             if owner_id is not None:
-                stmt = stmt.where(_TrainingModelRow.owner_id == owner_id)
+                stmt = stmt.where(
+                    (_TrainingModelRow.owner_id == owner_id)
+                    | (_TrainingModelRow.owner_id.is_(None))
+                )
             return db.scalar(stmt) or 0
 
     def get(self, id: str) -> TrainingModel | None:
