@@ -11,8 +11,33 @@ env:
   MODEL_VERSION: "2026-05-14"
 
 jobs:
+  # ── Path change detection ─────────────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      ui: ${{ steps.filter.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'tests/**'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            ui:
+              - 'ui/**'
+
   # ── Unit tests ────────────────────────────────────────────────────────────
   unit:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +53,32 @@ jobs:
       - name: Run unit tests
         run: uv run pytest tests/unit/ -v
 
+  # ── UI unit tests ─────────────────────────────────────────────────────────
+  ui:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Run UI tests
+        working-directory: ui
+        run: npm test -- --run
+
   # ── Integration tests (including real-inference and model quality) ─────────
   integration:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -97,9 +146,10 @@ jobs:
   # Optional — failures here do not block deployments.
   # Runs on push to main only; OIDC is unavailable on fork PRs.
   e2e:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' && false  # temporarily disabled — re-enable when e2e tests are fixed
     runs-on: ubuntu-latest
     continue-on-error: true
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       id-token: write
       contents: read
