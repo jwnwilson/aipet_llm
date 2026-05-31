@@ -25,6 +25,37 @@ log = logging.getLogger(__name__)
 _JOB_ANNOTATION = "llm-api/run-id"
 
 
+def _aws_secret_env(region: str) -> list:
+    """AWS credential env vars sourced from the llm-api-secrets K8s Secret."""
+    return [
+        k8s_client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
+        k8s_client.V1EnvVar(
+            name="AWS_S3_BUCKET",
+            value_from=k8s_client.V1EnvVarSource(
+                secret_key_ref=k8s_client.V1SecretKeySelector(
+                    name="llm-api-secrets", key="aws-s3-bucket"
+                )
+            ),
+        ),
+        k8s_client.V1EnvVar(
+            name="AWS_ACCESS_KEY_ID",
+            value_from=k8s_client.V1EnvVarSource(
+                secret_key_ref=k8s_client.V1SecretKeySelector(
+                    name="llm-api-secrets", key="aws-access-key-id"
+                )
+            ),
+        ),
+        k8s_client.V1EnvVar(
+            name="AWS_SECRET_ACCESS_KEY",
+            value_from=k8s_client.V1EnvVarSource(
+                secret_key_ref=k8s_client.V1SecretKeySelector(
+                    name="llm-api-secrets", key="aws-secret-access-key"
+                )
+            ),
+        ),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Inference pod adapter
 # ---------------------------------------------------------------------------
@@ -76,7 +107,10 @@ class K8sPodAdapter(PodLifecyclePort):
                     k8s_client.V1Container(
                         name="inference-worker",
                         image=image,
-                        env=[k8s_client.V1EnvVar(name="GGUF_PATH", value=model_path)],
+                        env=[
+                            k8s_client.V1EnvVar(name="GGUF_PATH", value=model_path),
+                            *_aws_secret_env(os.environ.get("AWS_DEFAULT_REGION", "us-east-1")),
+                        ],
                         ports=[k8s_client.V1ContainerPort(container_port=8080)],
                         readiness_probe=k8s_client.V1Probe(
                             http_get=k8s_client.V1HTTPGetAction(path="/health", port=8080),
@@ -307,36 +341,6 @@ class K8sTrainingAdapter(RemoteJobPort):
             f"K8sTrainingAdapter does not support job_type={spec.job_type!r}"
         )
 
-    def _aws_secret_env(self, region: str) -> list:
-        """Return the shared AWS credential env vars injected into every Job."""
-        return [
-            k8s_client.V1EnvVar(name="AWS_DEFAULT_REGION", value=region),
-            k8s_client.V1EnvVar(
-                name="AWS_S3_BUCKET",
-                value_from=k8s_client.V1EnvVarSource(
-                    secret_key_ref=k8s_client.V1SecretKeySelector(
-                        name="llm-api-secrets", key="aws-s3-bucket"
-                    )
-                ),
-            ),
-            k8s_client.V1EnvVar(
-                name="AWS_ACCESS_KEY_ID",
-                value_from=k8s_client.V1EnvVarSource(
-                    secret_key_ref=k8s_client.V1SecretKeySelector(
-                        name="llm-api-secrets", key="aws-access-key-id"
-                    )
-                ),
-            ),
-            k8s_client.V1EnvVar(
-                name="AWS_SECRET_ACCESS_KEY",
-                value_from=k8s_client.V1EnvVarSource(
-                    secret_key_ref=k8s_client.V1SecretKeySelector(
-                        name="llm-api-secrets", key="aws-secret-access-key"
-                    )
-                ),
-            ),
-        ]
-
     @staticmethod
     def _worker_node_affinity() -> "k8s_client.V1Affinity":
         """Return affinity that hard-excludes control-plane nodes and prefers
@@ -450,7 +454,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             k8s_client.V1EnvVar(name="EPOCHS", value=str(config.epochs)),
             k8s_client.V1EnvVar(name="PATIENCE", value=str(config.patience)),
             k8s_client.V1EnvVar(name="WARMUP_RATIO", value=str(config.warmup_ratio)),
-            *self._aws_secret_env(region),
+            *_aws_secret_env(region),
         ]
 
         self._create_job(
@@ -492,7 +496,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             ),
             k8s_client.V1EnvVar(name="GGUF_S3_KEY", value=config.gguf_s3_key),
             k8s_client.V1EnvVar(name="QUANTIZE", value=config.quantize),
-            *self._aws_secret_env(region),
+            *_aws_secret_env(region),
         ]
 
         self._create_job(

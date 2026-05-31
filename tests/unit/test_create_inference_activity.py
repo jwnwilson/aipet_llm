@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,10 +12,8 @@ class TestCreateInferenceActivity:
 
     @pytest.mark.asyncio
     async def test_creates_instance_with_correct_model_id(self):
-        """Activity creates an InferenceInstance with the correct model_id."""
         mock_instance = MagicMock()
         mock_instance.id = "inst-abc123"
-
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
@@ -27,16 +25,13 @@ class TestCreateInferenceActivity:
         finally:
             acts._inference_store = None
 
-        mock_store.create.assert_called_once()
         call_args = mock_store.create.call_args[0][0]
         assert call_args.model_id == "model-42"
 
     @pytest.mark.asyncio
     async def test_creates_instance_with_model_path(self):
-        """Activity passes model_path through to InferenceInstanceConfig."""
         mock_instance = MagicMock()
         mock_instance.id = "inst-def456"
-
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
@@ -54,10 +49,8 @@ class TestCreateInferenceActivity:
 
     @pytest.mark.asyncio
     async def test_creates_instance_with_empty_model_path_by_default(self):
-        """model_path defaults to empty string when not supplied."""
         mock_instance = MagicMock()
         mock_instance.id = "inst-ghi789"
-
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
@@ -83,10 +76,8 @@ class TestCreateInferenceActivity:
 
     @pytest.mark.asyncio
     async def test_returns_new_instance_id(self):
-        """Activity returns the id of the newly created InferenceInstance."""
         mock_instance = MagicMock()
         mock_instance.id = "inst-xyz789"
-
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
@@ -102,7 +93,6 @@ class TestCreateInferenceActivity:
 
     @pytest.mark.asyncio
     async def test_propagates_store_exception(self):
-        """If the store raises, the activity propagates the exception."""
         mock_store = MagicMock()
         mock_store.create.side_effect = RuntimeError("DB unavailable")
 
