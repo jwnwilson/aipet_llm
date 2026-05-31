@@ -1,6 +1,6 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
-import type { Dataset, PaginatedResponse, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
+import type { Dataset, InferenceInstance, PaginatedResponse, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
 
 function paginate<T>(items: T[], request: Request): PaginatedResponse<T> {
   const url = new URL(request.url)
@@ -17,6 +17,7 @@ const BASE = 'http://localhost:8000'
 
 let models: TrainingModel[] = [MODEL_FIXTURE]
 let datasets: Dataset[] = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
+let inferences: InferenceInstance[] = []
 let pendingUsers: UserContext[] = [PENDING_USER_FIXTURE]
 let approvedUsers: UserContext[] = [APPROVED_USER_FIXTURE]
 
@@ -157,11 +158,23 @@ export const handlers = [
     )
     return new HttpResponse(null, { status: 204 })
   }),
+
+  http.get(`${BASE}/api/inferences`, ({ request }) => HttpResponse.json(paginate(inferences, request))),
+
+  http.post(`${BASE}/api/inferences/:id/infer`, async () => {
+    return HttpResponse.json({
+      action: 'EAT',
+      stat: null,
+      target_object_id: 'bowl-1',
+      confidence: 0.92,
+    })
+  }),
 ]
 
 export function resetHandlerState() {
   models = [MODEL_FIXTURE]
   datasets = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
+  inferences = []
   pendingUsers = [PENDING_USER_FIXTURE]
   approvedUsers = [APPROVED_USER_FIXTURE]
 }
