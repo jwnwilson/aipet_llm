@@ -14,6 +14,7 @@ from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
 from interactors.temporal.activities import (
+    configure_inference_store,
     configure_model_store,
     configure_run_store,
     configure_storage,
@@ -92,6 +93,7 @@ async def test_workflow_updates_run_status_in_db():
 
     mock_inference_store = MagicMock()
     mock_inference_store.create.return_value = MagicMock(id="test-inference-id")
+    configure_inference_store(mock_inference_store)
 
     with ExitStack() as stack:
         # Mock k8s adapter — export_activity always uses remote_backend="k8s"
