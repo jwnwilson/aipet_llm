@@ -30,6 +30,7 @@ dependencies = [
     "kaggle>=1.6",
     "runpod>=1.7",
     "vastai>=1.0",
+    "sse-starlette>=2.1.0",
 ]
 
 [project.optional-dependencies]

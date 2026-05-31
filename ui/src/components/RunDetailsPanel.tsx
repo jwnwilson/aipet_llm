@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { getRunTemporal, getRunLogs, isRunActive } from '@/api/runs'
+import { useLogStream } from '@/hooks/useLogStream'
 import type { RunRecord, TemporalDetails, RunLogsResponse } from '@/types'
 
 interface RunDetailsPanelProps {
@@ -70,7 +71,8 @@ function LogsSection({ logsData }: { logsData: RunLogsResponse }) {
 
 export function RunDetailsPanel({ runId, run }: RunDetailsPanelProps) {
   const [expanded, setExpanded] = useState(false)
-  const pollInterval = isRunActive(run) ? 5000 : false
+  const isActive = isRunActive(run)
+  const pollInterval = isActive ? 5000 : false
 
   const { data: temporalData, isError: temporalError } = useQuery({
     queryKey: ['runs', runId, 'temporal'],
@@ -82,9 +84,11 @@ export function RunDetailsPanel({ runId, run }: RunDetailsPanelProps) {
   const { data: logsData } = useQuery({
     queryKey: ['runs', runId, 'logs'],
     queryFn: () => getRunLogs(runId),
-    enabled: expanded,
-    refetchInterval: expanded ? pollInterval : false,
+    enabled: expanded && !isActive,
+    refetchInterval: false,
   })
+
+  const { lines: streamedLines } = useLogStream(runId, isActive && expanded)
 
   return (
     <div className="border-t border-[#e5e3d8] mt-4 pt-2">
@@ -109,7 +113,23 @@ export function RunDetailsPanel({ runId, run }: RunDetailsPanelProps) {
             </p>
           )}
           {temporalData != null && <TemporalSection details={temporalData} />}
-          {logsData != null && <LogsSection logsData={logsData} />}
+
+          {/* Static logs for completed/failed runs */}
+          {!isActive && logsData != null && <LogsSection logsData={logsData} />}
+
+          {/* Live stream for active runs */}
+          {isActive && (
+            <div>
+              <div className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+                Training logs — live
+              </div>
+              <pre className="font-['IBM_Plex_Mono'] text-[0.75rem] text-[#1a1a1a] bg-[#f6f5f0] border border-[#d0d0c8] rounded-[2px] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-64">
+                {streamedLines.length > 0 ? streamedLines.join('\n') : (
+                  <span className="text-[#888888] italic font-['DM_Serif_Display']">Waiting for output…</span>
+                )}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
@@ -16,6 +18,11 @@ from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
 
 log = logging.getLogger(__name__)
+
+
+def _log_path_for_run(run_id: str) -> Path:
+    return Path(f"data/workflow/{run_id}/logs.txt")
+
 
 router = APIRouter(
     prefix="/api/runs",
@@ -231,6 +238,50 @@ def get_run_logs(
         return RunLogsResponse(logs=None, source=None)
 
     return RunLogsResponse(logs=log_path.read_text(), source="local")
+
+
+_TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
+
+
+@router.get("/{run_id}/logs/stream")
+async def stream_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> StreamingResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = _log_path_for_run(run_id)
+
+    async def _event_generator():
+        sent_bytes = 0
+        while True:
+            current_run = run_store.get(run_id)
+            is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
+
+            if log_path.exists():
+                content = log_path.read_text(encoding="utf-8", errors="replace")
+                if len(content) > sent_bytes:
+                    new_text = content[sent_bytes:]
+                    sent_bytes = len(content)
+                    for line in new_text.splitlines():
+                        yield f"data: {line}\n\n"
+
+            if is_terminal:
+                yield "event: done\ndata: stream closed\n\n"
+                return
+
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/trigger", status_code=202)
