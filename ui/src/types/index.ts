@@ -1,4 +1,13 @@
 // src/types/index.ts
+
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  limit: number
+  pages: number
+}
+
 export interface TrainingModelConfig {
   name: string
   description: string

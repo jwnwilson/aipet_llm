@@ -185,7 +185,9 @@ class TestListRuns:
         c, _, _ = client
         resp = await c.get("/api/runs")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     @pytest.mark.asyncio
     async def test_returns_all_runs(self, client_with_model):
@@ -198,7 +200,7 @@ class TestListRuns:
 
         resp = await c.get("/api/runs")
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        assert len(resp.json()["items"]) == 2
 
 
 class TestGetRun:

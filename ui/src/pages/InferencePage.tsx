@@ -5,6 +5,7 @@ import { deleteInference, listInferences, startInference, stopInference } from '
 import { listModels } from '@/api/models'
 import { InferenceStatusBadge } from '@/components/InferenceStatusBadge'
 import { InstanceInferencePanel } from '@/components/InstanceInferencePanel'
+import { Pagination } from '@/components/Pagination'
 import { Button } from '@/components/ui/button'
 import type { InferenceInstance, InferenceStatus, TrainingModel } from '@/types'
 
@@ -115,22 +116,18 @@ function ModelGroup({
 export function InferencePage() {
   const queryClient = useQueryClient()
 
+  const [page, setPage] = useState(1)
   const { data: instancesData, isLoading, isError } = useQuery({
-    queryKey: ['inferences'],
-    queryFn: () => listInferences(),
+    queryKey: ['inferences', page],
+    queryFn: () => listInferences(page),
   })
-  // Handle both plain array (current) and paginated response (future)
-  const instances: InferenceInstance[] = Array.isArray(instancesData)
-    ? instancesData
-    : ((instancesData as { items?: InferenceInstance[] } | undefined)?.items ?? [])
+  const instances: InferenceInstance[] = instancesData?.items ?? []
 
   const { data: modelsData } = useQuery({
     queryKey: ['models'],
     queryFn: () => listModels(),
   })
-  const modelsList: TrainingModel[] = Array.isArray(modelsData)
-    ? modelsData
-    : ((modelsData as { items?: TrainingModel[] } | undefined)?.items ?? [])
+  const modelsList: TrainingModel[] = modelsData?.items ?? []
   const modelsById = new Map<string, TrainingModel>(modelsList.map(m => [m.id, m]))
 
   useEffect(() => {
@@ -207,19 +204,22 @@ export function InferencePage() {
           </p>
         </div>
       ) : (
-        Array.from(grouped.entries()).map(([modelId, modelInstances]) => (
-          <ModelGroup
-            key={modelId}
-            model={modelsById.get(modelId) ?? null}
-            instances={modelInstances}
-            onStart={id => startMutation.mutate(id)}
-            onStop={id => stopMutation.mutate(id)}
-            onDelete={id => deleteMutation.mutate(id)}
-            pendingStart={startMutation.isPending ? (startMutation.variables ?? null) : null}
-            pendingStop={stopMutation.isPending ? (stopMutation.variables ?? null) : null}
-            pendingDelete={deleteMutation.isPending ? (deleteMutation.variables ?? null) : null}
-          />
-        ))
+        <>
+          {Array.from(grouped.entries()).map(([modelId, modelInstances]) => (
+            <ModelGroup
+              key={modelId}
+              model={modelsById.get(modelId) ?? null}
+              instances={modelInstances}
+              onStart={id => startMutation.mutate(id)}
+              onStop={id => stopMutation.mutate(id)}
+              onDelete={id => deleteMutation.mutate(id)}
+              pendingStart={startMutation.isPending ? (startMutation.variables ?? null) : null}
+              pendingStop={stopMutation.isPending ? (stopMutation.variables ?? null) : null}
+              pendingDelete={deleteMutation.isPending ? (deleteMutation.variables ?? null) : null}
+            />
+          ))}
+          <Pagination page={page} pages={instancesData?.pages ?? 1} onPageChange={setPage} />
+        </>
       )}
     </div>
   )

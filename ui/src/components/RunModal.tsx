@@ -67,10 +67,11 @@ export function RunModal({ model, onClose }: RunModalProps) {
 
   const skipGenerate = watch('skip_generate')
 
-  const { data: allDatasets = [] } = useQuery({
+  const { data: allDatasetsData } = useQuery({
     queryKey: ['datasets'],
-    queryFn: listDatasets,
+    queryFn: () => listDatasets(),
   })
+  const allDatasets = allDatasetsData?.items ?? []
   const trainDatasets = allDatasets.filter(d => d.dataset_type === 'train')
   const evalDatasets  = allDatasets.filter(d => d.dataset_type === 'eval')
 

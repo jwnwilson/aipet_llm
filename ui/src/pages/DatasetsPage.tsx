@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, UploadCloud } from 'lucide-react'
 import type { Dataset, DatasetType } from '@/types'
 import { listDatasets, createDataset, deleteDataset } from '@/api/datasets'
+import { Pagination } from '@/components/Pagination'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -204,10 +205,12 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
 
 export function DatasetsPage() {
   const queryClient = useQueryClient()
-  const { data: datasets, isLoading, error } = useQuery({
-    queryKey: ['datasets'],
-    queryFn: listDatasets,
+  const [page, setPage] = useState(1)
+  const { data: datasetsData, isLoading, error } = useQuery({
+    queryKey: ['datasets', page],
+    queryFn: () => listDatasets(page),
   })
+  const datasets = datasetsData?.items
 
   const deleteMutation = useMutation({
     mutationFn: deleteDataset,
@@ -290,6 +293,7 @@ export function DatasetsPage() {
               </div>
             )}
             {datasets && datasets.length > 0 && (
+              <>
               <table className="ed-table">
                 <thead>
                   <tr>
@@ -308,6 +312,10 @@ export function DatasetsPage() {
                   ))}
                 </tbody>
               </table>
+              <div className="px-6 pb-4">
+                <Pagination page={page} pages={datasetsData?.pages ?? 1} onPageChange={setPage} />
+              </div>
+              </>
             )}
           </div>
         </section>

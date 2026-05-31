@@ -46,7 +46,9 @@ class TestListDatasets:
         c, _, _ = client
         resp = await c.get("/api/datasets")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     @pytest.mark.asyncio
     async def test_returns_created_datasets(self, client):
@@ -58,7 +60,7 @@ class TestListDatasets:
         )
         resp = await c.get("/api/datasets")
         assert resp.status_code == 200
-        body = resp.json()
+        body = resp.json()["items"]
         assert len(body) == 1
         assert body[0]["name"] == "my-train"
         assert body[0]["dataset_type"] == "train"

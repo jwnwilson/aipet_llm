@@ -14,6 +14,7 @@ from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
 from interactors.temporal.activities import (
+    configure_inference_store,
     configure_model_store,
     configure_run_store,
     configure_storage,
@@ -73,6 +74,9 @@ async def test_workflow_updates_run_status_in_db():
     configure_run_store(run_store)
     configure_model_store(model_store)
     configure_storage(MagicMock())
+    mock_inference_store = MagicMock()
+    mock_inference_store.create.return_value = MagicMock(id="test-inference-id")
+    configure_inference_store(mock_inference_store)
 
     config = ExperimentConfig(
         experiment_name="db-status-test",
@@ -90,9 +94,6 @@ async def test_workflow_updates_run_status_in_db():
         gguf_output="data/test/model.gguf",
     )
 
-    mock_inference_store = MagicMock()
-    mock_inference_store.create.return_value = MagicMock(id="test-inference-id")
-
     with ExitStack() as stack:
         # Mock k8s adapter — export_activity always uses remote_backend="k8s"
         mock_k8s = MagicMock()
@@ -106,7 +107,6 @@ async def test_workflow_updates_run_status_in_db():
         stack.enter_context(patch("domain.train.evaluate.evaluate", side_effect=_fake_evaluate))
         stack.enter_context(patch("domain.train.export.export"))
         stack.enter_context(patch("adapters.storage.upload_model", side_effect=lambda s, p, k: k if k.endswith(".gz") else k + ".gz"))
-        stack.enter_context(patch("interactors.api.deps.get_inference_store", return_value=mock_inference_store))
 
         async with await WorkflowEnvironment.start_time_skipping() as env:
             async with Worker(
