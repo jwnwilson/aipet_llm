@@ -16,11 +16,10 @@ _adapter: LlamaCppInferenceAdapter | None = None
 
 
 def _download_from_s3(s3_key: str, dest: Path) -> None:
-    import boto3
-    bucket = os.environ["AWS_S3_BUCKET"]
-    log.info("Downloading s3://%s/%s → %s", bucket, s3_key, dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    boto3.client("s3").download_file(bucket, s3_key, str(dest))
+    from adapters.storage.s3 import S3StorageAdapter
+    storage = S3StorageAdapter()
+    log.info("Downloading s3://<bucket>/%s → %s", s3_key, dest)
+    storage.download(s3_key, dest)
     size_mb = dest.stat().st_size / 1024 ** 2
     log.info("Model downloaded: %s (%.1f MB)", dest, size_mb)
 
@@ -29,8 +28,6 @@ async def _resolve_model_path(gguf_path: str) -> str:
     """Return a local file path for the model, downloading from S3 when necessary."""
     if Path(gguf_path).exists():
         return gguf_path
-    if not os.environ.get("AWS_S3_BUCKET"):
-        return gguf_path  # let the adapter raise a clear error about the missing file
     dest = Path("/tmp") / Path(gguf_path).name
     await asyncio.to_thread(_download_from_s3, gguf_path, dest)
     return str(dest)
@@ -41,7 +38,7 @@ async def startup() -> None:
     global _adapter
     gguf_path = os.environ.get("GGUF_PATH", "")
     if not gguf_path:
-        return
+        raise RuntimeError("GGUF_PATH environment variable must be set before starting the inference server.")
     local_path = await _resolve_model_path(gguf_path)
     _adapter = LlamaCppInferenceAdapter(model_path=local_path)
 

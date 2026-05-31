@@ -20,6 +20,56 @@ def _make_adapter():
     return adapter, mock_core
 
 
+class TestCreatePod:
+    def _pod_result(self) -> MagicMock:
+        result = MagicMock()
+        result.metadata.uid = "uid-1"
+        result.status.phase = "Pending"
+        result.spec.node_name = None
+        return result
+
+    def test_gguf_path_env_set_from_model_path(self):
+        """create_pod must pass model_path as GGUF_PATH so the container knows which model to load."""
+        adapter, core = _make_adapter()
+        core.create_namespaced_pod.return_value = self._pod_result()
+
+        adapter.create_pod(
+            pod_name="inference-abc",
+            model_id="model-1",
+            model_path="model/my-model.gguf",
+        )
+
+        pod_body = core.create_namespaced_pod.call_args[1]["body"]
+        container = pod_body.spec.containers[0]
+        env_map = {e.name: e.value for e in container.env if e.value is not None}
+        assert env_map["GGUF_PATH"] == "model/my-model.gguf"
+
+    def test_aws_credentials_injected_from_k8s_secret(self):
+        """create_pod must inject AWS credentials from llm-api-secrets so the container can download from S3."""
+        adapter, core = _make_adapter()
+        core.create_namespaced_pod.return_value = self._pod_result()
+
+        adapter.create_pod(
+            pod_name="inference-abc",
+            model_id="model-1",
+            model_path="model/my-model.gguf",
+        )
+
+        pod_body = core.create_namespaced_pod.call_args[1]["body"]
+        container = pod_body.spec.containers[0]
+        secret_refs = {
+            e.name: e.value_from.secret_key_ref.key
+            for e in container.env
+            if e.value_from and e.value_from.secret_key_ref
+        }
+        assert "AWS_S3_BUCKET" in secret_refs
+        assert "AWS_ACCESS_KEY_ID" in secret_refs
+        assert "AWS_SECRET_ACCESS_KEY" in secret_refs
+        assert secret_refs["AWS_S3_BUCKET"] == "aws-s3-bucket"
+        assert secret_refs["AWS_ACCESS_KEY_ID"] == "aws-access-key-id"
+        assert secret_refs["AWS_SECRET_ACCESS_KEY"] == "aws-secret-access-key"
+
+
 class TestDeletePodGuard:
     def test_delete_pod_with_empty_name_is_a_no_op(self):
         """delete_pod('') must not call any k8s API — guards against wiping cluster services."""

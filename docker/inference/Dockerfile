@@ -19,6 +19,7 @@ COPY --from=builder /app/.venv ./.venv
 COPY docker/inference/server.py ./server.py
 COPY src/adapters/inference.py ./adapters/inference.py
 COPY src/adapters/prompt.py ./adapters/prompt.py
+COPY src/adapters/storage/s3.py ./adapters/storage/s3.py
 COPY src/domain/ ./domain/
 ENV PATH="/app/.venv/bin:$PATH"
 ENV GGUF_PATH=""
