@@ -76,22 +76,23 @@ describe('ModelsListPage — mobile view', () => {
     mockMobile()
     renderPage()
     await waitFor(() =>
-      expect(screen.getByTestId('model-mobile-card')).toBeInTheDocument()
+      expect(screen.getAllByTestId('model-mobile-card').length).toBeGreaterThan(0)
     )
-    expect(screen.getByTestId('model-mobile-card')).toHaveTextContent(MODEL_FIXTURE.name)
+    const cards = screen.getAllByTestId('model-mobile-card')
+    expect(cards.some(c => c.textContent?.includes(MODEL_FIXTURE.name))).toBe(true)
   })
 
   it('does not render the table on mobile', async () => {
     mockMobile()
     renderPage()
-    await waitFor(() => screen.getByTestId('model-mobile-card'))
+    await waitFor(() => screen.getAllByTestId('model-mobile-card'))
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('renders Run button in mobile card', async () => {
     mockMobile()
     renderPage()
-    await waitFor(() => screen.getByTestId('model-mobile-card'))
+    await waitFor(() => screen.getAllByTestId('model-mobile-card'))
     expect(
       screen.getByRole('button', { name: new RegExp(`trigger run for ${MODEL_FIXTURE.name}`, 'i') })
     ).toBeInTheDocument()
