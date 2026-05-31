@@ -317,14 +317,14 @@ def main() -> None:
 
         # 4. Verify the model appears in the listing
         models = check("GET /api/models", client.get(f"{api_url}/api/models", headers=auth_headers))
-        model_ids = [m["id"] for m in models]
+        model_ids = [m["id"] for m in models["items"]]
         if model_id not in model_ids:
             print(
                 f"ERROR: created model {model_id} not found in GET /api/models listing",
                 file=sys.stderr,
             )
             sys.exit(1)
-        print(f"OK — {len(models)} model(s) returned, created model present\n")
+        print(f"OK — {len(models['items'])} model(s) returned, created model present\n")
 
         # 5. Upload a training dataset
         dataset = upload_dataset(client, api_url, auth_headers)
@@ -336,14 +336,14 @@ def main() -> None:
             "GET /api/datasets",
             client.get(f"{api_url}/api/datasets", headers=auth_headers),
         )
-        dataset_ids = [d["id"] for d in datasets]
+        dataset_ids = [d["id"] for d in datasets["items"]]
         if dataset_id not in dataset_ids:
             print(
                 f"ERROR: created dataset {dataset_id} not found in GET /api/datasets listing",
                 file=sys.stderr,
             )
             sys.exit(1)
-        print(f"OK — {len(datasets)} dataset(s) returned, created dataset present\n")
+        print(f"OK — {len(datasets['items'])} dataset(s) returned, created dataset present\n")
 
         # 7. Trigger a training run and wait for completion
         run_trigger = trigger_run(
