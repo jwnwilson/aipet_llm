@@ -7,6 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install uv
 WORKDIR /app
 COPY pyproject.toml uv.lock* ./
+# Disable native CPU feature detection so llama-cpp-python compiles to a safe ARMv8-A
+# baseline. Without this, QEMU exposes a richer feature set than the real Pi 5
+# (Cortex-A76, ARMv8.2-A), causing SIGILL (exit 132) when the binary runs on the node.
+ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_SVE=OFF"
 # Cache mount: llama-cpp-python and heavy deps downloaded once, reused every build
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project --extra inference
