@@ -1,17 +1,28 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
-import type { Dataset, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
+import type { Dataset, InferenceInstance, PaginatedResponse, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
+
+function paginate<T>(items: T[], request: Request): PaginatedResponse<T> {
+  const url = new URL(request.url)
+  const page = parseInt(url.searchParams.get('page') ?? '1', 10)
+  const limit = parseInt(url.searchParams.get('limit') ?? '50', 10)
+  const offset = (page - 1) * limit
+  const sliced = items.slice(offset, offset + limit)
+  const pages = Math.max(1, Math.ceil(items.length / limit))
+  return { items: sliced, total: items.length, page, limit, pages }
+}
 import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE, TEMPORAL_DETAILS_FIXTURE, RUN_LOGS_FIXTURE } from './fixtures'
 
 const BASE = 'http://localhost:8000'
 
 let models: TrainingModel[] = [MODEL_FIXTURE]
 let datasets: Dataset[] = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
+let inferences: InferenceInstance[] = []
 let pendingUsers: UserContext[] = [PENDING_USER_FIXTURE]
 let approvedUsers: UserContext[] = [APPROVED_USER_FIXTURE]
 
 export const handlers = [
-  http.get(`${BASE}/api/models`, () => HttpResponse.json(models)),
+  http.get(`${BASE}/api/models`, ({ request }) => HttpResponse.json(paginate(models, request))),
 
   http.post(`${BASE}/api/models`, async ({ request }) => {
     const config = await request.json() as TrainingModelConfig
@@ -54,7 +65,7 @@ export const handlers = [
     return HttpResponse.json({ run_id: RUN_FIXTURE.id }, { status: 202 })
   }),
 
-  http.get(`${BASE}/api/runs`, () => HttpResponse.json([RUN_FIXTURE])),
+  http.get(`${BASE}/api/runs`, ({ request }) => HttpResponse.json(paginate([RUN_FIXTURE], request))),
 
   http.get(`${BASE}/api/runs/:id`, ({ params }) => {
     if (params.id === RUN_FIXTURE.id) return HttpResponse.json(RUN_FIXTURE)
@@ -87,7 +98,7 @@ export const handlers = [
   }),
 
   // Named dataset CRUD
-  http.get(`${BASE}/api/datasets`, () => HttpResponse.json(datasets)),
+  http.get(`${BASE}/api/datasets`, ({ request }) => HttpResponse.json(paginate(datasets, request))),
 
   http.post(`${BASE}/api/datasets`, async () => {
     // Client-side validates name/file before reaching here;
@@ -147,11 +158,23 @@ export const handlers = [
     )
     return new HttpResponse(null, { status: 204 })
   }),
+
+  http.get(`${BASE}/api/inferences`, ({ request }) => HttpResponse.json(paginate(inferences, request))),
+
+  http.post(`${BASE}/api/inferences/:id/infer`, async () => {
+    return HttpResponse.json({
+      action: 'EAT',
+      stat: null,
+      target_object_id: 'bowl-1',
+      confidence: 0.92,
+    })
+  }),
 ]
 
 export function resetHandlerState() {
   models = [MODEL_FIXTURE]
   datasets = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
+  inferences = []
   pendingUsers = [PENDING_USER_FIXTURE]
   approvedUsers = [APPROVED_USER_FIXTURE]
 }

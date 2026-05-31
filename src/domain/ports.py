@@ -216,8 +216,12 @@ class StorePort(ABC, Generic[TDomain, TConfig]):
     """Generic CRUD base for any domain entity store."""
 
     @abstractmethod
-    def list(self) -> list[TDomain]:
-        """Return all stored entities."""
+    def list(self, offset: int = 0, limit: int = 50) -> list[TDomain]:
+        """Return stored entities with optional offset/limit for pagination."""
+
+    @abstractmethod
+    def count(self) -> int:
+        """Return total number of stored entities."""
 
     @abstractmethod
     def get(self, id: str) -> TDomain | None:
@@ -240,8 +244,12 @@ class ModelStorePort(StorePort["TrainingModel", "TrainingModelConfig"]):
     """Abstract interface for persisting training model configurations."""
 
     @abstractmethod
-    def list(self, owner_id: str | None = None) -> list[TrainingModel]:  # type: ignore[override]
-        """Return all models, optionally filtered to a specific owner."""
+    def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[TrainingModel]:  # type: ignore[override]
+        """Return models with optional owner filter and pagination."""
+
+    @abstractmethod
+    def count(self, owner_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total model count, optionally filtered by owner."""
 
     @abstractmethod
     def activate(self, id: str) -> TrainingModel | None:
@@ -259,8 +267,12 @@ class RunStorePort(StorePort["RunRecord", "RunConfig"]):
     """Abstract interface for persisting training run records."""
 
     @abstractmethod
-    def list(self, model_id: str | None = None, owner_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
-        """Return all runs, optionally filtered by model_id and/or owner_id."""
+    def list(self, model_id: str | None = None, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[RunRecord]:  # type: ignore[override]
+        """Return runs with optional filters and pagination."""
+
+    @abstractmethod
+    def count(self, model_id: str | None = None, owner_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total run count matching the given filters."""
 
     @abstractmethod
     def update_status(self, run_id: str, status: RunStatus) -> RunRecord | None:
@@ -312,8 +324,12 @@ class DatasetStorePort(StorePort["DatasetRecord", "DatasetConfig"]):
     """
 
     @abstractmethod
-    def list(self, owner_id: str | None = None) -> list[DatasetRecord]:  # type: ignore[override]
-        """Return all datasets, optionally filtered to a specific owner."""
+    def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[DatasetRecord]:  # type: ignore[override]
+        """Return datasets with optional owner filter and pagination."""
+
+    @abstractmethod
+    def count(self, owner_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total dataset count, optionally filtered by owner."""
 
 
 class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig"]):
@@ -330,6 +346,14 @@ class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig
     @abstractmethod
     def update_last_used(self, id: str) -> InferenceInstance | None:
         """Set last_used_at to now; return updated record or None if not found."""
+
+    @abstractmethod
+    def list(self, model_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
+        """Return inference instances with optional model filter and pagination."""
+
+    @abstractmethod
+    def count(self, model_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total inference instance count, optionally filtered by model."""
 
     @abstractmethod
     def list_active(self) -> list[InferenceInstance]:

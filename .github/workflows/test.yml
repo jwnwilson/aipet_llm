@@ -142,7 +142,7 @@ jobs:
         run: uv run pytest tests/integration/ -v --timeout=120
         timeout-minutes: 30
 
-  # ── E2E: model inference + local training pipeline ────────────────────────
+  # ── E2E: model inference + local training pipeline + inference Docker ────────
   # Optional — failures here do not block deployments.
   # Runs on push to main only; OIDC is unavailable on fork PRs.
   e2e:
@@ -157,6 +157,7 @@ jobs:
       AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
       AWS_DEFAULT_REGION: us-east-1
       LLM_API_TEST_MODEL_PATH: models/test_model.gguf
+      INFERENCE_TEST_S3_GGUF: model/smoke-test-model.gguf
     steps:
       - uses: actions/checkout@v4
 
@@ -201,5 +202,5 @@ jobs:
         run: uv run python -m interactors.cli.model.download_model
 
       - name: Run E2E tests
-        run: uv run pytest tests/e2e/ -v
-        timeout-minutes: 30
+        run: uv run pytest tests/e2e/ -v --timeout=400
+        timeout-minutes: 60

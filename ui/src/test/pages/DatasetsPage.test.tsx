@@ -65,7 +65,7 @@ describe('DatasetsPage', () => {
 
     it('shows "No datasets" message when list is empty', async () => {
       server.use(
-        http.get('http://localhost:8000/api/datasets', () => HttpResponse.json([]))
+        http.get('http://localhost:8000/api/datasets', () => HttpResponse.json({ items: [], total: 0, page: 1, limit: 50, pages: 1 }))
       )
       renderPage()
       await waitFor(() =>
