@@ -71,6 +71,7 @@ body {
   background-size: 24px 24px;
   background-attachment: fixed;
   letter-spacing: 0.005em;
+  overflow-x: hidden;
 }
 
 /* ---------------------------------------------------------------
@@ -139,7 +140,19 @@ code, pre, kbd, samp {
 .ed-page {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 2.5rem 2rem 4rem;
+  padding: 1.25rem 1rem 3rem;
+}
+
+@media (min-width: 640px) {
+  .ed-page {
+    padding: 2rem 1.5rem 4rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .ed-page {
+    padding: 2.5rem 2rem 4rem;
+  }
 }
 
 /* Card-like clean surface (utility – also see Card component) */

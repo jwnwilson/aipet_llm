@@ -1,5 +1,6 @@
 import { Check, X, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 export type StageStatus = 'pending' | 'active' | 'completed' | 'failed'
 
@@ -46,6 +47,44 @@ function StageNumber({ status, label }: { status: StageStatus; label: string }) 
 }
 
 export function PipelineStages({ stages, numbers }: PipelineStagesProps) {
+  const isMobile = useMediaQuery('(max-width: 767px)')
+
+  if (isMobile) {
+    return (
+      <div
+        data-testid="pipeline-mobile-grid"
+        className="grid grid-cols-2 gap-x-4 gap-y-5"
+      >
+        {stages.map((stage, i) => {
+          const num = numbers?.[i] ?? String(i + 1).padStart(2, '0')
+          return (
+            <div
+              key={stage.name}
+              data-testid={`stage-${stage.name.toLowerCase().replace(/\s+/g, '-')}`}
+              className={cn(
+                'flex items-center gap-3',
+                stage.status === 'pending' && 'opacity-40',
+              )}
+            >
+              <StageNumber status={stage.status} label={num} />
+              <span
+                className={cn(
+                  "font-['Outfit'] text-[0.72rem] uppercase tracking-[0.12em] font-medium",
+                  stage.status === 'active' && 'text-[#1a1a1a]',
+                  stage.status === 'completed' && 'text-[#888888]',
+                  stage.status === 'pending' && 'text-[#b3b1a6]',
+                  stage.status === 'failed' && 'text-[#7f1d1d]',
+                )}
+              >
+                {stage.name}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center w-full">
       {stages.map((stage, i) => {
@@ -59,7 +98,6 @@ export function PipelineStages({ stages, numbers }: PipelineStagesProps) {
             className={cn(
               'flex items-center',
               isLast ? 'flex-none' : 'flex-1',
-              stage.status === 'pending' && 'opacity-40',
               stage.status === 'pending' && 'opacity-40',
             )}
           >
