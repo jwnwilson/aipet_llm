@@ -23,6 +23,8 @@ COPY src/adapters/storage/s3.py ./adapters/storage/s3.py
 COPY src/domain/ ./domain/
 ENV PATH="/app/.venv/bin:$PATH"
 ENV GGUF_PATH=""
+ARG IMAGE_SHA=unknown
+ENV IMAGE_SHA=${IMAGE_SHA}
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=5s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
