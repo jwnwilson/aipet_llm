@@ -173,6 +173,32 @@ export const handlers = [
 
   http.get(`${BASE}/api/inferences`, ({ request }) => HttpResponse.json(paginate(inferences, request))),
 
+  http.post(`${BASE}/api/inferences`, async ({ request }) => {
+    const config = await request.json() as { model_id: string; pod_name?: string; pod_namespace?: string; idle_timeout_minutes?: number }
+    const created: InferenceInstance = {
+      id: `inst-${Date.now()}`,
+      model_id: config.model_id,
+      model_path: 'model/auto.gguf',
+      pod_name: config.pod_name ?? '',
+      pod_namespace: config.pod_namespace ?? 'default',
+      idle_timeout_minutes: config.idle_timeout_minutes ?? 120,
+      status: 'pending',
+      last_used_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    inferences = [...inferences, created]
+    return HttpResponse.json(created, { status: 201 })
+  }),
+
+  http.post(`${BASE}/api/inferences/:id/start`, ({ params }) => {
+    const idx = inferences.findIndex(i => i.id === params.id)
+    if (idx === -1) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const updated = { ...inferences[idx], status: 'initializing' as const, pod_name: `inference-${(params.id as string).slice(0, 12)}` }
+    inferences = [...inferences.slice(0, idx), updated, ...inferences.slice(idx + 1)]
+    return HttpResponse.json(updated)
+  }),
+
   http.post(`${BASE}/api/inferences/:id/infer`, async () => {
     return HttpResponse.json({
       action: 'EAT',
