@@ -1,6 +1,6 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
-import type { Dataset, InferenceInstance, PaginatedResponse, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
+import type { Dataset, InferenceInstance, PaginatedResponse, RunRecord, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
 
 function paginate<T>(items: T[], request: Request): PaginatedResponse<T> {
   const url = new URL(request.url)
@@ -11,11 +11,12 @@ function paginate<T>(items: T[], request: Request): PaginatedResponse<T> {
   const pages = Math.max(1, Math.ceil(items.length / limit))
   return { items: sliced, total: items.length, page, limit, pages }
 }
-import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE, TEMPORAL_DETAILS_FIXTURE, RUN_LOGS_FIXTURE } from './fixtures'
+import { MODEL_FIXTURE, MODEL_FIXTURE_2, RUN_FIXTURE, RUN_FIXTURE_2, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE, TEMPORAL_DETAILS_FIXTURE, RUN_LOGS_FIXTURE } from './fixtures'
 
 const BASE = 'http://localhost:8000'
 
-let models: TrainingModel[] = [MODEL_FIXTURE]
+let models: TrainingModel[] = [MODEL_FIXTURE, MODEL_FIXTURE_2]
+let runs: RunRecord[] = [RUN_FIXTURE, RUN_FIXTURE_2]
 let datasets: Dataset[] = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
 let inferences: InferenceInstance[] = []
 let pendingUsers: UserContext[] = [PENDING_USER_FIXTURE]
@@ -65,21 +66,25 @@ export const handlers = [
     return HttpResponse.json({ run_id: RUN_FIXTURE.id }, { status: 202 })
   }),
 
-  http.get(`${BASE}/api/runs`, ({ request }) => HttpResponse.json(paginate([RUN_FIXTURE], request))),
+  http.get(`${BASE}/api/runs`, ({ request }) => HttpResponse.json(paginate(runs, request))),
 
   http.get(`${BASE}/api/runs/:id`, ({ params }) => {
-    if (params.id === RUN_FIXTURE.id) return HttpResponse.json(RUN_FIXTURE)
-    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const run = runs.find(r => r.id === params.id)
+    if (!run) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    return HttpResponse.json(run)
   }),
 
   http.delete(`${BASE}/api/runs/:id`, ({ params }) => {
-    if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
-    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const run = runs.find(r => r.id === params.id)
+    if (!run) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    runs = runs.filter(r => r.id !== params.id)
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.post(`${BASE}/api/runs/:id/cancel`, ({ params }) => {
-    if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
-    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const run = runs.find(r => r.id === params.id)
+    if (!run) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.get(`${BASE}/api/runs/:id/evaluation`, ({ params }) => {
@@ -179,7 +184,8 @@ export const handlers = [
 ]
 
 export function resetHandlerState() {
-  models = [MODEL_FIXTURE]
+  models = [MODEL_FIXTURE, MODEL_FIXTURE_2]
+  runs = [RUN_FIXTURE, RUN_FIXTURE_2]
   datasets = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
   inferences = []
   pendingUsers = [PENDING_USER_FIXTURE]
