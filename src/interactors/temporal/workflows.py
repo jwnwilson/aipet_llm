@@ -64,6 +64,9 @@ class ExperimentConfig:
     # forwarded to the remote training job rather than a non-existent local path.
     train_data: str = ""
     eval_data: str = ""
+    # When True (default), create an inference record after export regardless of eval outcome.
+    # Set to False to gate inference record creation on eval success.
+    always_create_inference: bool = True
 
 
 @dataclass
@@ -251,11 +254,16 @@ class TrainingPipelineWorkflow:
                     retry_policy=_RETRY,
                 )
 
-            # Inference instance: only created when eval SUCCEEDED (production gate).
-            if eval_outcome_value == "succeeded" and config.model_id:
+            # Inference instance: created when eval succeeded, or when always_create_inference
+            # is True (default) — allowing the user to start/test the model even after a
+            # failed eval.
+            should_create_inference = config.model_id and (
+                config.always_create_inference or eval_outcome_value == "succeeded"
+            )
+            if should_create_inference:
                 await workflow.execute_activity(
                     create_inference_activity,
-                    args=[config.model_id],
+                    args=[config.model_id, result.gguf_path.path],
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=_RETRY,
                 )
