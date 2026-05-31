@@ -55,7 +55,7 @@ export function InstanceInferencePanel({ instanceId }: InstanceInferencePanelPro
       <textarea
         className="w-full bg-white px-3 py-2 font-['IBM_Plex_Mono'] text-[0.75rem] text-[#1a1a1a] min-h-36 resize-y border-[1.5px] border-[#d0d0c8] rounded-[3px] focus:outline-none focus:border-[#1a1a1a]"
         value={json}
-        onChange={e => setJson(e.target.value)}
+        onChange={e => { setJson(e.target.value); setParseError(null) }}
         spellCheck={false}
         aria-label="Inference request payload"
       />
