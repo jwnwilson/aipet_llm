@@ -14,7 +14,7 @@ from temporalio import activity
 log = logging.getLogger(__name__)
 from temporalio.exceptions import ApplicationError
 
-from domain.ports import ModelStorePort, RemoteJobPort, RemoteTrainingPort, RunStorePort, StoragePort, SubmitRetryConfig
+from domain.ports import InferenceStorePort, ModelStorePort, RemoteJobPort, RemoteTrainingPort, RunStorePort, StoragePort, SubmitRetryConfig
 from domain.train.dataset import EVAL_SIZE, SEED, TRAIN_SIZE
 from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DIR, DEFAULT_PATIENCE, DEFAULT_WARMUP_RATIO
 
@@ -26,6 +26,7 @@ from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DI
 _model_store: ModelStorePort | None = None
 _run_store: RunStorePort | None = None
 _storage: StoragePort | None = None
+_inference_store: InferenceStorePort | None = None
 
 
 def configure_model_store(store: ModelStorePort) -> None:
@@ -41,6 +42,11 @@ def configure_run_store(store: RunStorePort) -> None:
 def configure_storage(storage: StoragePort) -> None:
     global _storage
     _storage = storage
+
+
+def configure_inference_store(store: InferenceStorePort) -> None:
+    global _inference_store
+    _inference_store = store
 
 
 def _get_model_store() -> ModelStorePort:
@@ -852,8 +858,8 @@ async def create_inference_activity(model_id: str, model_path: str = "") -> str:
     """Create an InferenceInstance record for an exported model.
     Returns the new instance id."""
     from domain.models import InferenceInstanceConfig
-    from interactors.api import deps
-    store = deps.get_inference_store()
+    if _inference_store is None:
+        raise RuntimeError("InferenceStorePort has not been configured in activities.")
     config = InferenceInstanceConfig(model_id=model_id, model_path=model_path)
-    instance = store.create(config)
+    instance = _inference_store.create(config)
     return instance.id

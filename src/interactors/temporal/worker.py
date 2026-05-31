@@ -16,6 +16,7 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from interactors.temporal.activities import (
+    configure_inference_store,
     configure_model_store,
     configure_run_store,
     configure_storage,
@@ -42,8 +43,10 @@ async def main() -> None:
 
     engine = make_engine()
     init_db(engine)
+    from adapters.database.inference_store import SQLAlchemyInferenceStore
     configure_model_store(SQLAlchemyModelStore(engine))
     configure_run_store(SQLAlchemyRunStore(engine))
+    configure_inference_store(SQLAlchemyInferenceStore(engine))
 
     if os.getenv("AWS_S3_BUCKET"):
         from adapters.storage.s3 import S3StorageAdapter
