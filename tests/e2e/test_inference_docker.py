@@ -1,7 +1,9 @@
 """Docker container smoke test — builds the inference image and verifies end-to-end inference.
 
+The container downloads the GGUF from S3 on startup, so no volume mount is required.
+
 Required env vars:
-    INFERENCE_TEST_S3_GGUF   S3 key for a small GGUF model (e.g. model/aipet.gguf)
+    INFERENCE_TEST_S3_GGUF   S3 key for a GGUF model (e.g. model/aipet.gguf)
     AWS_S3_BUCKET            S3 bucket name
     AWS_ACCESS_KEY_ID        AWS credentials
     AWS_SECRET_ACCESS_KEY    AWS credentials
@@ -22,19 +24,18 @@ import subprocess
 import time
 from pathlib import Path
 
-import boto3
 import httpx
 import pytest
 
 _REQUIRED_VARS = [
-    "INFERENCE_TEST_S3_GGUF",
+    "INFERENCE_TEST_S3_GGUF",  # S3 key — container downloads this on startup
     "AWS_S3_BUCKET",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
 ]
 _REPO_ROOT = Path(__file__).parents[2]
 _IMAGE_TAG = "llm-api-inference-test:latest"
-_STARTUP_TIMEOUT_S = 120
+_STARTUP_TIMEOUT_S = 180  # allow time for S3 download + model load
 
 
 def _missing_vars() -> list[str]:
@@ -75,27 +76,18 @@ def inference_image() -> str:
 
 
 @pytest.fixture(scope="session")
-def local_gguf(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    bucket = os.environ["AWS_S3_BUCKET"]
-    key = os.environ["INFERENCE_TEST_S3_GGUF"]
-    dest = tmp_path_factory.mktemp("gguf") / "test_model.gguf"
-    s3 = boto3.client("s3")
-    s3.download_file(bucket, key, str(dest))
-    return dest
-
-
-@pytest.fixture(scope="session")
-def inference_container(inference_image: str, local_gguf: Path):
-    """Start the inference container and yield its base URL. Stops it on teardown."""
+def inference_container(inference_image: str):
+    """Start the inference container, let it download the GGUF from S3, yield base URL."""
     port = _free_port()
 
     passthrough_env = [
+        "AWS_S3_BUCKET",
         "AWS_ACCESS_KEY_ID",
         "AWS_SECRET_ACCESS_KEY",
         "AWS_SESSION_TOKEN",
         "AWS_DEFAULT_REGION",
     ]
-    env_args: list[str] = ["-e", "GGUF_PATH=/model/test_model.gguf"]
+    env_args: list[str] = ["-e", f"GGUF_PATH={os.environ['INFERENCE_TEST_S3_GGUF']}"]
     for var in passthrough_env:
         if os.environ.get(var):
             env_args += ["-e", f"{var}={os.environ[var]}"]
@@ -103,7 +95,6 @@ def inference_container(inference_image: str, local_gguf: Path):
     cmd = [
         "docker", "run", "-d",
         "-p", f"{port}:8080",
-        "-v", f"{local_gguf.parent}:/model:ro",
         *env_args,
         inference_image,
     ]
@@ -114,6 +105,7 @@ def inference_container(inference_image: str, local_gguf: Path):
     container_id = result.stdout.strip()
     base_url = f"http://localhost:{port}"
 
+    # Wait for /health — it returns 503 until the S3 download + model load completes
     deadline = time.monotonic() + _STARTUP_TIMEOUT_S
     last_error = ""
     while time.monotonic() < deadline:
