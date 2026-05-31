@@ -2,11 +2,26 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Annotated, Literal, Union
+from typing import Annotated, Generic, Literal, TypeVar, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from domain.actions import Action
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    limit: int
+    pages: int = 0
+
+    def model_post_init(self, __context: object) -> None:
+        if self.pages == 0:
+            computed = max(1, -(-self.total // self.limit)) if self.limit else 1
+            object.__setattr__(self, "pages", computed)
 
 
 class PetStats(BaseModel):

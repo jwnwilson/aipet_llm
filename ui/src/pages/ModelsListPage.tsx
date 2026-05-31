@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { Pencil, Play, Plus, Trash2, Search } from 'lucide-react'
 import { deleteModel, listModels } from '@/api/models'
+import { Pagination } from '@/components/Pagination'
 import { RunModal } from '@/components/RunModal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -46,11 +47,15 @@ export function ModelsListPage() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [runTarget, setRunTarget] = useState<TrainingModel | null>(null)
+  const [page, setPage] = useState(1)
 
-  const { data: models = [], isLoading } = useQuery({
-    queryKey: ['models'],
-    queryFn: listModels,
+  useEffect(() => { setPage(1) }, [search])
+
+  const { data: modelsData, isLoading } = useQuery({
+    queryKey: ['models', page],
+    queryFn: () => listModels(page),
   })
+  const models = modelsData?.items ?? []
 
   const deleteMutation = useMutation({
     mutationFn: deleteModel,
@@ -214,6 +219,7 @@ export function ModelsListPage() {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pages={modelsData?.pages ?? 1} onPageChange={setPage} />
         </>
       )}
 

@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Play, Square, Trash2 } from 'lucide-react'
 import { deleteInference, listInferences, startInference, stopInference } from '../api/inferences'
 import { InferenceStatusBadge } from '../components/InferenceStatusBadge'
+import { Pagination } from '../components/Pagination'
 import { Button } from '../components/ui/button'
 import type { InferenceInstance, InferenceStatus } from '../types'
 
@@ -19,10 +20,12 @@ function formatDate(iso: string | null): string {
 export function InferencePage() {
   const queryClient = useQueryClient()
 
-  const { data: instances = [], isLoading, isError } = useQuery({
-    queryKey: ['inferences'],
-    queryFn: listInferences,
+  const [page, setPage] = useState(1)
+  const { data: instancesData, isLoading, isError } = useQuery({
+    queryKey: ['inferences', page],
+    queryFn: () => listInferences(page),
   })
+  const instances = instancesData?.items ?? []
 
   useEffect(() => {
     const interval = setInterval(
@@ -147,6 +150,7 @@ export function InferencePage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pages={instancesData?.pages ?? 1} onPageChange={setPage} />
       )}
     </div>
   )

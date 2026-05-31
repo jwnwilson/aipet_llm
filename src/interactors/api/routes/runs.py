@@ -9,11 +9,11 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
+from domain.models import EvaluationData, PaginatedResponse, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
 from domain.ports import DatasetStorePort, ModelStorePort, RunStorePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
@@ -86,12 +86,17 @@ class RunLogsResponse(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=list[RunRecord])
+@router.get("", response_model=PaginatedResponse[RunRecord])
 def list_runs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     run_store: RunStorePort = Depends(get_run_store),
     user: UserContext = Depends(require_approved),
-) -> list[RunRecord]:
-    return run_store.list(owner_id=user.user_id)
+) -> PaginatedResponse[RunRecord]:
+    offset = (page - 1) * limit
+    items = run_store.list(owner_id=user.user_id, offset=offset, limit=limit)
+    total = run_store.count(owner_id=user.user_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.get("/{run_id}", response_model=RunRecord)

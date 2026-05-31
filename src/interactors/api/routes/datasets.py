@@ -10,10 +10,10 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
-from domain.models import DatasetConfig, DatasetRecord, DatasetType, UserContext
+from domain.models import DatasetConfig, DatasetRecord, DatasetType, PaginatedResponse, UserContext
 from domain.ports import DatasetStorePort, StoragePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_storage
@@ -109,12 +109,17 @@ async def upload_eval_dataset(
     return DatasetUploadResult(key=key)
 
 
-@router.get("", response_model=list[DatasetRecord])
+@router.get("", response_model=PaginatedResponse[DatasetRecord])
 def list_datasets(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     dataset_store: DatasetStorePort = Depends(get_dataset_store),
     user: UserContext = Depends(require_approved),
-) -> list[DatasetRecord]:
-    return dataset_store.list(owner_id=user.user_id)
+) -> PaginatedResponse[DatasetRecord]:
+    offset = (page - 1) * limit
+    items = dataset_store.list(owner_id=user.user_id, offset=offset, limit=limit)
+    total = dataset_store.count(owner_id=user.user_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.post("", status_code=201, response_model=DatasetRecord)
