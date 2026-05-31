@@ -21,7 +21,7 @@ from interactors.api.deps import get_dataset_store, get_model_store, get_run_sto
 log = logging.getLogger(__name__)
 
 
-_UUID_HEX_RE = re.compile(r"^[0-9a-f]{32}$")
+_UUID_HEX_RE = re.compile(r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$")
 
 
 def _log_path_for_run(run_id: str) -> Path:
