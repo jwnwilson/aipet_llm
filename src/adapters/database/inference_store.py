@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, Integer, String, func, select as sa_select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from adapters.database import Base
@@ -51,10 +51,21 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
     def _session(self) -> Session:
         return Session(self._engine)
 
-    def list(self) -> list[InferenceInstance]:
+    def list(self, model_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
         with self._session() as s:
-            rows = s.query(_InferenceInstanceRow).order_by(_InferenceInstanceRow.created_at.desc()).all()
+            stmt = sa_select(_InferenceInstanceRow)
+            if model_id is not None:
+                stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
+            stmt = stmt.order_by(_InferenceInstanceRow.created_at.desc()).offset(offset).limit(limit)
+            rows = s.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
+
+    def count(self, model_id: str | None = None) -> int:
+        with self._session() as s:
+            stmt = sa_select(func.count()).select_from(_InferenceInstanceRow)
+            if model_id is not None:
+                stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
+            return s.scalar(stmt) or 0
 
     def list_active(self) -> list[InferenceInstance]:
         with self._session() as s:

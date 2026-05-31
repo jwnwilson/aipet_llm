@@ -55,15 +55,26 @@ describe('RunDetailsPanel — expanded state', () => {
     expect(screen.getByText('RUNNING')).toBeInTheDocument()
   })
 
-  it('shows log content after toggle when logs exist', async () => {
+  it('shows live log section for an active (running) run', async () => {
+    // RUN_FIXTURE.status = 'running' → isActive=true → live stream section shown
     renderPanel()
+    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
+    await waitFor(() =>
+      expect(screen.getByText(/training logs — live/i)).toBeInTheDocument()
+    )
+    // No data from stub EventSource yet → shows placeholder
+    expect(screen.getByText(/waiting for output/i)).toBeInTheDocument()
+  })
+
+  it('shows static log content for a completed run when logs exist', async () => {
+    renderPanel({ status: 'completed' })
     await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(/epoch 1\/3/)).toBeInTheDocument()
     )
   })
 
-  it('shows "No logs captured" when logs are null', async () => {
+  it('shows "No logs captured" for a completed run when logs are null', async () => {
     server.use(
       http.get('http://localhost:8000/api/runs/:id/logs', ({ params }) => {
         if (params.id === RUN_FIXTURE.id)
@@ -71,7 +82,7 @@ describe('RunDetailsPanel — expanded state', () => {
         return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
       })
     )
-    renderPanel()
+    renderPanel({ status: 'completed' })
     await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(/no logs captured/i)).toBeInTheDocument()

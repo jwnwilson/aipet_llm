@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
+from domain.models import EvaluationData, PaginatedResponse, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
 from domain.ports import DatasetStorePort, ModelStorePort, RunStorePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
 
 log = logging.getLogger(__name__)
+
+
+_UUID_HEX_RE = re.compile(r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$")
+
+
+def _log_path_for_run(run_id: str) -> Path:
+    if not _UUID_HEX_RE.match(run_id):
+        raise HTTPException(status_code=404, detail="Run not found")
+    return Path(f"data/workflow/{run_id}/logs.txt")
+
 
 router = APIRouter(
     prefix="/api/runs",
@@ -73,12 +86,17 @@ class RunLogsResponse(BaseModel):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=list[RunRecord])
+@router.get("", response_model=PaginatedResponse[RunRecord])
 def list_runs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     run_store: RunStorePort = Depends(get_run_store),
     user: UserContext = Depends(require_approved),
-) -> list[RunRecord]:
-    return run_store.list(owner_id=user.user_id)
+) -> PaginatedResponse[RunRecord]:
+    offset = (page - 1) * limit
+    items = run_store.list(owner_id=user.user_id, offset=offset, limit=limit)
+    total = run_store.count(owner_id=user.user_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.get("/{run_id}", response_model=RunRecord)
@@ -226,11 +244,60 @@ def get_run_logs(
     if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    log_path = Path(f"data/workflow/{run_id}/logs.txt")
+    log_path = _log_path_for_run(run_id)
     if not log_path.exists():
         return RunLogsResponse(logs=None, source=None)
 
     return RunLogsResponse(logs=log_path.read_text(), source="local")
+
+
+_TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
+
+
+@router.get("/{run_id}/logs/stream")
+async def stream_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> StreamingResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = _log_path_for_run(run_id)
+
+    async def _event_generator():
+        sent_bytes = 0
+        while True:
+            current_run = run_store.get(run_id)
+            is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
+
+            if log_path.exists():
+                with open(log_path, "rb") as f:
+                    f.seek(sent_bytes)
+                    chunk = f.read()
+                if chunk:
+                    sent_bytes += len(chunk)
+                    new_text = chunk.decode("utf-8", errors="replace")
+                    for line in new_text.splitlines():
+                        yield f"data: {line}\n\n"
+
+            if is_terminal:
+                yield "event: done\ndata: stream closed\n\n"
+                return
+
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/trigger", status_code=202)

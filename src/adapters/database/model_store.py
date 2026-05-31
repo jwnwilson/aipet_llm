@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, select, update
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -72,14 +72,27 @@ class SQLAlchemyModelStore(ModelStorePort):
             order_by=_TrainingModelRow.created_at.desc(),
         )
 
-    def list(self, owner_id: str | None = None) -> list[TrainingModel]:
+    def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[TrainingModel]:
         with Session(self._engine) as db:
             stmt = select(_TrainingModelRow)
             if owner_id is not None:
-                stmt = stmt.where(_TrainingModelRow.owner_id == owner_id)
-            stmt = stmt.order_by(_TrainingModelRow.created_at.desc())
+                stmt = stmt.where(
+                    (_TrainingModelRow.owner_id == owner_id)
+                    | (_TrainingModelRow.owner_id.is_(None))
+                )
+            stmt = stmt.order_by(_TrainingModelRow.created_at.desc()).offset(offset).limit(limit)
             rows = db.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
+
+    def count(self, owner_id: str | None = None) -> int:
+        with Session(self._engine) as db:
+            stmt = select(func.count()).select_from(_TrainingModelRow)
+            if owner_id is not None:
+                stmt = stmt.where(
+                    (_TrainingModelRow.owner_id == owner_id)
+                    | (_TrainingModelRow.owner_id.is_(None))
+                )
+            return db.scalar(stmt) or 0
 
     def get(self, id: str) -> TrainingModel | None:
         return self._crud.get(id)
