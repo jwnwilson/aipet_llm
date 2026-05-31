@@ -136,6 +136,45 @@ def _strip_bnb_quantization(checkpoint: Path) -> None:
         log.info("Stripped bitsandbytes quantization_config from %s", config_file)
 
 
+def _ensure_tokenizer_files(checkpoint: Path) -> None:
+    """Extract vocab.json and merges.txt from tokenizer.json if they are missing.
+
+    convert_hf_to_gguf.py reads BPE merges from merges.txt (slow-tokenizer format).
+    HuggingFace fast tokenizers embed vocab and merges inside tokenizer.json. When
+    only tokenizer.json is present, older converters silently omit merges and produce
+    a GGUF that llama.cpp rejects with "cannot find tokenizer merges in model file".
+    Materialising the two files makes the export version-agnostic.
+    """
+    import json as _json
+
+    merges_file = checkpoint / "merges.txt"
+    vocab_file = checkpoint / "vocab.json"
+    tokenizer_json = checkpoint / "tokenizer.json"
+
+    if merges_file.exists() and vocab_file.exists():
+        return
+
+    if not tokenizer_json.exists():
+        return
+
+    data = _json.loads(tokenizer_json.read_text())
+    model = data.get("model", {})
+    if model.get("type") != "BPE":
+        return
+
+    if not vocab_file.exists():
+        vocab = model.get("vocab")
+        if vocab:
+            vocab_file.write_text(_json.dumps(vocab, ensure_ascii=False))
+            log.info("Extracted vocab.json from tokenizer.json (%d tokens)", len(vocab))
+
+    if not merges_file.exists():
+        merges = model.get("merges", [])
+        if merges:
+            merges_file.write_text("\n".join(merges))
+            log.info("Extracted merges.txt from tokenizer.json (%d merges)", len(merges))
+
+
 def _run(cmd: list[str], description: str) -> None:
     log.info("%s  $ %s", description, " ".join(cmd))
     result = subprocess.run(cmd, check=False, capture_output=True, text=True)
@@ -155,6 +194,7 @@ def export(
     """Convert HF checkpoint → FP16 GGUF → quantised GGUF, then verify it loads."""
     _check_llama_cpp(llama_cpp_dir)
     _strip_bnb_quantization(checkpoint)
+    _ensure_tokenizer_files(checkpoint)
 
     convert_script = llama_cpp_dir / "convert_hf_to_gguf.py"
     quantize_bin = llama_cpp_dir / "build" / "bin" / "llama-quantize"
