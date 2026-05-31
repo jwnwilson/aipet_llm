@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 
@@ -38,6 +38,18 @@ describe('useMediaQuery', () => {
   it('returns true when media query matches', () => {
     mockMatchMedia(true)
     const { result } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+    expect(result.current).toBe(true)
+  })
+
+  it('updates when the media query fires a change event', () => {
+    const mql = mockMatchMedia(false)
+    const { result } = renderHook(() => useMediaQuery('(max-width: 767px)'))
+    expect(result.current).toBe(false)
+
+    act(() => {
+      mql._listeners.forEach(fn => fn({ matches: true } as Partial<MediaQueryListEvent>))
+    })
+
     expect(result.current).toBe(true)
   })
 })
