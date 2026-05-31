@@ -1,12 +1,12 @@
-import type { EvaluationData, RunLogsResponse, RunRecord, RunStatus, TemporalDetails, TriggerRunRequest } from '@/types'
+import type { EvaluationData, PaginatedResponse, RunLogsResponse, RunRecord, RunStatus, TemporalDetails, TriggerRunRequest } from '@/types'
 import { apiClient } from './client'
 
 const ACTIVE_STATUSES = new Set<RunStatus>([
   'pending', 'generating', 'training', 'evaluating', 'exporting', 'running',
 ])
 
-export async function listRuns(): Promise<RunRecord[]> {
-  const { data } = await apiClient.get<RunRecord[]>('/api/runs')
+export async function listRuns(page = 1, limit = 50): Promise<PaginatedResponse<RunRecord>> {
+  const { data } = await apiClient.get<PaginatedResponse<RunRecord>>('/api/runs', { params: { page, limit } })
   return data
 }
 

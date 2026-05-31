@@ -1,4 +1,4 @@
-import type { InferenceInstance } from '../types'
+import type { InferenceInstance, PaginatedResponse } from '../types'
 import { apiClient } from './client'
 
 export interface InferenceInstanceConfig {
@@ -8,8 +8,10 @@ export interface InferenceInstanceConfig {
   idle_timeout_minutes?: number
 }
 
-export async function listInferences(): Promise<InferenceInstance[]> {
-  const { data } = await apiClient.get<InferenceInstance[]>('/api/inferences')
+export async function listInferences(page = 1, limit = 50, modelId?: string): Promise<PaginatedResponse<InferenceInstance>> {
+  const { data } = await apiClient.get<PaginatedResponse<InferenceInstance>>('/api/inferences', {
+    params: { page, limit, ...(modelId ? { model_id: modelId } : {}) },
+  })
   return data
 }
 

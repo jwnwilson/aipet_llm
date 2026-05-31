@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, select
+from sqlalchemy import DateTime, String, Text, func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -52,14 +52,21 @@ class SQLAlchemyDatasetStore(DatasetStorePort):
             order_by=_DatasetRow.created_at.desc(),
         )
 
-    def list(self, owner_id: str | None = None) -> list[DatasetRecord]:
+    def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[DatasetRecord]:
         with Session(self._engine) as db:
             stmt = select(_DatasetRow)
             if owner_id is not None:
                 stmt = stmt.where(_DatasetRow.owner_id == owner_id)
-            stmt = stmt.order_by(_DatasetRow.created_at.desc())
+            stmt = stmt.order_by(_DatasetRow.created_at.desc()).offset(offset).limit(limit)
             rows = db.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
+
+    def count(self, owner_id: str | None = None) -> int:
+        with Session(self._engine) as db:
+            stmt = select(func.count()).select_from(_DatasetRow)
+            if owner_id is not None:
+                stmt = stmt.where(_DatasetRow.owner_id == owner_id)
+            return db.scalar(stmt) or 0
 
     def get(self, id: str) -> DatasetRecord | None:
         return self._crud.get(id)

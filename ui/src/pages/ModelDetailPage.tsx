@@ -119,8 +119,8 @@ export function ModelDetailPage() {
     queryFn: () => getModel(id!),
   })
 
-  const { data: allRuns = [] } = useQuery({ queryKey: ['runs'], queryFn: listRuns })
-  const runs = allRuns.filter(r => r.model_id === id)
+  const { data: allRunsData } = useQuery({ queryKey: ['runs'], queryFn: () => listRuns() })
+  const runs = (allRunsData?.items ?? []).filter(r => r.model_id === id)
   const hasCompletedRun = runs.some(r => r.status === 'completed')
 
   const triggerMutation = useMutation({

@@ -3,10 +3,10 @@ import { listRuns, getRun, isRunActive, isRunCancellable, triggerRun, deleteRun,
 import { MODEL_FIXTURE, RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
 
 describe('listRuns', () => {
-  it('returns array of RunRecords with id field', async () => {
-    const runs = await listRuns()
-    expect(Array.isArray(runs)).toBe(true)
-    expect(runs[0].id).toBe(RUN_FIXTURE.id)
+  it('returns paginated response with RunRecords', async () => {
+    const result = await listRuns()
+    expect(Array.isArray(result.items)).toBe(true)
+    expect(result.items[0].id).toBe(RUN_FIXTURE.id)
   })
 })
 

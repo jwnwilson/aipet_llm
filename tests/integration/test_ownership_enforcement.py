@@ -82,8 +82,8 @@ class TestModelOwnership:
             resp = await c.get("/api/models")
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["owner_id"] == "user-a"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["owner_id"] == "user-a"
 
     @pytest.mark.asyncio
     async def test_get_other_users_model_returns_404(self, stores):
@@ -156,8 +156,8 @@ class TestRunOwnership:
             resp = await c.get("/api/runs")
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["owner_id"] == "user-a"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["owner_id"] == "user-a"
 
     @pytest.mark.asyncio
     async def test_get_other_users_run_returns_404(self, stores):
@@ -218,8 +218,8 @@ class TestDatasetOwnership:
             resp = await c.get("/api/datasets")
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["name"] == "ds-a"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["name"] == "ds-a"
 
     @pytest.mark.asyncio
     async def test_get_other_users_dataset_returns_404(self, stores):

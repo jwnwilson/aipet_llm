@@ -8,9 +8,9 @@ import os
 import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceRequest, InferenceResponse, InferenceStatus
+from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceRequest, InferenceResponse, InferenceStatus, PaginatedResponse
 from domain.ports import InferenceStorePort, PodLifecyclePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_inference_store, get_pod_adapter
@@ -26,9 +26,17 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=list[InferenceInstance])
-def list_instances(store: InferenceStorePort = Depends(get_inference_store)) -> list[InferenceInstance]:
-    return store.list()
+@router.get("", response_model=PaginatedResponse[InferenceInstance])
+def list_instances(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    model_id: str | None = Query(None),
+    store: InferenceStorePort = Depends(get_inference_store),
+) -> PaginatedResponse[InferenceInstance]:
+    offset = (page - 1) * limit
+    items = store.list(model_id=model_id, offset=offset, limit=limit)
+    total = store.count(model_id=model_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.post("", response_model=InferenceInstance, status_code=201)
