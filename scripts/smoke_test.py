@@ -177,7 +177,7 @@ def find_pipeline_inference_instance(
     instances_resp = client.get(f"{api_url}/api/inferences", headers=headers)
     instances = check("GET /api/inferences", instances_resp)
 
-    instance = next((i for i in instances if i.get("model_id") == model_id), None)
+    instance = next((i for i in instances["items"] if i.get("model_id") == model_id), None)
     if instance is None:
         print(
             f"ERROR: no inference instance found for model_id={model_id}."
