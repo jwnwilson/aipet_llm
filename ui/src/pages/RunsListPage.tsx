@@ -57,7 +57,7 @@ function RunModelGroup({ model, runs }: RunModelGroupProps) {
 export function RunsListPage() {
   const [page, setPage] = useState(1)
 
-  const { data: runsData, isLoading } = useQuery({
+  const { data: runsData, isLoading, isError } = useQuery({
     queryKey: ['runs', page],
     queryFn: () => listRuns(page),
   })
@@ -83,6 +83,18 @@ export function RunsListPage() {
         <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
           Loading runs
         </span>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="ed-page">
+        <div className="border-l-[3px] border-[#7f1d1d] bg-[#f1e2e0] px-4 py-3 inline-block">
+          <p className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#7f1d1d]">
+            Failed to load training runs.
+          </p>
+        </div>
       </div>
     )
   }
