@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { Pencil, Play, Plus, Trash2, Search } from 'lucide-react'
@@ -48,6 +48,8 @@ export function ModelsListPage() {
   const [search, setSearch] = useState('')
   const [runTarget, setRunTarget] = useState<TrainingModel | null>(null)
   const [page, setPage] = useState(1)
+
+  useEffect(() => { setPage(1) }, [search])
 
   const { data: modelsData, isLoading } = useQuery({
     queryKey: ['models', page],
