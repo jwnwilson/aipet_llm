@@ -859,7 +859,7 @@ async def create_inference_activity(model_id: str, model_path: str = "") -> str:
     Returns the new instance id."""
     from domain.models import InferenceInstanceConfig
     if _inference_store is None:
-        raise RuntimeError("InferenceStorePort has not been configured in activities.")
+        raise RuntimeError("InferenceStorePort has not been configured.")
     config = InferenceInstanceConfig(model_id=model_id, model_path=model_path)
     instance = _inference_store.create(config)
     return instance.id

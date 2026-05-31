@@ -21,7 +21,7 @@ class TestCreateInferenceActivity:
         acts._inference_store = mock_store
         try:
             from interactors.temporal.activities import create_inference_activity
-            await create_inference_activity("model-42")
+            result = await create_inference_activity("model-42")
         finally:
             acts._inference_store = None
 
@@ -39,7 +39,7 @@ class TestCreateInferenceActivity:
         acts._inference_store = mock_store
         try:
             from interactors.temporal.activities import create_inference_activity
-            await create_inference_activity("model-42", "workflow/abc/model.gguf")
+            result = await create_inference_activity("model-42", "workflow/abc/model.gguf")
         finally:
             acts._inference_store = None
 
@@ -67,6 +67,7 @@ class TestCreateInferenceActivity:
 
     @pytest.mark.asyncio
     async def test_raises_when_store_not_configured(self):
+        """Activity raises RuntimeError if inference store was never configured."""
         import interactors.temporal.activities as acts
         acts._inference_store = None
         from interactors.temporal.activities import create_inference_activity
