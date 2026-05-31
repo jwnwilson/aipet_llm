@@ -5,15 +5,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 
 from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceRequest, InferenceResponse, InferenceStatus, PaginatedResponse
-from domain.ports import InferenceStorePort, PodLifecyclePort
+from domain.ports import InferenceStorePort, ModelStorePort, PodLifecyclePort
 from interactors.api.auth import require_approved
-from interactors.api.deps import get_inference_store, get_pod_adapter
+from interactors.api.deps import get_inference_store, get_model_store, get_pod_adapter
 
 log = logging.getLogger(__name__)
 
@@ -43,8 +45,66 @@ def list_instances(
 def create_instance(
     config: InferenceInstanceConfig,
     store: InferenceStorePort = Depends(get_inference_store),
+    model_store: ModelStorePort = Depends(get_model_store),
 ) -> InferenceInstance:
-    return store.create(config)
+    model = model_store.get(config.model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    model_path = config.model_path or getattr(model, "gguf_path", "")
+    if not model_path:
+        raise HTTPException(
+            status_code=409,
+            detail="Model has no exported GGUF — run a training pipeline first",
+        )
+
+    resolved = InferenceInstanceConfig(**{**config.model_dump(), "model_path": model_path})
+    return store.create(resolved)
+
+
+class _ModelInferRequest(BaseModel):
+    model_id: str
+    scene: dict
+    pet_stats: dict
+
+
+@router.post("/infer", response_model=InferenceResponse)
+async def infer_by_model(
+    request: _ModelInferRequest,
+    store: InferenceStorePort = Depends(get_inference_store),
+    model_store: ModelStorePort = Depends(get_model_store),
+) -> InferenceResponse:
+    """Route an inference request to any AVAILABLE instance for the given model."""
+    model = model_store.get(request.model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    available = store.list_available(request.model_id)
+    if not available:
+        raise HTTPException(
+            status_code=409,
+            detail="No available inference instance for this model — start one first",
+        )
+
+    instance = random.choice(available)
+    store.update_last_used(instance.id)
+
+    worker_url = os.getenv("INFERENCE_WORKER_URL") or (
+        f"http://{instance.pod_name}.{instance.pod_namespace}.svc.cluster.local:8080/infer"
+    )
+    infer_payload = InferenceRequest(
+        scene=request.scene,  # type: ignore[arg-type]
+        pet_stats=request.pet_stats,  # type: ignore[arg-type]
+    )
+    async with httpx.AsyncClient() as http_client:
+        try:
+            resp = await http_client.post(
+                worker_url, json=infer_payload.model_dump(), timeout=30.0
+            )
+            resp.raise_for_status()
+            return InferenceResponse.model_validate(resp.json())
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=502, detail=f"Worker request failed: {exc}") from exc
 
 
 @router.get("/{instance_id}", response_model=InferenceInstance)
