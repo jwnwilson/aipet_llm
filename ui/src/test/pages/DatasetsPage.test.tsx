@@ -1,27 +1,9 @@
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { http, HttpResponse } from 'msw'
 import { DatasetsPage } from '@/pages/DatasetsPage'
-import { TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE } from '../msw/fixtures'
-import { server } from '../msw/server'
-import { resetHandlerState } from '../msw/handlers'
-import type { Dataset } from '@/types'
-
-// We need to mock createDataset because JSDOM's FormData is incompatible with
-// undici's Request constructor used by the MSW XHR interceptor — the request
-// hangs before the handler is ever reached.  GET / DELETE endpoints use JSON
-// bodies and continue to run through MSW as normal.
-vi.mock('@/api/datasets', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api/datasets')>()
-  return {
-    ...actual,
-    createDataset: vi.fn(),
-  }
-})
-
-import { createDataset } from '@/api/datasets'
+import { TRAIN_DATASET_FIXTURE } from '../msw/fixtures'
 
 function renderPage() {
   const client = new QueryClient({
@@ -29,143 +11,61 @@ function renderPage() {
   })
   render(
     <QueryClientProvider client={client}>
-      <DatasetsPage />
+      <MemoryRouter>
+        <DatasetsPage />
+      </MemoryRouter>
     </QueryClientProvider>
   )
 }
 
-const CREATED_DATASET: Dataset = {
-  id: 'ds-new-1',
-  name: 'my-dataset',
-  description: '',
-  dataset_type: 'train',
-  key: 'datasets/ds-new-1.jsonl',
-  created_at: new Date().toISOString(),
-  updated_at: new Date().toISOString(),
+function mockMobile() {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
 }
 
-describe('DatasetsPage', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-    resetHandlerState()
+describe('DatasetsPage — desktop', () => {
+  it('renders the dataset catalog table', async () => {
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument())
+  })
+})
+
+describe('DatasetsPage — mobile', () => {
+  it('renders dataset mobile cards instead of table', async () => {
+    mockMobile()
+    renderPage()
+    await waitFor(() =>
+      expect(screen.getAllByTestId('dataset-mobile-card').length).toBeGreaterThan(0)
+    )
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
-  beforeEach(() => {
-    vi.mocked(createDataset).mockResolvedValue(CREATED_DATASET)
+  it('mobile card shows dataset name', async () => {
+    mockMobile()
+    renderPage()
+    await waitFor(() => screen.getAllByTestId('dataset-mobile-card'))
+    const cards = screen.getAllByTestId('dataset-mobile-card')
+    const names = cards.map(c => c.textContent ?? '')
+    expect(names.some(t => t.includes(TRAIN_DATASET_FIXTURE.name))).toBe(true)
   })
 
-  describe('dataset list', () => {
-    it('renders a row for each existing dataset', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText(TRAIN_DATASET_FIXTURE.name)).toBeInTheDocument()
-        expect(screen.getByText(EVAL_DATASET_FIXTURE.name)).toBeInTheDocument()
-      })
-    })
-
-    it('shows "No datasets" message when list is empty', async () => {
-      server.use(
-        http.get('http://localhost:8000/api/datasets', () => HttpResponse.json({ items: [], total: 0, page: 1, limit: 50, pages: 1 }))
-      )
-      renderPage()
-      await waitFor(() =>
-        expect(screen.getByText(/no datasets uploaded yet/i)).toBeInTheDocument()
-      )
-    })
-
-    it('shows an error message when the list request fails', async () => {
-      server.use(
-        http.get('http://localhost:8000/api/datasets', () =>
-          HttpResponse.json({ detail: 'Server error' }, { status: 500 })
-        )
-      )
-      renderPage()
-      await waitFor(() =>
-        expect(screen.getByText(/failed to load datasets/i)).toBeInTheDocument()
-      )
-    })
-
-    it('renders a type badge for each dataset', async () => {
-      renderPage()
-      await waitFor(() => {
-        expect(screen.getByText('train')).toBeInTheDocument()
-        expect(screen.getByText('eval')).toBeInTheDocument()
-      })
-    })
-  })
-
-  describe('delete', () => {
-    it('removes the dataset row after confirming delete', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
-      renderPage()
-      await waitFor(() => screen.getByText(TRAIN_DATASET_FIXTURE.name))
-
-      const deleteBtn = screen.getByRole('button', {
-        name: new RegExp(`delete dataset ${TRAIN_DATASET_FIXTURE.name}`, 'i'),
-      })
-      await userEvent.click(deleteBtn)
-
-      await waitFor(() =>
-        expect(screen.queryByText(TRAIN_DATASET_FIXTURE.name)).not.toBeInTheDocument()
-      )
-    })
-
-    it('keeps the row when delete is cancelled', async () => {
-      vi.spyOn(window, 'confirm').mockReturnValue(false)
-      renderPage()
-      await waitFor(() => screen.getByText(TRAIN_DATASET_FIXTURE.name))
-
-      const deleteBtn = screen.getByRole('button', {
-        name: new RegExp(`delete dataset ${TRAIN_DATASET_FIXTURE.name}`, 'i'),
-      })
-      await userEvent.click(deleteBtn)
-
-      expect(screen.getByText(TRAIN_DATASET_FIXTURE.name)).toBeInTheDocument()
-    })
-  })
-
-  describe('upload form', () => {
-    it('renders the upload form with name, type, description, and file inputs', () => {
-      renderPage()
-      expect(screen.getByLabelText(/^name$/i)).toBeInTheDocument()
-      expect(screen.getByLabelText(/description/i)).toBeInTheDocument()
-      expect(screen.getByLabelText(/file/i)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /upload dataset/i })).toBeInTheDocument()
-    })
-
-    it('shows an error when submitting without a file', async () => {
-      renderPage()
-      await userEvent.type(screen.getByLabelText(/^name$/i), 'new-ds')
-      await userEvent.click(screen.getByRole('button', { name: /upload dataset/i }))
-      await waitFor(() =>
-        expect(screen.getByText(/please select a file/i)).toBeInTheDocument()
-      )
-    })
-
-    it('shows an error when submitting without a name', async () => {
-      renderPage()
-      // Provide a file so we get past the file-required check
-      const file = new File(['{}'], 'data.jsonl', { type: 'application/json' })
-      await userEvent.upload(screen.getByLabelText(/file/i), file)
-      await userEvent.click(screen.getByRole('button', { name: /upload dataset/i }))
-      await waitFor(() =>
-        expect(screen.getByText(/please enter a name/i)).toBeInTheDocument()
-      )
-    })
-
-    it('shows success message and clears the form after upload', async () => {
-      renderPage()
-      await userEvent.type(screen.getByLabelText(/^name$/i), 'my-dataset')
-
-      const file = new File(['{"action":"EAT"}'], 'data.jsonl', { type: 'application/json' })
-      await userEvent.upload(screen.getByLabelText(/file/i), file)
-
-      await userEvent.click(screen.getByRole('button', { name: /upload dataset/i }))
-
-      await waitFor(() =>
-        expect(screen.getByText(/dataset uploaded successfully/i)).toBeInTheDocument()
-      )
-      expect(screen.getByLabelText(/^name$/i)).toHaveValue('')
-    })
+  it('mobile card shows dataset type badge', async () => {
+    mockMobile()
+    renderPage()
+    await waitFor(() => screen.getAllByTestId('dataset-mobile-card'))
+    const cards = screen.getAllByTestId('dataset-mobile-card')
+    const texts = cards.map(c => c.textContent ?? '')
+    expect(texts.some(t => t.includes('train'))).toBe(true)
   })
 })

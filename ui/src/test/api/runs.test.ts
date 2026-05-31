@@ -1,6 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { listRuns, getRun, isRunActive, isRunCancellable, triggerRun, deleteRun, cancelRun, getRunEvaluation, getRunTemporal, getRunLogs } from '@/api/runs'
 import { MODEL_FIXTURE, RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
+import { resetHandlerState } from '../msw/handlers'
+
+afterEach(() => resetHandlerState())
 
 describe('listRuns', () => {
   it('returns paginated response with RunRecords', async () => {
