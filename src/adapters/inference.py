@@ -94,7 +94,7 @@ class LlamaCppInferenceAdapter(InferencePort):
             n_threads=n_threads,
             n_batch=512,
             use_mlock=True,   # pin model in RAM, prevent swap on RPi
-            verbose=False,
+            verbose=True,
         )
 
     def _get_llm(self) -> Any:
