@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -20,7 +21,12 @@ from interactors.api.deps import get_dataset_store, get_model_store, get_run_sto
 log = logging.getLogger(__name__)
 
 
+_UUID_HEX_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
 def _log_path_for_run(run_id: str) -> Path:
+    if not _UUID_HEX_RE.match(run_id):
+        raise HTTPException(status_code=404, detail="Run not found")
     return Path(f"data/workflow/{run_id}/logs.txt")
 
 
@@ -233,7 +239,7 @@ def get_run_logs(
     if run.owner_id is not None and run.owner_id != user.user_id:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    log_path = Path(f"data/workflow/{run_id}/logs.txt")
+    log_path = _log_path_for_run(run_id)
     if not log_path.exists():
         return RunLogsResponse(logs=None, source=None)
 
@@ -264,10 +270,12 @@ async def stream_run_logs(
             is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
 
             if log_path.exists():
-                content = log_path.read_text(encoding="utf-8", errors="replace")
-                if len(content) > sent_bytes:
-                    new_text = content[sent_bytes:]
-                    sent_bytes = len(content)
+                with open(log_path, "rb") as f:
+                    f.seek(sent_bytes)
+                    chunk = f.read()
+                if chunk:
+                    sent_bytes += len(chunk)
+                    new_text = chunk.decode("utf-8", errors="replace")
                     for line in new_text.splitlines():
                         yield f"data: {line}\n\n"
 
@@ -275,7 +283,10 @@ async def stream_run_logs(
                 yield "event: done\ndata: stream closed\n\n"
                 return
 
-            await asyncio.sleep(1.0)
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
 
     return StreamingResponse(
         _event_generator(),

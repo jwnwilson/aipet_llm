@@ -12,6 +12,7 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
   useEffect(() => {
     if (!active) return
 
+    setLines([])
     const es = new EventSource(`${API_BASE}/api/runs/${runId}/logs/stream`)
 
     es.onmessage = (e: MessageEvent<string>) => {
