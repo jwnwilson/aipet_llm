@@ -147,6 +147,17 @@ export const handlers = [
     )
     return new HttpResponse(null, { status: 204 })
   }),
+
+  http.get(`${BASE}/api/inferences`, () => HttpResponse.json([])),
+
+  http.post(`${BASE}/api/inferences/:id/infer`, async () => {
+    return HttpResponse.json({
+      action: 'EAT',
+      stat: null,
+      target_object_id: 'bowl-1',
+      confidence: 0.92,
+    })
+  }),
 ]
 
 export function resetHandlerState() {

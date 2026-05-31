@@ -1,4 +1,4 @@
-import type { InferenceInstance } from '../types'
+import type { InferenceInstance, InferenceRequest, InferenceResponse } from '../types'
 import { apiClient } from './client'
 
 export interface InferenceInstanceConfig {
@@ -35,4 +35,9 @@ export async function stopInference(id: string): Promise<InferenceInstance> {
 
 export async function deleteInference(id: string): Promise<void> {
   await apiClient.delete(`/api/inferences/${id}`)
+}
+
+export async function inferInstance(id: string, request: InferenceRequest): Promise<InferenceResponse> {
+  const { data } = await apiClient.post<InferenceResponse>(`/api/inferences/${id}/infer`, request)
+  return data
 }
