@@ -97,6 +97,13 @@ export const handlers = [
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
   }),
 
+  http.get(`${BASE}/api/runs/:id/logs/stream`, () => {
+    return new HttpResponse(
+      'data: test-log-line\n\nevent: done\ndata: stream closed\n\n',
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    )
+  }),
+
   // Named dataset CRUD
   http.get(`${BASE}/api/datasets`, ({ request }) => HttpResponse.json(paginate(datasets, request))),
 

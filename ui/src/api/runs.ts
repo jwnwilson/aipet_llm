@@ -1,10 +1,6 @@
 import type { EvaluationData, PaginatedResponse, RunLogsResponse, RunRecord, RunStatus, TemporalDetails, TriggerRunRequest } from '@/types'
 import { apiClient } from './client'
 
-const ACTIVE_STATUSES = new Set<RunStatus>([
-  'pending', 'generating', 'training', 'evaluating', 'exporting', 'running',
-])
-
 export async function listRuns(page = 1, limit = 50): Promise<PaginatedResponse<RunRecord>> {
   const { data } = await apiClient.get<PaginatedResponse<RunRecord>>('/api/runs', { params: { page, limit } })
   return data
@@ -28,8 +24,12 @@ export async function cancelRun(id: string): Promise<void> {
   await apiClient.post(`/api/runs/${id}/cancel`)
 }
 
+export const ACTIVE_STATUSES = new Set<RunStatus>([
+  'pending', 'generating', 'training', 'evaluating', 'exporting', 'running',
+])
+
 export function isRunActive(run: RunRecord): boolean {
-  return run.status === 'running'
+  return ACTIVE_STATUSES.has(run.status)
 }
 
 export function isRunCancellable(run: RunRecord): boolean {
