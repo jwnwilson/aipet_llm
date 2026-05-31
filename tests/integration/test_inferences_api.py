@@ -39,8 +39,9 @@ def _make_store(instances: list[InferenceInstance] | None = None):
         for inst in instances:
             _instances[inst.id] = inst
 
-    def _list():
-        return list(_instances.values())
+    def _list(model_id=None, offset=0, limit=50):
+        items = [v for v in _instances.values() if model_id is None or v.model_id == model_id]
+        return items[offset:offset + limit]
 
     def _get(id: str):
         return _instances.get(id)
@@ -92,7 +93,11 @@ def _make_store(instances: list[InferenceInstance] | None = None):
         _instances[id] = updated
         return updated
 
+    def _count(model_id=None):
+        return len([v for v in _instances.values() if model_id is None or v.model_id == model_id])
+
     store.list.side_effect = _list
+    store.count.side_effect = _count
     store.get.side_effect = _get
     store.create.side_effect = _create
     store.delete.side_effect = _delete
@@ -131,7 +136,9 @@ class TestListInferences:
         c, store, pod, _ = client
         resp = await c.get("/api/inferences")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     @pytest.mark.asyncio
     async def test_returns_populated_list(self, client):
@@ -141,7 +148,7 @@ class TestListInferences:
 
         resp = await c.get("/api/inferences")
         assert resp.status_code == 200
-        data = resp.json()
+        data = resp.json()["items"]
         assert len(data) == 2
         model_ids = {d["model_id"] for d in data}
         assert model_ids == {"my-model", "model-2"}

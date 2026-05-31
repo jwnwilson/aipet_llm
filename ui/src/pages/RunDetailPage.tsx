@@ -59,11 +59,11 @@ export function RunDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: datasets = [] } = useQuery({
+  const { data: datasetsData } = useQuery({
     queryKey: ['datasets'],
-    queryFn: listDatasets,
+    queryFn: () => listDatasets(),
   })
-  const datasetById = Object.fromEntries(datasets.map(d => [d.id, d.name]))
+  const datasetById = Object.fromEntries((datasetsData?.items ?? []).map(d => [d.id, d.name]))
 
   const { data: run, isLoading } = useQuery({
     queryKey: ['runs', runId],

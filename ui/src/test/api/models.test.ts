@@ -3,10 +3,10 @@ import { listModels, getModel, createModel, updateModel, deleteModel } from '@/a
 import { MODEL_FIXTURE } from '../msw/fixtures'
 
 describe('listModels', () => {
-  it('returns array of models', async () => {
-    const models = await listModels()
-    expect(Array.isArray(models)).toBe(true)
-    expect(models[0].id).toBe(MODEL_FIXTURE.id)
+  it('returns paginated response with models', async () => {
+    const result = await listModels()
+    expect(Array.isArray(result.items)).toBe(true)
+    expect(result.items[0].id).toBe(MODEL_FIXTURE.id)
   })
 })
 

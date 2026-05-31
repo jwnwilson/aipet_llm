@@ -1,8 +1,8 @@
-import type { InferenceRequest, InferenceResponse, TrainingModel, TrainingModelConfig } from '@/types'
+import type { InferenceRequest, InferenceResponse, PaginatedResponse, TrainingModel, TrainingModelConfig } from '@/types'
 import { apiClient } from './client'
 
-export async function listModels(): Promise<TrainingModel[]> {
-  const { data } = await apiClient.get<TrainingModel[]>('/api/models')
+export async function listModels(page = 1, limit = 50): Promise<PaginatedResponse<TrainingModel>> {
+  const { data } = await apiClient.get<PaginatedResponse<TrainingModel>>('/api/models', { params: { page, limit } })
   return data
 }
 

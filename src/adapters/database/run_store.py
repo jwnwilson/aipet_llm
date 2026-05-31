@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Float, String, Text, select, update
+from sqlalchemy import Float, String, Text, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -85,16 +85,25 @@ class SQLAlchemyRunStore(RunStorePort):
             row = db.get(_RunRow, id)
             return _row_to_domain(row) if row else None
 
-    def list(self, model_id: str | None = None, owner_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
+    def list(self, model_id: str | None = None, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[RunRecord]:  # type: ignore[override]
         with Session(self._engine) as db:
             stmt = select(_RunRow)
             if model_id is not None:
                 stmt = stmt.where(_RunRow.model_id == model_id)
             if owner_id is not None:
                 stmt = stmt.where(_RunRow.owner_id == owner_id)
-            stmt = stmt.order_by(_RunRow.created_at.desc())
+            stmt = stmt.order_by(_RunRow.created_at.desc()).offset(offset).limit(limit)
             rows = db.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
+
+    def count(self, model_id: str | None = None, owner_id: str | None = None) -> int:
+        with Session(self._engine) as db:
+            stmt = select(func.count()).select_from(_RunRow)
+            if model_id is not None:
+                stmt = stmt.where(_RunRow.model_id == model_id)
+            if owner_id is not None:
+                stmt = stmt.where(_RunRow.owner_id == owner_id)
+            return db.scalar(stmt) or 0
 
     def update(self, id: str, config: RunConfig) -> RunRecord | None:
         with Session(self._engine) as db:

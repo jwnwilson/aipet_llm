@@ -1,10 +1,14 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { listRuns } from '@/api/runs'
+import { Pagination } from '@/components/Pagination'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 
 export function RunsListPage() {
-  const { data: runs = [], isLoading } = useQuery({ queryKey: ['runs'], queryFn: listRuns })
+  const [page, setPage] = useState(1)
+  const { data, isLoading } = useQuery({ queryKey: ['runs', page], queryFn: () => listRuns(page) })
+  const runs = data?.items ?? []
 
   if (isLoading) {
     return (
@@ -42,6 +46,7 @@ export function RunsListPage() {
           </p>
         </div>
       ) : (
+        <>
         <ol className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">
           {runs.map((run, i) => (
             <li key={run.id}>
@@ -67,6 +72,8 @@ export function RunsListPage() {
             </li>
           ))}
         </ol>
+        <Pagination page={page} pages={data?.pages ?? 1} onPageChange={setPage} />
+        </>
       )}
     </div>
   )

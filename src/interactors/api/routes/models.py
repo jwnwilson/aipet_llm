@@ -6,9 +6,9 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from domain.models import InferenceRequest, InferenceResponse, TrainingModel, TrainingModelConfig, UserContext
+from domain.models import InferenceRequest, InferenceResponse, PaginatedResponse, TrainingModel, TrainingModelConfig, UserContext
 from domain.ports import ModelStorePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_adapter, get_model_store
@@ -26,12 +26,17 @@ class ModelWithStatus(TrainingModel):
     inference_status: Literal["unloaded", "ready"] = "unloaded"
 
 
-@router.get("", response_model=list[TrainingModel])
+@router.get("", response_model=PaginatedResponse[TrainingModel])
 def list_models(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     store: ModelStorePort = Depends(get_model_store),
     user: UserContext = Depends(require_approved),
-) -> list[TrainingModel]:
-    return store.list(owner_id=user.user_id)
+) -> PaginatedResponse[TrainingModel]:
+    offset = (page - 1) * limit
+    items = store.list(owner_id=user.user_id, offset=offset, limit=limit)
+    total = store.count(owner_id=user.user_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.post("", response_model=TrainingModel, status_code=201)
