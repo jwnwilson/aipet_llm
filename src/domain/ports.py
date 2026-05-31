@@ -359,6 +359,10 @@ class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig
     def list_active(self) -> list[InferenceInstance]:
         """Return instances not in SHUTDOWN or FAILED status."""
 
+    @abstractmethod
+    def list_available(self, model_id: str) -> list[InferenceInstance]:
+        """Return AVAILABLE instances for a specific model, ordered by created_at ascending."""
+
 
 class PodLifecyclePort(ABC):
     """Abstract interface for managing inference pod lifecycle."""

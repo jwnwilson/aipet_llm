@@ -76,6 +76,19 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
             )
             return [_row_to_domain(r) for r in rows]
 
+    def list_available(self, model_id: str) -> list[InferenceInstance]:
+        with self._session() as s:
+            rows = (
+                s.query(_InferenceInstanceRow)
+                .filter(
+                    _InferenceInstanceRow.model_id == model_id,
+                    _InferenceInstanceRow.status == InferenceStatus.AVAILABLE.value,
+                )
+                .order_by(_InferenceInstanceRow.created_at.asc())
+                .all()
+            )
+            return [_row_to_domain(r) for r in rows]
+
     def get(self, id: str) -> InferenceInstance | None:
         with self._session() as s:
             row = s.get(_InferenceInstanceRow, id)
