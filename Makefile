@@ -17,7 +17,7 @@ MODEL           ?= HuggingFaceTB/SmolLM2-1.7B
 # MODEL           ?= HuggingFaceTB/SmolLM2-360M
 FAST_MODEL      ?= HuggingFaceTB/SmolLM2-135M
 FAST_DATA_DIR   ?= data/fast
-GITHUB_REPO     ?= jwnwilson/aipet_llm_api
+GITHUB_REPO     ?= jwnwilson/llm_training_service
 TF_DIR          ?= infra/terraform
 TF_BOOTSTRAP_DIR ?= infra/terraform/bootstrap
 
