@@ -19,9 +19,13 @@ class TestCreateInferenceActivity:
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
-        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+        import interactors.temporal.activities as acts
+        acts._inference_store = mock_store
+        try:
             from interactors.temporal.activities import create_inference_activity
             result = await create_inference_activity("model-42")
+        finally:
+            acts._inference_store = None
 
         mock_store.create.assert_called_once()
         call_args = mock_store.create.call_args[0][0]
@@ -36,9 +40,13 @@ class TestCreateInferenceActivity:
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
-        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+        import interactors.temporal.activities as acts
+        acts._inference_store = mock_store
+        try:
             from interactors.temporal.activities import create_inference_activity
             result = await create_inference_activity("model-42", "workflow/abc/model.gguf")
+        finally:
+            acts._inference_store = None
 
         call_args = mock_store.create.call_args[0][0]
         assert call_args.model_id == "model-42"
@@ -53,12 +61,25 @@ class TestCreateInferenceActivity:
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
-        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+        import interactors.temporal.activities as acts
+        acts._inference_store = mock_store
+        try:
             from interactors.temporal.activities import create_inference_activity
             await create_inference_activity("model-42")
+        finally:
+            acts._inference_store = None
 
         call_args = mock_store.create.call_args[0][0]
         assert call_args.model_path == ""
+
+    @pytest.mark.asyncio
+    async def test_raises_when_store_not_configured(self):
+        """Activity raises RuntimeError if inference store was never configured."""
+        import interactors.temporal.activities as acts
+        acts._inference_store = None
+        from interactors.temporal.activities import create_inference_activity
+        with pytest.raises(RuntimeError, match="InferenceStorePort has not been configured"):
+            await create_inference_activity("model-1")
 
     @pytest.mark.asyncio
     async def test_returns_new_instance_id(self):
@@ -69,9 +90,13 @@ class TestCreateInferenceActivity:
         mock_store = MagicMock()
         mock_store.create.return_value = mock_instance
 
-        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+        import interactors.temporal.activities as acts
+        acts._inference_store = mock_store
+        try:
             from interactors.temporal.activities import create_inference_activity
             result = await create_inference_activity("model-99")
+        finally:
+            acts._inference_store = None
 
         assert result == "inst-xyz789"
 
@@ -81,7 +106,11 @@ class TestCreateInferenceActivity:
         mock_store = MagicMock()
         mock_store.create.side_effect = RuntimeError("DB unavailable")
 
-        with patch("interactors.api.deps.get_inference_store", return_value=mock_store):
+        import interactors.temporal.activities as acts
+        acts._inference_store = mock_store
+        try:
             from interactors.temporal.activities import create_inference_activity
             with pytest.raises(RuntimeError, match="DB unavailable"):
                 await create_inference_activity("model-1")
+        finally:
+            acts._inference_store = None
