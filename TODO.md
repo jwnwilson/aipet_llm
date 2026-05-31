@@ -5,7 +5,7 @@
 - Start it up and verify a response from the model pod
 - Update the smoke testes
 
-# UI improvements
+## UI improvements
 - Setup BE / FE consistent pagination for all listing compnents
     - Good potential fully ai job 
 - Need better logging visibility and progress visualisation on ui.
@@ -13,7 +13,7 @@
 - Group inference under a model and version the different models
 - After triggering run re-direct to run.
 
-# AI productivity gains
+## AI productivity gains
 
 - Create skill to consolidate learnings from session and update memory of claude.md then compact context.
 - Setup linear and try to trigger fully AI run of bug fix / feature.
