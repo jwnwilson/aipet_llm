@@ -1,17 +1,15 @@
 # TODO
 
 ## Validate Inference
-- Ensure workflow will create a new inference instance with the trained model
-- Start it up and verify a response from the model pod
-- Update the smoke testes
+- Add test to load a small model and validate inference is working, currently tests only check for a response from inference which will defaut to IDLE if it fails.
 
 ## UI improvements
 - Setup BE / FE consistent pagination for all listing compnents
     - Good potential fully ai job 
 - Need better logging visibility and progress visualisation on ui.
     - Logs need to stream to UI.
-- Group inference under a model and version the different models
-- After triggering run re-direct to run.
+- Group inference under a model and version the different inferences to see the latest inferences for each model
+- After triggering a model run re-direct to run in the UI.
 
 ## AI productivity gains
 
