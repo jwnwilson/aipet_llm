@@ -69,7 +69,7 @@ function Nav() {
           </span>
           <span className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#888888]">.api</span>
         </Link>
-        <nav className="hidden md:flex items-center gap-7">
+        <nav className="hidden md:flex items-center gap-7" aria-label="Main navigation">
           <NavLink to="/models" className={linkClass}>Models</NavLink>
           <NavLink to="/datasets" className={linkClass}>Datasets</NavLink>
           <NavLink to="/runs" className={linkClass}>Runs</NavLink>
@@ -85,11 +85,11 @@ function Nav() {
             aria-expanded={menuOpen}
           >
             {menuOpen ? (
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M18 6 6 18M6 6l12 12" strokeLinecap="round" />
               </svg>
             ) : (
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
               </svg>
             )}

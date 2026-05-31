@@ -1,8 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('@auth0/auth0-react', () => ({
   useAuth0: () => ({
@@ -27,13 +26,10 @@ vi.mock('@/pages/UsersPage', () => ({ UsersPage: () => <div>users</div> }))
 import App from '@/App'
 
 function renderApp() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/models']}>
-        <App />
-      </MemoryRouter>
-    </QueryClientProvider>
+    <MemoryRouter initialEntries={['/models']}>
+      <App />
+    </MemoryRouter>
   )
 }
 
@@ -69,5 +65,15 @@ describe('Nav', () => {
     expect(mobileNav).toHaveTextContent('Datasets')
     expect(mobileNav).toHaveTextContent('Runs')
     expect(mobileNav).toHaveTextContent('Inference')
+  })
+
+  it('closes mobile menu when a nav link is clicked', async () => {
+    renderApp()
+    await userEvent.click(screen.getByRole('button', { name: /open menu/i }))
+    expect(screen.getByRole('navigation', { name: /mobile navigation/i })).toBeInTheDocument()
+    const mobileNav = screen.getByRole('navigation', { name: /mobile navigation/i })
+    const modelsLink = within(mobileNav).getByRole('link', { name: /models/i })
+    await userEvent.click(modelsLink)
+    expect(screen.queryByRole('navigation', { name: /mobile navigation/i })).not.toBeInTheDocument()
   })
 })
