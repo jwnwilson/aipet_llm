@@ -1,4 +1,3 @@
-import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
@@ -40,19 +39,6 @@ function buildStages(status: RunStatus): PipelineStage[] {
 
 const EVAL_STATUSES: RunStatus[] = ['completed', 'failed']
 const EVAL_PASS_THRESHOLD = 0.95
-
-function MetricBlock({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1 py-3 border-b border-[#e5e3d8]">
-      <dt className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
-        {label}
-      </dt>
-      <dd className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a] break-all">
-        {value}
-      </dd>
-    </div>
-  )
-}
 
 export function RunDetailPage() {
   const { runId } = useParams<{ runId: string }>()
@@ -176,64 +162,8 @@ export function RunDetailPage() {
           Pipeline stages
         </div>
         <PipelineStages stages={buildStages(run.status)} />
-        <RunDetailsPanel runId={runId!} run={run} />
+        <RunDetailsPanel runId={runId!} run={run} datasetById={datasetById} />
       </section>
-
-      <hr className="ed-rule" />
-
-      {/* Metrics grid */}
-      <section className="mb-10">
-        <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">Metrics</h2>
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
-          <MetricBlock label="Run ID" value={run.id} />
-          <MetricBlock label="Started" value={new Date(run.created_at).toLocaleString()} />
-          <MetricBlock label="Updated" value={new Date(run.updated_at).toLocaleString()} />
-          {run.progress != null && (
-            <MetricBlock label="Progress" value={`${Math.round(run.progress * 100)}%`} />
-          )}
-          {run.eval_valid_pct != null && (
-            <MetricBlock
-              label="Eval valid"
-              value={`${Math.round(run.eval_valid_pct * 100)}%`}
-            />
-          )}
-          {run.progress_detail && (
-            <MetricBlock label="Detail" value={run.progress_detail} />
-          )}
-          {run.train_dataset_id != null && (
-            <MetricBlock
-              label="Train dataset"
-              value={datasetById[run.train_dataset_id] ?? run.train_dataset_id}
-            />
-          )}
-          {run.eval_dataset_id != null && (
-            <MetricBlock
-              label="Eval dataset"
-              value={datasetById[run.eval_dataset_id] ?? run.eval_dataset_id}
-            />
-          )}
-        </dl>
-      </section>
-
-      {run.training_config && Object.keys(run.training_config).length > 0 && (
-        <>
-          <hr className="ed-rule" />
-          <section className="mb-10">
-            <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">
-              Run configuration
-            </h2>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-10">
-              {Object.entries(run.training_config)
-                .filter(([, v]) => v != null)
-                .map(([k, v]) => (
-                  <React.Fragment key={k}>
-                    <MetricBlock label={k.replace(/_/g, ' ')} value={String(v)} />
-                  </React.Fragment>
-                ))}
-            </dl>
-          </section>
-        </>
-      )}
 
       {showEval && run.eval_valid_pct != null && (
         <>
