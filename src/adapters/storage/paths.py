@@ -22,3 +22,19 @@ def workflow_model_key(workflow_id: str, model_name: str = "model") -> str:
     Format: workflow/{workflow_id}/model/{model_name}.gguf
     """
     return f"workflow/{workflow_id}/model/{model_name}.gguf"
+
+
+def dataset_train_key(dataset_id: str) -> str:
+    """Return the S3 key for a dataset's training split.
+
+    Format: dataset/{dataset_id}/train.jsonl
+    """
+    return f"dataset/{dataset_id}/train.jsonl"
+
+
+def dataset_eval_key(dataset_id: str) -> str:
+    """Return the S3 key for a dataset's evaluation split.
+
+    Format: dataset/{dataset_id}/eval.jsonl
+    """
+    return f"dataset/{dataset_id}/eval.jsonl"

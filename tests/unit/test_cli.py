@@ -47,30 +47,36 @@ class TestGenerateDatasetCli:
     def test_creates_train_and_eval_files(self, tmp_path: Path) -> None:
         from interactors.cli.data.generate_dataset import main
         with pytest.raises(SystemExit) as exc:
-            main(["--data-dir", str(tmp_path), "--train-size", "20", "--eval-size", "5"])
+            main(["--storage", "local", "--data-dir", str(tmp_path), "--dataset-id", "ds-test",
+                  "--train-size", "20", "--eval-size", "5"])
         assert exc.value.code == 0
-        assert (tmp_path / "train.jsonl").exists()
-        assert (tmp_path / "eval.jsonl").exists()
+        assert (tmp_path / "dataset" / "ds-test" / "train.jsonl").exists()
+        assert (tmp_path / "dataset" / "ds-test" / "eval.jsonl").exists()
 
     def test_correct_line_counts(self, tmp_path: Path) -> None:
         from interactors.cli.data.generate_dataset import main
         with pytest.raises(SystemExit):
-            main(["--data-dir", str(tmp_path), "--train-size", "15", "--eval-size", "7"])
-        assert len((tmp_path / "train.jsonl").read_text().strip().splitlines()) == 15
-        assert len((tmp_path / "eval.jsonl").read_text().strip().splitlines()) == 7
+            main(["--storage", "local", "--data-dir", str(tmp_path), "--dataset-id", "ds-counts",
+                  "--train-size", "15", "--eval-size", "7"])
+        base = tmp_path / "dataset" / "ds-counts"
+        assert len((base / "train.jsonl").read_text().strip().splitlines()) == 15
+        assert len((base / "eval.jsonl").read_text().strip().splitlines()) == 7
 
     def test_each_line_has_prompt_and_completion(self, tmp_path: Path) -> None:
         from interactors.cli.data.generate_dataset import main
         with pytest.raises(SystemExit):
-            main(["--data-dir", str(tmp_path), "--train-size", "5", "--eval-size", "3"])
-        for line in (tmp_path / "train.jsonl").read_text().strip().splitlines():
+            main(["--storage", "local", "--data-dir", str(tmp_path), "--dataset-id", "ds-fmt",
+                  "--train-size", "5", "--eval-size", "3"])
+        train_file = tmp_path / "dataset" / "ds-fmt" / "train.jsonl"
+        for line in train_file.read_text().strip().splitlines():
             obj = json.loads(line)
             assert "prompt" in obj and "completion" in obj
 
     def test_exits_0_on_success(self, tmp_path: Path) -> None:
         from interactors.cli.data.generate_dataset import main
         with pytest.raises(SystemExit) as exc:
-            main(["--data-dir", str(tmp_path), "--train-size", "5", "--eval-size", "3"])
+            main(["--storage", "local", "--data-dir", str(tmp_path), "--dataset-id", "ds-exit",
+                  "--train-size", "5", "--eval-size", "3"])
         assert exc.value.code == 0
 
 
@@ -190,13 +196,14 @@ class TestMakefile:
         """Runs the same command make data invokes, verifying end-to-end wiring."""
         env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT / "src")}
         result = subprocess.run(
-            [sys.executable, "src/interactors/cli/data/generate_dataset.py", "--data-dir", str(tmp_path),
+            [sys.executable, "src/interactors/cli/data/generate_dataset.py",
+             "--storage", "local", "--data-dir", str(tmp_path), "--dataset-id", "makefile-test",
              "--train-size", "20", "--eval-size", "5"],
             capture_output=True, cwd=PROJECT_ROOT, env=env,
         )
         assert result.returncode == 0, result.stderr.decode()
-        assert (tmp_path / "train.jsonl").exists()
-        assert (tmp_path / "eval.jsonl").exists()
+        assert (tmp_path / "dataset" / "makefile-test" / "train.jsonl").exists()
+        assert (tmp_path / "dataset" / "makefile-test" / "eval.jsonl").exists()
 
 
 
