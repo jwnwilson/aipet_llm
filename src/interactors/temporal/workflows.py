@@ -196,7 +196,7 @@ class TrainingPipelineWorkflow:
                         run_id=config.run_id,
                     ),
                     start_to_close_timeout=timedelta(minutes=30),
-                    heartbeat_timeout=timedelta(minutes=2),
+                    heartbeat_timeout=timedelta(minutes=5),
                     retry_policy=_RETRY,
                 )
                 eval_valid_pct = result.eval_result.valid_pct
@@ -340,7 +340,7 @@ class EvaluateWorkflow:
                     run_id=config.run_id,
                 ),
                 start_to_close_timeout=timedelta(minutes=30),
-                heartbeat_timeout=timedelta(minutes=2),
+                heartbeat_timeout=timedelta(minutes=5),
                 retry_policy=_RETRY,
             )
             if config.run_id:
