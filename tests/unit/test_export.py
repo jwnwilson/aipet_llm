@@ -10,7 +10,11 @@ import pytest
 from domain.train.export import _ensure_tokenizer_files
 
 
-def _make_tokenizer_json(checkpoint: Path, merges: list[str] | None = None, vocab: dict | None = None) -> None:
+def _make_tokenizer_json(
+    checkpoint: Path,
+    merges: list[str] | list[list[str]] | None = None,
+    vocab: dict | None = None,
+) -> None:
     if merges is None:
         merges = ["Ġ t", "h e", "Ġt he", "i n", "in g"]
     if vocab is None:
@@ -97,6 +101,16 @@ class TestEnsureTokenizerFiles:
 
         assert (tmp_path / "vocab.json").read_text() == '{"existing": 0}'
         assert (tmp_path / "merges.txt").exists()
+
+    def test_merges_as_list_of_lists_is_handled(self, tmp_path: Path) -> None:
+        # HuggingFace fast tokenizers (e.g. SmolLM) store merges as [["Ġ", "t"], ...]
+        merges = [["Ġ", "t"], ["h", "e"], ["Ġt", "he"]]
+        _make_tokenizer_json(tmp_path, merges=merges)
+
+        _ensure_tokenizer_files(tmp_path)
+
+        written = (tmp_path / "merges.txt").read_text().splitlines()
+        assert written == ["Ġ t", "h e", "Ġt he"]
 
     def test_no_op_when_merges_empty_in_tokenizer_json(self, tmp_path: Path) -> None:
         _make_tokenizer_json(tmp_path, merges=[])
