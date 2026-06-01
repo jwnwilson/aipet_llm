@@ -369,6 +369,9 @@ class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig
         """Return instances not in SHUTDOWN or FAILED status."""
 
     @abstractmethod
+    def list_available(self, model_id: str) -> list[InferenceInstance]:
+        """Return AVAILABLE instances for a specific model, ordered by created_at ascending."""
+        
     def delete_by_model(self, model_id: str) -> list[InferenceInstance]:
         """Delete all inference instances for model_id. Returns the deleted instances."""
 

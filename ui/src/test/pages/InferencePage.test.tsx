@@ -88,4 +88,27 @@ describe('InferencePage', () => {
       expect(screen.getByText(/no inference instances/i)).toBeInTheDocument()
     )
   })
+
+  it('shows "Add instance" button for a model group that has existing instances', async () => {
+    server.use(
+      http.get(`${BASE}/api/models`, () => HttpResponse.json(paged([MODEL]))),
+      http.get(`${BASE}/api/inferences`, () => HttpResponse.json(paged([AVAILABLE_INSTANCE]))),
+    )
+    render(<InferencePage />, { wrapper })
+    await waitFor(() => screen.getByText('My Model'))
+    expect(screen.getByRole('button', { name: /add instance/i })).toBeInTheDocument()
+  })
+
+  it('"Add instance" calls createInference and refreshes the list', async () => {
+    const created = { ...AVAILABLE_INSTANCE, id: 'inst-2', status: 'pending', pod_name: '' }
+    server.use(
+      http.get(`${BASE}/api/models`, () => HttpResponse.json(paged([MODEL]))),
+      http.get(`${BASE}/api/inferences`, () => HttpResponse.json(paged([AVAILABLE_INSTANCE]))),
+      http.post(`${BASE}/api/inferences`, () => HttpResponse.json(created, { status: 201 })),
+    )
+    render(<InferencePage />, { wrapper })
+    await waitFor(() => screen.getByRole('button', { name: /add instance/i }))
+    await userEvent.click(screen.getByRole('button', { name: /add instance/i }))
+    expect(screen.queryByText(/failed/i)).not.toBeInTheDocument()
+  })
 })

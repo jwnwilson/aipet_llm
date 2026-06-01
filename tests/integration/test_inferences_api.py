@@ -10,13 +10,14 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 
-from domain.models import Action, InferenceInstance, InferenceInstanceConfig, InferenceStatus
+from domain.models import Action, InferenceInstance, InferenceInstanceConfig, InferenceStatus, TrainingModel
 from interactors.api.app import app
 from interactors.api.deps import (
     clear_inference_store,
     clear_pod_adapter,
     configure_inference_store,
     configure_pod_adapter,
+    get_model_store,
 )
 
 _INFER_PAYLOAD = {
@@ -114,12 +115,42 @@ def _make_pod_adapter():
     return pod
 
 
+def _make_permissive_model_store():
+    """Return a model store mock that accepts any model_id with a placeholder gguf_path.
+
+    Existing inference-API tests focus on pod lifecycle, not model validation.
+    The permissive store lets create_instance succeed without needing a real model.
+    """
+    from datetime import datetime, timezone
+    ms = MagicMock()
+    def _get(model_id: str):
+        return TrainingModel(
+            id=model_id,
+            name="mock-model",
+            description="",
+            base_model="qwen2",
+            train_data="train.jsonl",
+            eval_data="eval.jsonl",
+            epochs=1,
+            patience=1,
+            warmup_ratio=0.05,
+            remote_backend="local",
+            skip_generate=False,
+            gguf_path="mock/model.gguf",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+    ms.get.side_effect = _get
+    return ms
+
+
 @pytest_asyncio.fixture
 async def client():
     store, instances = _make_store()
     pod = _make_pod_adapter()
     configure_inference_store(store)
     configure_pod_adapter(pod)
+    app.dependency_overrides[get_model_store] = _make_permissive_model_store
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -128,6 +159,7 @@ async def client():
 
     clear_inference_store()
     clear_pod_adapter()
+    app.dependency_overrides.pop(get_model_store, None)
 
 
 class TestListInferences:
@@ -329,6 +361,7 @@ class TestInferEndpoint:
         pod = _make_pod_adapter()
         configure_inference_store(store)
         configure_pod_adapter(pod)
+        app.dependency_overrides[get_model_store] = _make_permissive_model_store
 
         async with httpx.AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -342,6 +375,7 @@ class TestInferEndpoint:
 
         clear_inference_store()
         clear_pod_adapter()
+        app.dependency_overrides.pop(get_model_store, None)
 
     @pytest.mark.asyncio
     async def test_infer_returns_404_for_missing_instance(self, client):

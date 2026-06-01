@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp, Play, Square, Trash2 } from 'lucide-react'
-import { deleteInference, listInferences, startInference, stopInference } from '@/api/inferences'
+import { ChevronDown, ChevronUp, Play, Plus, Square, Trash2 } from 'lucide-react'
+import { createInference, deleteInference, listInferences, startInference, stopInference } from '@/api/inferences'
 import { listModels } from '@/api/models'
 import { InferenceStatusBadge } from '@/components/InferenceStatusBadge'
 import { InstanceInferencePanel } from '@/components/InstanceInferencePanel'
@@ -35,16 +35,31 @@ function ModelGroup({
   pendingStart, pendingStop, pendingDelete,
 }: ModelGroupProps) {
   const [expandedTest, setExpandedTest] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const addMutation = useMutation({
+    mutationFn: () => createInference({ model_id: model?.id ?? instances[0]?.model_id ?? '' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inferences'] }),
+  })
 
   return (
     <section className="mb-8">
-      <div className="flex items-baseline gap-3 mb-3">
+      <div className="flex items-center gap-3 mb-3">
         <h2 className="font-['DM_Serif_Display'] text-[1.3rem] text-[#1a1a1a]">
           {model?.name ?? 'Unknown model'}
         </h2>
         <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
           {instances.length} instance{instances.length !== 1 ? 's' : ''}
         </span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => addMutation.mutate()}
+          disabled={addMutation.isPending}
+          aria-label="Add instance"
+        >
+          <Plus className="h-3 w-3" />
+          {addMutation.isPending ? 'Adding…' : 'Add instance'}
+        </Button>
       </div>
 
       <div className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] overflow-hidden">

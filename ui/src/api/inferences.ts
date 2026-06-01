@@ -39,6 +39,11 @@ export async function deleteInference(id: string): Promise<void> {
   await apiClient.delete(`/api/inferences/${id}`)
 }
 
+export async function createAndStartInference(modelId: string): Promise<InferenceInstance> {
+  const instance = await createInference({ model_id: modelId })
+  return startInference(instance.id)
+}
+
 export async function inferInstance(id: string, request: InferenceRequest): Promise<InferenceResponse> {
   const { data } = await apiClient.post<InferenceResponse>(`/api/inferences/${id}/infer`, request)
   return data

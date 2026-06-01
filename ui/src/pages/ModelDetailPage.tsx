@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { Play, Pencil, Trash2, ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Pencil, Play, Rocket, Trash2 } from 'lucide-react'
 import { deleteModel, getModel } from '@/api/models'
 import { listRuns, triggerRun } from '@/api/runs'
+import { createAndStartInference } from '@/api/inferences'
 import { LinkedDatasetsCard } from '@/components/LinkedDatasetsCard'
 import { InferencePanel } from '@/components/InferencePanel'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
@@ -133,6 +134,11 @@ export function ModelDetailPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['models'] }); navigate('/models') },
   })
 
+  const deployMutation = useMutation({
+    mutationFn: () => createAndStartInference(id!),
+    onSuccess: () => navigate('/inferences'),
+  })
+
   if (isLoading || !model) {
     return (
       <div className="ed-page">
@@ -173,6 +179,16 @@ export function ModelDetailPage() {
             )}
           </div>
           <div className="flex gap-2 shrink-0">
+            {model.gguf_path && (
+              <Button
+                onClick={() => deployMutation.mutate()}
+                disabled={deployMutation.isPending}
+                aria-label="Deploy"
+              >
+                <Rocket className="h-3.5 w-3.5" />
+                {deployMutation.isPending ? 'Deploying…' : 'Deploy'}
+              </Button>
+            )}
             <Button onClick={() => triggerMutation.mutate()} disabled={triggerMutation.isPending}>
               <Play className="h-3.5 w-3.5" />
               {triggerMutation.isPending ? 'Starting' : 'Run'}
