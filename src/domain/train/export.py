@@ -171,7 +171,9 @@ def _ensure_tokenizer_files(checkpoint: Path) -> None:
     if not merges_file.exists():
         merges = model.get("merges", [])
         if merges:
-            merges_file.write_text("\n".join(merges))
+            # merges can be either ["Ġ t", ...] (strings) or [["Ġ", "t"], ...] (lists)
+            lines = [" ".join(m) if isinstance(m, list) else m for m in merges]
+            merges_file.write_text("\n".join(lines))
             log.info("Extracted merges.txt from tokenizer.json (%d merges)", len(merges))
 
 
