@@ -144,6 +144,20 @@ class TestDownload:
 
         assert result == str(dest)
 
+    def test_download_returns_eval_result_json_for_eval_jobs(self, tmp_path, monkeypatch):
+        adapter = _make_adapter(tmp_path, monkeypatch)
+        dest = tmp_path / "output"
+
+        def fake_run(cmd, **kwargs):
+            # Eval kernel writes eval_result.json alongside a checkpoint dir
+            (dest / "checkpoint").mkdir(parents=True, exist_ok=True)
+            (dest / "eval_result.json").write_text('{"valid_pct": 0.95, "passed": true}')
+
+        with patch("subprocess.run", side_effect=fake_run):
+            result = adapter.download("testuser/my-exp-eval", dest)
+
+        assert result == str(dest / "eval_result.json")
+
 
 class TestSlugify:
     """Unit tests for the _slugify helper (Kaggle slug validation rules)."""
