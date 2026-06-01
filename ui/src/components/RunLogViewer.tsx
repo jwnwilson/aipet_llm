@@ -2,13 +2,14 @@ import { useEffect, useRef } from 'react'
 
 interface RunLogViewerProps {
   logs: string
+  isLive?: boolean
 }
 
 /**
  * Editorial log viewer — paper-white background, ink text, fixed-width.
  * No terminal-green theming; this is a scientific journal aesthetic.
  */
-export function RunLogViewer({ logs }: RunLogViewerProps) {
+export function RunLogViewer({ logs, isLive = false }: RunLogViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -21,10 +22,12 @@ export function RunLogViewer({ logs }: RunLogViewerProps) {
         <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
           stdout · log stream
         </span>
-        <span className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.65rem] text-[#888888]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#2d6a4f] animate-pulse" />
-          Live
-        </span>
+        {isLive && (
+          <span className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.65rem] text-[#888888]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#2d6a4f] animate-pulse" />
+            Live
+          </span>
+        )}
       </div>
       <div className="relative h-64 overflow-y-auto p-4">
         <pre className="font-['IBM_Plex_Mono'] text-[0.78rem] leading-[1.55] text-[#1a1a1a] whitespace-pre-wrap break-words">

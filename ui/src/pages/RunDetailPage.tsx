@@ -231,7 +231,7 @@ export function RunDetailPage() {
         <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">
           Workflow logs
         </h2>
-        <RunLogViewer logs={logContent} />
+        <RunLogViewer logs={logContent} isLive={runIsActive} />
       </section>
 
       {run.training_config && Object.keys(run.training_config).length > 0 && (

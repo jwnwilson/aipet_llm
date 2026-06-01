@@ -12,7 +12,7 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
     if (!active) return
 
     setLines([])
-    let cancelled = false
+    const controller = new AbortController()
 
     async function stream() {
       const token = await getAuthToken()
@@ -21,7 +21,10 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
 
       let res: Response
       try {
-        res = await fetch(`/api/runs/${runId}/logs/stream`, { headers })
+        res = await fetch(`/api/runs/${runId}/logs/stream`, {
+          headers,
+          signal: controller.signal,
+        })
       } catch {
         return
       }
@@ -31,30 +34,32 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
       const decoder = new TextDecoder()
       let buffer = ''
 
-      while (!cancelled) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const parts = buffer.split('\n\n')
-        buffer = parts.pop() ?? ''
-        for (const part of parts) {
-          if (part.includes('event: done')) {
-            reader.cancel()
-            return
-          }
-          const match = part.match(/^data: (.*)$/m)
-          if (match) {
-            setLines(prev => [...prev, match[1]])
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() ?? ''
+          for (const part of parts) {
+            if (part.includes('event: done')) {
+              return
+            }
+            const match = part.match(/^data: (.*)$/m)
+            if (match) {
+              setLines(prev => [...prev, match[1]])
+            }
           }
         }
+      } finally {
+        reader.cancel()
       }
-      reader.cancel()
     }
 
     stream().catch(() => {})
 
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [runId, active])
 
