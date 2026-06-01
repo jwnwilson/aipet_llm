@@ -15,10 +15,6 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-
-from adapters.database import Base, init_db
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
@@ -47,14 +43,9 @@ VALID_JSONL = b'{"prompt": "hello", "completion": "world"}\n'
 
 
 @pytest_asyncio.fixture
-async def stores():
+async def stores(db_engine):
     """Shared in-memory SQLite with all three stores wired into the app."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
+    engine = db_engine
     model_store = SQLAlchemyModelStore(engine)
     run_store = SQLAlchemyRunStore(engine)
     dataset_store = SQLAlchemyDatasetStore(engine)
@@ -91,8 +82,8 @@ class TestModelOwnership:
             resp = await c.get("/api/models")
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["owner_id"] == "user-a"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["owner_id"] == "user-a"
 
     @pytest.mark.asyncio
     async def test_get_other_users_model_returns_404(self, stores):
@@ -165,8 +156,8 @@ class TestRunOwnership:
             resp = await c.get("/api/runs")
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["owner_id"] == "user-a"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["owner_id"] == "user-a"
 
     @pytest.mark.asyncio
     async def test_get_other_users_run_returns_404(self, stores):
@@ -227,8 +218,8 @@ class TestDatasetOwnership:
             resp = await c.get("/api/datasets")
 
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["name"] == "ds-a"
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["name"] == "ds-a"
 
     @pytest.mark.asyncio
     async def test_get_other_users_dataset_returns_404(self, stores):

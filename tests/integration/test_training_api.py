@@ -12,12 +12,8 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
-
 from interactors.api.app import app
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
-from adapters.database import Base, init_db
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
@@ -41,16 +37,10 @@ _VALID_CONFIG: dict[str, Any] = {
 
 
 @pytest_asyncio.fixture
-async def client():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    init_db(engine)
-    store = SQLAlchemyModelStore(engine)
-    run_store = SQLAlchemyRunStore(engine)
-    dataset_store = SQLAlchemyDatasetStore(engine)
+async def client(db_engine):
+    store = SQLAlchemyModelStore(db_engine)
+    run_store = SQLAlchemyRunStore(db_engine)
+    dataset_store = SQLAlchemyDatasetStore(db_engine)
     app.dependency_overrides[get_model_store] = lambda: store
     app.dependency_overrides[get_run_store] = lambda: run_store
     app.dependency_overrides[get_dataset_store] = lambda: dataset_store
@@ -79,7 +69,9 @@ class TestListModels:
     async def test_empty_store_returns_empty_list(self, client):
         resp = await client.get("/api/models")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     @pytest.mark.asyncio
     async def test_populated_store_returns_all_models(self, client):
@@ -88,7 +80,7 @@ class TestListModels:
 
         resp = await client.get("/api/models")
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        assert len(resp.json()["items"]) == 2
 
     @pytest.mark.asyncio
     async def test_models_ordered_newest_first(self, client):
@@ -96,7 +88,7 @@ class TestListModels:
         await asyncio.sleep(0.01)
         await client.post("/api/models", json={**_VALID_CONFIG, "name": "second"})
 
-        models = (await client.get("/api/models")).json()
+        models = (await client.get("/api/models")).json()["items"]
         assert models[0]["name"] == "second"
         assert models[1]["name"] == "first"
 
@@ -274,7 +266,9 @@ class TestListRuns:
     async def test_returns_empty_list_when_no_runs(self, client):
         resp = await client.get("/api/runs")
         assert resp.status_code == 200
-        assert resp.json() == []
+        body = resp.json()
+        assert body["items"] == []
+        assert body["total"] == 0
 
     @pytest.mark.asyncio
     async def test_returns_runs_from_db(self, client_with_model):
@@ -290,7 +284,7 @@ class TestListRuns:
 
         resp = await client.get("/api/runs")
         assert resp.status_code == 200
-        assert len(resp.json()) == 2
+        assert len(resp.json()["items"]) == 2
 
 
 # ---------------------------------------------------------------------------

@@ -97,6 +97,7 @@ def trigger_run(
 
 
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
+_MAX_CONSECUTIVE_ERRORS = 5
 
 
 def poll_run_to_completion(
@@ -113,8 +114,30 @@ def poll_run_to_completion(
     Returns the final run record on success (status == 'completed').
     """
     deadline = time.monotonic() + timeout_seconds
+    consecutive_errors = 0
     while True:
-        resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
+        try:
+            resp = client.get(f"{api_url}/api/runs/{run_id}", headers=headers)
+            consecutive_errors = 0
+        except httpx.TransportError as exc:
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                print(
+                    f"ERROR: {consecutive_errors} consecutive transport errors polling run {run_id}: {exc}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(
+                f"   WARN: transport error ({exc}) — retrying"
+                f" ({consecutive_errors}/{_MAX_CONSECUTIVE_ERRORS})..."
+            )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                print(f"ERROR: run {run_id} did not complete within {timeout_seconds}s", file=sys.stderr)
+                sys.exit(1)
+            time.sleep(min(poll_interval, remaining))
+            continue
+
         run = check(f"GET /api/runs/{run_id}", resp)
         status = run.get("status", "")
         if status in _TERMINAL_STATUSES:
@@ -139,33 +162,31 @@ def poll_run_to_completion(
         time.sleep(min(poll_interval, remaining))
 
 
-def start_inference_pod(
+def find_pipeline_inference_instance(
     client: httpx.Client,
     api_url: str,
     headers: dict[str, str],
     model_id: str,
 ) -> dict:
-    """Find or create an inference instance for model_id, then POST /start.
+    """Find the inference instance created by the training pipeline for model_id, then POST /start.
 
+    Fails with a clear error if the pipeline did not create one — this validates the
+    end-to-end pipeline behaviour rather than masking a missing inference record.
     Returns the inference instance record after starting.
     """
-    # Find existing instance for this model
     instances_resp = client.get(f"{api_url}/api/inferences", headers=headers)
     instances = check("GET /api/inferences", instances_resp)
 
-    instance = next((i for i in instances if i.get("model_id") == model_id), None)
-
+    instance = next((i for i in instances["items"] if i.get("model_id") == model_id), None)
     if instance is None:
-        # Create a new inference instance
-        create_resp = client.post(
-            f"{api_url}/api/inferences",
-            json={"model_id": model_id},
-            headers=headers,
+        print(
+            f"ERROR: no inference instance found for model_id={model_id}."
+            " Expected the training pipeline to create one after export.",
+            file=sys.stderr,
         )
-        instance = check("POST /api/inferences", create_resp, expected_status=201)
+        sys.exit(1)
 
     instance_id = instance["id"]
-    # Start the pod
     start_resp = client.post(
         f"{api_url}/api/inferences/{instance_id}/start",
         headers=headers,
@@ -187,8 +208,34 @@ def poll_inference_available(
     Returns the instance record when available.
     """
     deadline = time.monotonic() + timeout_seconds
+    consecutive_errors = 0
     while True:
-        resp = client.get(f"{api_url}/api/inferences/{instance_id}", headers=headers)
+        try:
+            resp = client.get(f"{api_url}/api/inferences/{instance_id}", headers=headers)
+            consecutive_errors = 0
+        except httpx.TransportError as exc:
+            consecutive_errors += 1
+            if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                print(
+                    f"ERROR: {consecutive_errors} consecutive transport errors polling inference"
+                    f" {instance_id}: {exc}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(
+                f"   WARN: transport error ({exc}) — retrying"
+                f" ({consecutive_errors}/{_MAX_CONSECUTIVE_ERRORS})..."
+            )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                print(
+                    f"ERROR: inference instance {instance_id} not available after {timeout_seconds}s",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            time.sleep(min(poll_interval, remaining))
+            continue
+
         instance = check(f"GET /api/inferences/{instance_id}", resp)
         status = instance.get("status", "")
         if status == "available":
@@ -270,14 +317,14 @@ def main() -> None:
 
         # 4. Verify the model appears in the listing
         models = check("GET /api/models", client.get(f"{api_url}/api/models", headers=auth_headers))
-        model_ids = [m["id"] for m in models]
+        model_ids = [m["id"] for m in models["items"]]
         if model_id not in model_ids:
             print(
                 f"ERROR: created model {model_id} not found in GET /api/models listing",
                 file=sys.stderr,
             )
             sys.exit(1)
-        print(f"OK — {len(models)} model(s) returned, created model present\n")
+        print(f"OK — {len(models['items'])} model(s) returned, created model present\n")
 
         # 5. Upload a training dataset
         dataset = upload_dataset(client, api_url, auth_headers)
@@ -289,14 +336,14 @@ def main() -> None:
             "GET /api/datasets",
             client.get(f"{api_url}/api/datasets", headers=auth_headers),
         )
-        dataset_ids = [d["id"] for d in datasets]
+        dataset_ids = [d["id"] for d in datasets["items"]]
         if dataset_id not in dataset_ids:
             print(
                 f"ERROR: created dataset {dataset_id} not found in GET /api/datasets listing",
                 file=sys.stderr,
             )
             sys.exit(1)
-        print(f"OK — {len(datasets)} dataset(s) returned, created dataset present\n")
+        print(f"OK — {len(datasets['items'])} dataset(s) returned, created dataset present\n")
 
         # 7. Trigger a training run and wait for completion
         run_trigger = trigger_run(
@@ -310,9 +357,9 @@ def main() -> None:
         run = poll_run_to_completion(client, api_url, auth_headers, run_id)
         print(f"OK — run status={run.get('status')}\n")
 
-        # 8. Start an inference pod for the trained model
-        print("   Starting inference pod for trained model...")
-        instance = start_inference_pod(client, api_url, auth_headers, model_id)
+        # 8. Find the inference instance created by the pipeline and start it
+        print("   Finding pipeline-created inference instance and starting pod...")
+        instance = find_pipeline_inference_instance(client, api_url, auth_headers, model_id)
         instance_id = instance["id"]
         print(f"OK — inference instance started: instance_id={instance_id}\n")
 

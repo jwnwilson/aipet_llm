@@ -6,6 +6,7 @@ import { cancelRun, deleteRun, getRunEvaluation, getRun, getRunLogs, isRunActive
 import { listDatasets } from '@/api/datasets'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
+import { RunDetailsPanel } from '@/components/RunDetailsPanel'
 import { EvalMetrics } from '@/components/EvalMetrics'
 import { RunLogViewer } from '@/components/RunLogViewer'
 import { Button } from '@/components/ui/button'
@@ -60,11 +61,11 @@ export function RunDetailPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const { data: datasets = [] } = useQuery({
+  const { data: datasetsData } = useQuery({
     queryKey: ['datasets'],
-    queryFn: listDatasets,
+    queryFn: () => listDatasets(),
   })
-  const datasetById = Object.fromEntries(datasets.map(d => [d.id, d.name]))
+  const datasetById = Object.fromEntries((datasetsData?.items ?? []).map(d => [d.id, d.name]))
 
   const { data: run, isLoading } = useQuery({
     queryKey: ['runs', runId],
@@ -188,6 +189,7 @@ export function RunDetailPage() {
           Pipeline stages
         </div>
         <PipelineStages stages={buildStages(run.status)} />
+        <RunDetailsPanel runId={runId!} run={run} />
       </section>
 
       <hr className="ed-rule" />

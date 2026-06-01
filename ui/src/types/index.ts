@@ -1,4 +1,13 @@
 // src/types/index.ts
+
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  page: number
+  limit: number
+  pages: number
+}
+
 export interface TrainingModelConfig {
   name: string
   description: string
@@ -180,4 +189,17 @@ export interface InferenceInstance {
   last_used_at: string | null
   created_at: string
   updated_at: string
+}
+
+export interface TemporalDetails {
+  workflow_id: string
+  temporal_run_id: string
+  status: string
+  start_time: string | null
+  close_time: string | null
+}
+
+export interface RunLogsResponse {
+  logs: string | null
+  source: string | null
 }

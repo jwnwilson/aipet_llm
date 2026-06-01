@@ -1,4 +1,4 @@
-"""Kaggle-backed remote training adapter implementing RemoteTrainingPort."""
+"""Kaggle-backed remote job adapter implementing RemoteJobPort."""
 
 from __future__ import annotations
 
@@ -9,23 +9,32 @@ import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import time
 from pathlib import Path
 from typing import Literal
 
 from adapters.compute._wheel import build_wheel
 
-from domain.models import RemoteTrainConfig
-from domain.ports import RemoteTrainingPort
+from domain.models import EvalJobSpec, RemoteJobSpec, TrainJobSpec
+from domain.ports import RemoteJobPort
 
 log = logging.getLogger(__name__)
 
 
+_KAGGLE_MIN_SLUG_LEN = 5
+_KAGGLE_MAX_SLUG_LEN = 50
+
 def _slugify(name: str) -> str:
-    """Convert an arbitrary name to a Kaggle-safe slug (lowercase, hyphens, 6-50 chars)."""
+    """Convert an arbitrary name to a Kaggle-safe slug (5-50 chars, lowercase, hyphens).
+
+    Kaggle rejects dataset and kernel names shorter than 5 characters, so short
+    slugs are right-padded with hyphens to reach the minimum length.
+    """
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug[:50] or "model"
+    slug = slug[:_KAGGLE_MAX_SLUG_LEN] or "model"
+    if len(slug) < _KAGGLE_MIN_SLUG_LEN:
+        slug = slug.ljust(_KAGGLE_MIN_SLUG_LEN, "-")
+    return slug
 
 def _kaggle_bin() -> str:
     found = shutil.which("kaggle")
@@ -50,21 +59,26 @@ _STATUS_MAP: dict[str, str] = {
 }
 
 
-class KaggleTrainingAdapter(RemoteTrainingPort):
-    """RemoteTrainingPort implementation that submits training as a Kaggle kernel.
+class KaggleTrainingAdapter(RemoteJobPort):
+    """RemoteJobPort implementation that submits jobs as Kaggle kernels.
 
     Credentials are read from env vars ``KAGGLE_USERNAME`` and ``KAGGLE_KEY``.
     No internet access is required on the Kaggle kernel — the project is built
     into a wheel locally and uploaded as part of the dataset.
 
-    Typical flow:
-        1. Build a wheel of the project and stage it alongside the .jsonl data
-           files as a Kaggle Dataset (all flat files, no subdirectories).
+    Training flow (job_type="train"):
+        1. Build a wheel and stage it with .jsonl data as a Kaggle Dataset.
         2. Render ``notebook_template.ipynb`` with the run config.
         3. Write ``kernel-metadata.json`` pointing at the dataset.
         4. Push the kernel — Kaggle queues it for GPU execution.
-        5. Poll ``kaggle kernels status`` until done/failed.
+        5. Poll ``kaggle kernels status`` until done/failed (Temporal activity).
         6. Pull the checkpoint archive via ``kaggle kernels output``.
+
+    Eval flow (job_type="eval"):
+        1. Render ``eval_notebook_template.ipynb`` with training artifact ref.
+        2. Push the eval kernel (references same dataset as training kernel).
+        3. Poll via Temporal activity (no blocking loop in adapter).
+        4. Pull ``eval_result.json`` from kernel output.
     """
 
     def __init__(self, work_dir: Path | None = None) -> None:
@@ -74,46 +88,19 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         self._project_root = Path(__file__).parents[4].resolve()
 
     # ------------------------------------------------------------------
-    # RemoteTrainingPort
+    # RemoteJobPort
     # ------------------------------------------------------------------
 
-    def submit(self, config: RemoteTrainConfig) -> str:
-        dataset_slug = _slugify(f"{config.experiment_name}-data")
-        dataset_ref = f"{self._username}/{dataset_slug}"
-
-        staging = self._work_dir / dataset_slug
-        self._stage_dataset(config, staging, dataset_slug)
-        self._push_dataset(staging)
-        self._wait_for_dataset(dataset_ref)
-
-        kernel_slug = _slugify(config.experiment_name)
-        kernel_dir = self._work_dir / kernel_slug
-        kernel_dir.mkdir(parents=True, exist_ok=True)
-        self._render_notebook(config, kernel_dir)
-
-        slug = f"{self._username}/{kernel_slug}"
-        metadata = {
-            "id": slug,
-            "title": config.experiment_name,
-            "code_file": "notebook.ipynb",
-            "language": "python",
-            "kernel_type": "notebook",
-            "is_private": True,
-            "enable_gpu": True,
-            "enable_internet": True,
-            "dataset_sources": [dataset_ref],
-        }
-        (kernel_dir / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2))
-        subprocess.run(
-            [_kaggle_bin(),"kernels", "push", "-p", str(kernel_dir), "--accelerator", config.gpu_type],
-            check=True,
-        )
-
-        return slug
+    def submit(self, spec: RemoteJobSpec) -> str:
+        if isinstance(spec, TrainJobSpec):
+            return self._submit_train(spec)
+        if isinstance(spec, EvalJobSpec):
+            return self._submit_eval(spec)
+        raise NotImplementedError(f"Unsupported job_type: {spec.job_type!r}")
 
     def status(self, run_id: str) -> Literal["pending", "running", "done", "failed"]:
         result = subprocess.run(
-            [_kaggle_bin(),"kernels", "status", run_id],
+            [_kaggle_bin(), "kernels", "status", run_id],
             capture_output=True,
             text=True,
             timeout=30,
@@ -125,12 +112,33 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
                 return canonical  # type: ignore[return-value]
         return "pending"
 
+    def download(self, run_id: str, dest: Path) -> str:
+        dest.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [_kaggle_bin(), "kernels", "output", run_id, "-p", str(dest)],
+            check=True,
+        )
+        # Eval jobs: remote worker writes eval_result.json — return it directly.
+        for result_file in sorted(dest.rglob("eval_result.json")):
+            if result_file.is_file():
+                return str(result_file)
+        # Train jobs: remote_worker writes to /kaggle/working/checkpoint/
+        # kaggle kernels output preserves the path structure
+        for checkpoint_dir in sorted(dest.rglob("checkpoint")):
+            if checkpoint_dir.is_dir():
+                return str(checkpoint_dir)
+        # Fallback: find HF model config.json
+        for config_path in sorted(dest.rglob("config.json")):
+            if '"model_type"' in config_path.read_text():
+                return str(config_path.parent)
+        return str(dest)
+
     def logs(self, run_id: str) -> str:
         frac, detail = self.progress(run_id)
         if detail:
             return detail
         result = subprocess.run(
-            [_kaggle_bin(),"kernels", "status", run_id],
+            [_kaggle_bin(), "kernels", "status", run_id],
             capture_output=True,
             text=True,
             timeout=30,
@@ -147,7 +155,7 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
             import tempfile
             with tempfile.TemporaryDirectory() as tmpdir:
                 subprocess.run(
-                    [_kaggle_bin(),"kernels", "output", run_id, "-p", tmpdir, "--quiet"],
+                    [_kaggle_bin(), "kernels", "output", run_id, "-p", tmpdir, "--quiet"],
                     capture_output=True,
                     text=True,
                     timeout=15,
@@ -170,25 +178,55 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
             pass
         return 0.0, ""
 
-    def download(self, run_id: str, dest: Path) -> str:
-        dest.mkdir(parents=True, exist_ok=True)
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _submit_train(self, config: TrainJobSpec) -> str:
+        dataset_slug = _slugify(f"{config.experiment_name}-data")
+        dataset_ref = f"{self._username}/{dataset_slug}"
+
+        staging = self._work_dir / dataset_slug
+        self._stage_dataset(config, staging, dataset_slug)
+        self._push_dataset(staging)
+        self._wait_for_dataset(dataset_ref)
+
+        kernel_slug = _slugify(config.experiment_name)
+        kernel_dir = self._work_dir / kernel_slug
+        kernel_dir.mkdir(parents=True, exist_ok=True)
+        self._render_notebook(config, kernel_dir, dataset_slug)
+
+        slug = f"{self._username}/{kernel_slug}"
+        metadata = {
+            "id": slug,
+            "title": config.experiment_name,
+            "code_file": "notebook.ipynb",
+            "language": "python",
+            "kernel_type": "notebook",
+            "is_private": True,
+            "enable_gpu": True,
+            "enable_internet": True,
+            "dataset_sources": [dataset_ref],
+        }
+        (kernel_dir / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2))
         subprocess.run(
-            [_kaggle_bin(),"kernels", "output", run_id, "-p", str(dest)],
+            [_kaggle_bin(), "kernels", "push", "-p", str(kernel_dir), "--accelerator", config.gpu_type],
             check=True,
         )
-        archive = dest / "checkpoint.tar.gz"
-        if archive.exists():
-            with tarfile.open(archive) as tf:
-                tf.extractall(dest, filter="data")
-            archive.unlink()
-        # Find the directory that contains the HF model config
-        for config_path in sorted(dest.rglob("config.json")):
-            if config_path.read_text().find('"model_type"') != -1:
-                return str(config_path.parent)
-        return str(dest)
+        return slug
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:
-        experiment_name = _slugify(run_id.split("/")[-1])
+    def _submit_eval(self, spec: EvalJobSpec) -> str:
+        """Push an eval kernel that downloads checkpoint and eval data from S3 and scores it.
+
+        The blocking poll loop from the old ``eval()`` method is intentionally removed.
+        Temporal activities poll ``status()`` in the same async loop used for training.
+        ``training_artifact_ref`` is the training kernel slug (e.g. "username/exp-slug").
+        ``spec.run_id`` is used to locate the checkpoint in S3 at
+        ``workflow/{run_id}/checkpoint/``.
+        """
+        training_kernel_slug = spec.training_artifact_ref
+        # Derive dataset ref from the training run slug (same dataset used for training).
+        experiment_name = _slugify(training_kernel_slug.split("/")[-1])
         dataset_ref = f"{self._username}/{experiment_name}-data"
 
         eval_kernel_id = f"{experiment_name}-eval"
@@ -196,7 +234,13 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         kernel_dir = self._work_dir / eval_kernel_id
         kernel_dir.mkdir(parents=True, exist_ok=True)
 
-        self._render_eval_notebook(run_id, eval_data, experiment_name, kernel_dir)
+        self._render_eval_notebook(
+            training_run_id=training_kernel_slug,
+            experiment_name=experiment_name,
+            kernel_dir=kernel_dir,
+            run_id=spec.run_id,
+            eval_s3_key=spec.eval_data,
+        )
 
         metadata = {
             "id": eval_slug,
@@ -211,59 +255,51 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         }
         (kernel_dir / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2))
         subprocess.run(
-            [_kaggle_bin(),"kernels", "push", "-p", str(kernel_dir), "--accelerator", "NvidiaTeslaT4"],
+            [_kaggle_bin(), "kernels", "push", "-p", str(kernel_dir), "--accelerator", spec.gpu_type],
             check=True,
         )
-
-        started = time.time()
-        while True:
-            status = self.status(eval_slug)
-            elapsed = int(time.time() - started)
-            log.info("kaggle eval status=%s  elapsed=%ds", status, elapsed)
-            if status == "done":
-                break
-            if status == "failed":
-                raise RuntimeError(f"Eval kernel failed: {eval_slug}")
-            time.sleep(30)
-
-        result_dir = self._work_dir / f"{eval_kernel_id}-output"
-        result_dir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [_kaggle_bin(),"kernels", "output", eval_slug, "-p", str(result_dir)],
-            check=True,
-        )
-
-        result_file = result_dir / "eval_result.json"
-        if not result_file.exists():
-            raise RuntimeError(f"eval_result.json missing from eval kernel output at {result_dir}")
-        result = json.loads(result_file.read_text())
-        return result["valid_pct"], result["passed"]
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+        return eval_slug   # Temporal polls status(eval_slug) — no blocking loop here
 
     def _stage_dataset(
-        self, config: RemoteTrainConfig, staging: Path, dataset_slug: str
+        self, config: TrainJobSpec, staging: Path, dataset_slug: str
     ) -> None:
-        """Build a project wheel and stage it with the training data for Kaggle upload.
+        """Build a project wheel and stage it for Kaggle upload.
 
-        All files are placed flat in the staging directory (no subdirectories) to
-        avoid Kaggle CLI upload reliability issues with nested directory structures.
+        Training data is no longer staged here — the Kaggle kernel downloads it
+        directly from S3 (enable_internet=True).  Only the project wheel is needed
+        in the dataset so the kernel can install the project code.
         """
+        if not config.train_s3_key or not config.eval_s3_key:
+            raise ValueError(
+                "Kaggle S3 backend requires train_s3_key and eval_s3_key in TrainJobSpec. "
+                "Ensure generate_dataset_activity ran with upload_to_storage=True before "
+                f"train_activity (train_data={config.train_data!r})."
+            )
+
+        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", "")
+        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", "")
+        _aws_bucket = os.environ.get("AWS_S3_BUCKET", "")
+        if not _aws_key or not _aws_secret or not _aws_bucket:
+            missing = ", ".join(
+                k for k, v in [
+                    ("KAGGLE_AWS_ACCESS_KEY_ID", _aws_key),
+                    ("KAGGLE_AWS_SECRET_ACCESS_KEY", _aws_secret),
+                    ("AWS_S3_BUCKET", _aws_bucket),
+                ] if not v
+            )
+            raise ValueError(
+                f"Kaggle S3 backend requires dedicated Kaggle IAM credentials on the Temporal worker. "
+                f"Missing: {missing}. "
+                "Set KAGGLE_AWS_ACCESS_KEY_ID and KAGGLE_AWS_SECRET_ACCESS_KEY (the least-privilege "
+                "Kaggle training IAM user) plus AWS_S3_BUCKET. Do not use the default AWS credentials."
+            )
+
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
 
-        # Build a wheel of the project and copy it into staging
+        # Build a wheel of the project and copy it into staging.
         build_wheel(self._project_root, staging)
-
-        # Copy flat .jsonl training data files
-        train_data = Path(config.train_data)
-        if not train_data.is_absolute():
-            train_data = self._project_root / train_data
-        for jsonl in train_data.parent.glob("*.jsonl"):
-            shutil.copy2(jsonl, staging / jsonl.name)
 
         meta = {
             "title": f"{config.experiment_name} Training Data",
@@ -278,7 +314,7 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         log.info("Staged files for upload: %s", staged_files)
 
         create_result = subprocess.run(
-            [_kaggle_bin(),"datasets", "create", "-p", str(staging)],
+            [_kaggle_bin(), "datasets", "create", "-p", str(staging)],
             capture_output=True, text=True,
         )
         create_output = (create_result.stdout + create_result.stderr).strip()
@@ -289,7 +325,7 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         else:
             log.info("Dataset exists, uploading new version … (%s)", create_output)
             version_result = subprocess.run(
-                [_kaggle_bin(),"datasets", "version", "-p", str(staging), "-m", "update"],
+                [_kaggle_bin(), "datasets", "version", "-p", str(staging), "-m", "update"],
                 capture_output=True, text=True,
             )
             version_output = (version_result.stdout + version_result.stderr).strip()
@@ -323,30 +359,100 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
 
         log.warning(".whl not confirmed in %s after %ds — proceeding anyway.", dataset_ref, timeout)
 
-    def _render_notebook(self, config: RemoteTrainConfig, kernel_dir: Path) -> None:
-        template_path = Path(__file__).parent / "notebook_template.ipynb"
-        notebook = json.loads(template_path.read_text())
-
-        config_repr = repr({
-            "model": config.model,
-            "epochs": config.epochs,
-            "patience": config.patience,
-            "warmup_ratio": config.warmup_ratio,
-            "experiment_name": config.experiment_name,
-        })
-
-        replacements = {"{{config}}": config_repr}
-        for cell in notebook["cells"]:
-            src = cell["source"]
-            if isinstance(src, str):
-                cell["source"] = _replace_all(src, replacements)
-            else:
-                cell["source"] = [_replace_all(line, replacements) for line in src]
-
+    def _render_notebook(
+        self, config: TrainJobSpec, kernel_dir: Path, dataset_slug: str
+    ) -> None:
+        """Render a notebook that invokes remote_worker via runpy after installing the wheel."""
+        _aws_key = os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", "")
+        _aws_secret = os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", "")
+        _aws_bucket = os.environ.get("AWS_S3_BUCKET", "")
+        notebook = {
+            "nbformat": 4,
+            "nbformat_minor": 5,
+            "metadata": {
+                "kernelspec": {
+                    "display_name": "Python 3",
+                    "language": "python",
+                    "name": "python3",
+                }
+            },
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "source": [
+                        "import subprocess, sys, os, glob, pathlib\n",
+                        "\n",
+                        "# Locate the project wheel — handle both old (/kaggle/input/<slug>/) and\n",
+                        "# new (/kaggle/input/datasets/<owner>/<slug>/) Kaggle mount paths.\n",
+                        f"_whl_list = (\n",
+                        f"    glob.glob('/kaggle/input/{dataset_slug}/*.whl') or\n",
+                        f"    glob.glob('/kaggle/input/**/{dataset_slug}/*.whl', recursive=True)\n",
+                        ")\n",
+                        "if not _whl_list:\n",
+                        f'    raise FileNotFoundError("No .whl found for {dataset_slug!r} — re-trigger training to rebuild the dataset")\n',
+                        "whl = _whl_list[0]\n",
+                        "\n",
+                        "# Install the project wheel (provides domain/adapter code).\n",
+                        "subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', whl], check=True)\n",
+                        "# pip install /local/file.whl[extras] silently ignores extras on some pip versions.\n",
+                        "# Explicitly install training deps not pre-installed by Kaggle (torch is already present).\n",
+                        "subprocess.run([\n",
+                        "    sys.executable, '-m', 'pip', 'install', '--quiet',\n",
+                        "    'transformers', 'datasets', 'accelerate', 'sentencepiece', 'peft', 'bitsandbytes',\n",
+                        "], check=True)\n",
+                        "\n",
+                        "# Credential fast-fail: ensure credentials were baked in at notebook-render time.\n",
+                        "# If any value is empty the kernel was submitted before secrets reached the pod;\n",
+                        "# cancel this Temporal workflow and re-trigger training.\n",
+                        f"_baked_creds = {{'AWS_ACCESS_KEY_ID': {_aws_key!r}, 'AWS_SECRET_ACCESS_KEY': {_aws_secret!r}, 'AWS_S3_BUCKET': {_aws_bucket!r}}}\n",
+                        "_missing_creds = [k for k, v in _baked_creds.items() if not v]\n",
+                        "if _missing_creds:\n",
+                        "    raise EnvironmentError(\n",
+                        "        f'Notebook was rendered without AWS credentials for: {_missing_creds}. '\n",
+                        "        'Cancel this Temporal workflow and re-trigger training after setting '\n",
+                        "        'KAGGLE_AWS_ACCESS_KEY_ID and KAGGLE_AWS_SECRET_ACCESS_KEY on the worker pod.'\n",
+                        "    )\n",
+                        "print('[init] AWS credentials present — key prefix:', _baked_creds['AWS_ACCESS_KEY_ID'][:4], '*** bucket:', _baked_creds['AWS_S3_BUCKET'])\n",
+                        "\n",
+                        "# Run the training worker in a fresh subprocess so it starts with all packages\n",
+                        "# already installed — identical to K8s/RunPod where packages are pre-installed\n",
+                        "# in the image. Training data and checkpoint artifacts go to S3 (same as K8s).\n",
+                        "subprocess.run(\n",
+                        "    [sys.executable, '-m', 'interactors.cli.training.remote_worker'],\n",
+                        "    check=True,\n",
+                        "    env={\n",
+                        "        **os.environ,\n",
+                        f"        'RUN_ID': {config.experiment_name!r},\n",
+                        f"        'TRAIN_DATA_KEY': {config.train_s3_key!r},\n",
+                        f"        'EVAL_DATA_KEY': {config.eval_s3_key!r},\n",
+                        f"        'MODEL': {config.model!r},\n",
+                        f"        'EPOCHS': {str(config.epochs)!r},\n",
+                        f"        'PATIENCE': {str(config.patience)!r},\n",
+                        f"        'WARMUP_RATIO': {str(config.warmup_ratio)!r},\n",
+                        "        'STORAGE_BACKEND': 's3',\n",
+                        f"        'S3_KEY_PREFIX': 'workflow/{config.run_id}',\n",
+                        f"        'AWS_S3_BUCKET': {_aws_bucket!r},\n",
+                        f"        'AWS_ACCESS_KEY_ID': {_aws_key!r},\n",
+                        f"        'AWS_SECRET_ACCESS_KEY': {_aws_secret!r},\n",
+                        f"        'AWS_DEFAULT_REGION': {os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')!r},\n",
+                        "    },\n",
+                        ")\n",
+                    ],
+                    "metadata": {},
+                    "outputs": [],
+                    "execution_count": None,
+                }
+            ],
+        }
         (kernel_dir / "notebook.ipynb").write_text(json.dumps(notebook, indent=1))
 
     def _render_eval_notebook(
-        self, training_run_id: str, eval_data: str, experiment_name: str, kernel_dir: Path
+        self,
+        training_run_id: str,
+        experiment_name: str,
+        kernel_dir: Path,
+        run_id: str = "",
+        eval_s3_key: str = "",
     ) -> None:
         template_path = Path(__file__).parent / "eval_notebook_template.ipynb"
         notebook = json.loads(template_path.read_text())
@@ -354,7 +460,16 @@ class KaggleTrainingAdapter(RemoteTrainingPort):
         config_repr = repr({
             "training_run_id": training_run_id,
             "experiment_name": experiment_name,
-            "eval_data_file": Path(eval_data).name,
+            "eval_data_file": "eval.jsonl",
+            "dataset_slug": _slugify(f"{experiment_name}-data"),
+            # S3 config — eval kernel downloads checkpoint and eval data from S3
+            # rather than from Kaggle kernel output or the dataset.
+            "checkpoint_s3_prefix": f"workflow/{run_id}/checkpoint/",
+            "eval_s3_key": eval_s3_key,
+            "s3_bucket": os.environ.get("AWS_S3_BUCKET", ""),
+            "aws_access_key_id": os.environ.get("KAGGLE_AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "")),
+            "aws_secret_access_key": os.environ.get("KAGGLE_AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "")),
+            "aws_region": os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
         })
 
         replacements = {"{{config}}": config_repr}

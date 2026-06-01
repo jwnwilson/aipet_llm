@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceRequest, InferenceResponse, InferenceStatus
+from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceRequest, InferenceResponse, InferenceStatus, PaginatedResponse
 from domain.ports import InferenceStorePort, PodLifecyclePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_inference_store, get_pod_adapter
@@ -25,9 +26,17 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=list[InferenceInstance])
-def list_instances(store: InferenceStorePort = Depends(get_inference_store)) -> list[InferenceInstance]:
-    return store.list()
+@router.get("", response_model=PaginatedResponse[InferenceInstance])
+def list_instances(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    model_id: str | None = Query(None),
+    store: InferenceStorePort = Depends(get_inference_store),
+) -> PaginatedResponse[InferenceInstance]:
+    offset = (page - 1) * limit
+    items = store.list(model_id=model_id, offset=offset, limit=limit)
+    total = store.count(model_id=model_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.post("", response_model=InferenceInstance, status_code=201)
@@ -63,20 +72,27 @@ async def start_instance(
     if updated is None:
         raise HTTPException(status_code=404, detail="Inference instance not found")
 
+    # Generate a stable pod name tied to this instance and persist it so that
+    # stop/delete always have a real name — never the empty-string default.
+    pod_name = f"inference-{instance_id[:12]}"
+    with_pod = store.update_pod(instance_id, pod_name, updated.pod_namespace)
+    if with_pod is None:
+        raise HTTPException(status_code=404, detail="Inference instance not found")
+
     async def _create_pod() -> None:
         try:
             pod_adapter.create_pod(
-                pod_name=updated.pod_name,
-                model_id=updated.model_id,
-                model_path="",
-                namespace=updated.pod_namespace,
+                pod_name=with_pod.pod_name,
+                model_id=with_pod.model_id,
+                model_path=with_pod.model_path,
+                namespace=with_pod.pod_namespace,
             )
         except Exception:
             log.exception("Failed to create pod for instance %s", instance_id)
             store.update_status(instance_id, InferenceStatus.FAILED)
 
     asyncio.create_task(_create_pod())
-    return updated
+    return with_pod
 
 
 @router.post("/{instance_id}/stop", response_model=InferenceInstance)

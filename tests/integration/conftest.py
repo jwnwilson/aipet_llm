@@ -6,10 +6,38 @@ import os
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.pool import StaticPool
 
 from domain.models import UserContext
 
 _LLAMA_CPP_DIR = Path(__file__).parents[2] / "llama.cpp"
+
+
+def make_test_engine() -> Engine:
+    """Create an in-memory SQLite engine with all Alembic migrations applied.
+
+    Use this instead of ``create_engine`` + ``init_db`` in integration tests so
+    that the schema is built from migrations (not from ``Base.metadata.create_all``).
+    This means the tests will fail if a column is added to a SQLAlchemy model
+    but the corresponding Alembic migration is not written.
+    """
+    from adapters.database.engine import run_migrations
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    run_migrations(engine)
+    return engine
+
+
+@pytest.fixture
+def db_engine() -> Engine:
+    """Pytest fixture that yields a fresh migrated in-memory SQLite engine."""
+    return make_test_engine()
 
 # Default user injected by the auth bypass fixture.
 # All resources created through the API in integration tests will be owned by

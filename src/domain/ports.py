@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Generic, Literal, TypeVar
 
 from domain.models import (
     DatasetConfig,
     DatasetRecord,
+    EvalOutcome,
     InferenceInstance,
     InferenceInstanceConfig,
     InferenceRequest,
     InferenceResponse,
     InferenceStatus,
+    RemoteJobSpec,
     RemoteTrainConfig,
     RunConfig,
     RunRecord,
@@ -77,6 +80,49 @@ class StoragePort(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement download_directory")
 
+    def delete_directory(self, prefix: str) -> None:
+        """Delete all objects whose key starts with ``prefix``.
+
+        ``prefix`` should end with ``/`` (e.g. ``workflow/{run_id}/checkpoint/``).
+        Silent no-op if no objects match. Override in adapters that support prefix
+        deletion. Raises ``NotImplementedError`` on adapters that do not.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement delete_directory")
+
+    def upload_directory(self, local_dir: Path, prefix: str) -> None:
+        """Upload all files under ``local_dir`` to storage, keyed as ``{prefix}/{relative_path}``.
+
+        ``prefix`` must NOT end with ``/``.  Symmetric counterpart to
+        ``download_directory``: calling ``upload_directory(d, p)`` followed by
+        ``download_directory(p + '/', dest)`` reproduces ``d`` under ``dest``.
+
+        The default implementation iterates files and delegates to ``self.upload()``,
+        which every concrete adapter must implement.  Adapters may override for
+        efficiency (e.g. parallel S3 multipart uploads).
+
+        Raises:
+            ValueError: if ``prefix`` ends with ``/``.
+            RuntimeError: if one or more files fail to upload (all files are
+                attempted; failures are collected and reported together).
+        """
+        if prefix.endswith("/"):
+            raise ValueError(f"prefix must not end with '/': {prefix!r}")
+
+        failed: list[tuple[Path, Exception]] = []
+        for file_path in sorted(Path(local_dir).rglob("*")):
+            if file_path.is_file():
+                relative = file_path.relative_to(local_dir)
+                try:
+                    self.upload(file_path, f"{prefix}/{relative}")
+                except Exception as exc:  # noqa: BLE001
+                    failed.append((file_path, exc))
+
+        if failed:
+            details = "; ".join(f"{p.name}: {e}" for p, e in failed)
+            raise RuntimeError(
+                f"upload_directory incomplete — {len(failed)} file(s) failed: {details}"
+            )
+
 
 class InferencePort(ABC):
     """Abstract interface the domain layer expects from any LLM inference backend.
@@ -102,8 +148,23 @@ class InferencePort(ABC):
         """
 
 
-class RemoteTrainingPort(ABC):
-    """Abstract interface for offloading fine-tuning to a remote compute backend.
+@dataclass
+class SubmitRetryConfig:
+    """Retry constraints for adapter.submit(). Each backend overrides submit_retry_config()."""
+
+    max_retries: int = 3
+    base_delay_s: float = 5.0
+    retryable_errors: tuple[str, ...] = field(default_factory=lambda: (
+        "rate limit",
+        "temporarily unavailable",
+        "timeout",
+        "too many requests",
+        "service unavailable",
+    ))
+
+
+class RemoteJobPort(ABC):
+    """Abstract interface for dispatching compute jobs (train, eval, …) to remote backends.
 
     Implementations live in ``src/adapters/`` — never in the domain layer.
 
@@ -111,15 +172,20 @@ class RemoteTrainingPort(ABC):
     - ``submit`` must start the remote job and return an opaque ``run_id``.
     - ``status`` must be non-blocking (poll, don't wait).
     - ``download`` must be called only after ``status`` returns ``"done"``; it
-      fetches the checkpoint into ``dest`` and returns the local path as a string.
+      fetches job artifacts into ``dest`` and returns the local path as a string.
+      Train jobs return the checkpoint directory path.
+      Eval jobs return the eval_results.json file path.
     """
 
     @abstractmethod
-    def submit(self, config: RemoteTrainConfig) -> str:
-        """Upload data + code and start the remote training job.
+    def submit(self, spec: RemoteJobSpec) -> str:
+        """Stage resources, launch job, return opaque run_id.
+
+        Args:
+            spec: Either a ``TrainJobSpec`` or ``EvalJobSpec``, selected by ``job_type``.
 
         Returns:
-            An opaque ``run_id`` string used by ``status`` and ``download``.
+            An opaque ``run_id`` string used by ``status``, ``logs``, and ``download``.
         """
 
     @abstractmethod
@@ -128,7 +194,11 @@ class RemoteTrainingPort(ABC):
 
     @abstractmethod
     def download(self, run_id: str, dest: Path) -> str:
-        """Fetch the trained checkpoint into ``dest`` and return the local path."""
+        """Fetch job artifacts into ``dest`` and return the local path.
+
+        - Train jobs: returns the checkpoint directory path.
+        - Eval jobs: returns the eval_results.json file path.
+        """
 
     def logs(self, run_id: str) -> str:  # noqa: ARG002
         """Return recent log output for the running job (best-effort, may be empty)."""
@@ -142,22 +212,25 @@ class RemoteTrainingPort(ABC):
         """
         return 0.0, ""
 
-    def eval(self, run_id: str, eval_data: str) -> tuple[float, bool]:  # noqa: ARG002
-        """Run evaluation on the remote machine and return ``(valid_pct, passed)``.
+    def submit_retry_config(self) -> SubmitRetryConfig:
+        """Return retry constraints for submit(). Override per backend to customise."""
+        return SubmitRetryConfig()
 
-        Raises ``NotImplementedError`` if the backend does not support remote
-        evaluation (e.g. Kaggle batch kernels).  ``evaluate_activity`` catches
-        this and raises an ``ApplicationError`` with a descriptive message.
-        """
-        raise NotImplementedError
+
+# Backward-compat alias — existing code using RemoteTrainingPort continues to work.
+RemoteTrainingPort = RemoteJobPort
 
 
 class StorePort(ABC, Generic[TDomain, TConfig]):
     """Generic CRUD base for any domain entity store."""
 
     @abstractmethod
-    def list(self) -> list[TDomain]:
-        """Return all stored entities."""
+    def list(self, offset: int = 0, limit: int = 50) -> list[TDomain]:
+        """Return stored entities with optional offset/limit for pagination."""
+
+    @abstractmethod
+    def count(self) -> int:
+        """Return total number of stored entities."""
 
     @abstractmethod
     def get(self, id: str) -> TDomain | None:
@@ -180,8 +253,12 @@ class ModelStorePort(StorePort["TrainingModel", "TrainingModelConfig"]):
     """Abstract interface for persisting training model configurations."""
 
     @abstractmethod
-    def list(self, owner_id: str | None = None) -> list[TrainingModel]:  # type: ignore[override]
-        """Return all models, optionally filtered to a specific owner."""
+    def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[TrainingModel]:  # type: ignore[override]
+        """Return models with optional owner filter and pagination."""
+
+    @abstractmethod
+    def count(self, owner_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total model count, optionally filtered by owner."""
 
     @abstractmethod
     def activate(self, id: str) -> TrainingModel | None:
@@ -199,8 +276,12 @@ class RunStorePort(StorePort["RunRecord", "RunConfig"]):
     """Abstract interface for persisting training run records."""
 
     @abstractmethod
-    def list(self, model_id: str | None = None, owner_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
-        """Return all runs, optionally filtered by model_id and/or owner_id."""
+    def list(self, model_id: str | None = None, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[RunRecord]:  # type: ignore[override]
+        """Return runs with optional filters and pagination."""
+
+    @abstractmethod
+    def count(self, model_id: str | None = None, owner_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total run count matching the given filters."""
 
     @abstractmethod
     def update_status(self, run_id: str, status: RunStatus) -> RunRecord | None:
@@ -226,6 +307,15 @@ class RunStorePort(StorePort["RunRecord", "RunConfig"]):
         Returns the updated record, or None if run_id is not found.
         """
 
+    @abstractmethod
+    def update_eval_result(
+        self, run_id: str, valid_pct: float, outcome: EvalOutcome
+    ) -> RunRecord | None:
+        """Persist eval score and pass/fail outcome atomically.
+
+        Returns the updated record, or None if run_id is not found.
+        """
+
 
 class AuthPort(ABC):
     """Abstract interface for validating bearer tokens."""
@@ -243,8 +333,12 @@ class DatasetStorePort(StorePort["DatasetRecord", "DatasetConfig"]):
     """
 
     @abstractmethod
-    def list(self, owner_id: str | None = None) -> list[DatasetRecord]:  # type: ignore[override]
-        """Return all datasets, optionally filtered to a specific owner."""
+    def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[DatasetRecord]:  # type: ignore[override]
+        """Return datasets with optional owner filter and pagination."""
+
+    @abstractmethod
+    def count(self, owner_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total dataset count, optionally filtered by owner."""
 
 
 class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig"]):
@@ -261,6 +355,14 @@ class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig
     @abstractmethod
     def update_last_used(self, id: str) -> InferenceInstance | None:
         """Set last_used_at to now; return updated record or None if not found."""
+
+    @abstractmethod
+    def list(self, model_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
+        """Return inference instances with optional model filter and pagination."""
+
+    @abstractmethod
+    def count(self, model_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total inference instance count, optionally filtered by model."""
 
     @abstractmethod
     def list_active(self) -> list[InferenceInstance]:

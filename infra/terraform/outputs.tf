@@ -33,6 +33,16 @@ output "training_repository_url" {
   value       = module.ecr_training.repository_url
 }
 
+output "export_repository_url" {
+  description = "ECR URL for the export image — use as ECR_EXPORT_REPOSITORY in deploy.yml"
+  value       = module.ecr_export.repository_url
+}
+
+output "runpod_repository_uri" {
+  description = "ECR Public URI for the RunPod training image — set as ECR_RUNPOD_REPOSITORY Actions variable after apply"
+  value       = module.ecr_public_runpod.repository_uri
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions OIDC — set this as the AWS_ROLE_ARN repository secret"
   value       = module.iam.github_actions_role_arn
@@ -46,6 +56,17 @@ output "llm_api_aws_access_key_id" {
 output "llm_api_aws_secret_access_key" {
   description = "Secret access key for the llm-api app IAM user — set as LLM_API_AWS_SECRET_ACCESS_KEY secret"
   value       = module.iam.llm_api_aws_secret_access_key
+  sensitive   = true
+}
+
+output "kaggle_training_aws_access_key_id" {
+  description = "Access key ID for the Kaggle training IAM user — set as KAGGLE_AWS_ACCESS_KEY_ID secret on the Temporal worker"
+  value       = module.iam.kaggle_training_aws_access_key_id
+}
+
+output "kaggle_training_aws_secret_access_key" {
+  description = "Secret access key for the Kaggle training IAM user — set as KAGGLE_AWS_SECRET_ACCESS_KEY secret on the Temporal worker"
+  value       = module.iam.kaggle_training_aws_secret_access_key
   sensitive   = true
 }
 

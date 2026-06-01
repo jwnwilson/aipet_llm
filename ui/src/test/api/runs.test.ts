@@ -1,12 +1,15 @@
-import { describe, it, expect } from 'vitest'
-import { listRuns, getRun, isRunActive, isRunCancellable, triggerRun, deleteRun, cancelRun, getRunEvaluation } from '@/api/runs'
+import { describe, it, expect, afterEach } from 'vitest'
+import { listRuns, getRun, isRunActive, isRunCancellable, triggerRun, deleteRun, cancelRun, getRunEvaluation, getRunTemporal, getRunLogs } from '@/api/runs'
 import { MODEL_FIXTURE, RUN_FIXTURE, EVAL_DATA_FIXTURE } from '../msw/fixtures'
+import { resetHandlerState } from '../msw/handlers'
+
+afterEach(() => resetHandlerState())
 
 describe('listRuns', () => {
-  it('returns array of RunRecords with id field', async () => {
-    const runs = await listRuns()
-    expect(Array.isArray(runs)).toBe(true)
-    expect(runs[0].id).toBe(RUN_FIXTURE.id)
+  it('returns paginated response with RunRecords', async () => {
+    const result = await listRuns()
+    expect(Array.isArray(result.items)).toBe(true)
+    expect(result.items[0].id).toBe(RUN_FIXTURE.id)
   })
 })
 
@@ -89,5 +92,32 @@ describe('getRunEvaluation', () => {
 
   it('throws for an unknown run id', async () => {
     await expect(getRunEvaluation('does-not-exist')).rejects.toThrow()
+  })
+})
+
+describe('getRunTemporal', () => {
+  it('returns TemporalDetails for a known run', async () => {
+    const result = await getRunTemporal(RUN_FIXTURE.id)
+    expect(result.workflow_id).toBe('training-test-model-abc12345')
+    expect(result.temporal_run_id).toBe('temporal-run-id-abc')
+    expect(result.status).toBe('RUNNING')
+    expect(result.start_time).toBe('2024-01-01T00:00:00.000Z')
+    expect(result.close_time).toBeNull()
+  })
+
+  it('throws for an unknown run id', async () => {
+    await expect(getRunTemporal('does-not-exist')).rejects.toThrow()
+  })
+})
+
+describe('getRunLogs', () => {
+  it('returns RunLogsResponse for a known run', async () => {
+    const result = await getRunLogs(RUN_FIXTURE.id)
+    expect(result.logs).toBe('epoch 1/3  loss=0.42\n')
+    expect(result.source).toBe('local')
+  })
+
+  it('throws for an unknown run id', async () => {
+    await expect(getRunLogs('does-not-exist')).rejects.toThrow()
   })
 })

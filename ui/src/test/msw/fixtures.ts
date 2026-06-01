@@ -1,5 +1,5 @@
 // apps/llm-ui/src/test/msw/fixtures.ts
-import type { Dataset, TrainingModel, RunRecord, UserContext, QualityReport, EvaluationData } from '@/types'
+import type { Dataset, EvaluationData, QualityReport, RunLogsResponse, RunRecord, TemporalDetails, TrainingModel, UserContext } from '@/types'
 
 export const TRAIN_DATASET_FIXTURE: Dataset = {
   id: 'ds-train-1',
@@ -31,7 +31,7 @@ export const MODEL_FIXTURE: TrainingModel = {
   epochs: 5,
   patience: 3,
   warmup_ratio: 0.05,
-  remote_backend: 'local',
+  remote_backend: 'k8s',
   skip_generate: false,
   gguf_path: '',
   is_active: false,
@@ -52,6 +52,39 @@ export const RUN_FIXTURE: RunRecord = {
   eval_dataset_id: null,
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-01T00:00:00Z',
+}
+
+export const MODEL_FIXTURE_2: TrainingModel = {
+  id: 'test-id-2',
+  name: 'second-model',
+  description: 'A second test model',
+  base_model: 'HuggingFaceTB/SmolLM2-360M',
+  train_data: 'data/train.jsonl',
+  eval_data: 'data/eval.jsonl',
+  epochs: 3,
+  patience: 2,
+  warmup_ratio: 0.05,
+  remote_backend: 'k8s',
+  skip_generate: false,
+  gguf_path: '',
+  is_active: false,
+  created_at: '2024-01-02T00:00:00Z',
+  updated_at: '2024-01-02T00:00:00Z',
+}
+
+export const RUN_FIXTURE_2: RunRecord = {
+  id: 'run-uuid-2',
+  workflow_id: 'training-second-model-def45678',
+  model_id: 'test-id-2',
+  status: 'completed',
+  eval_valid_pct: 0.97,
+  progress: 100,
+  progress_detail: null,
+  training_config: null,
+  train_dataset_id: null,
+  eval_dataset_id: null,
+  created_at: '2024-01-02T00:00:00Z',
+  updated_at: '2024-01-02T00:00:00Z',
 }
 
 export const PENDING_USER_FIXTURE: UserContext = {
@@ -87,4 +120,17 @@ export const EVAL_DATA_FIXTURE: EvaluationData = {
   status: 'completed',
   eval_valid_pct: 0.97,
   quality_report: QUALITY_REPORT_FIXTURE,
+}
+
+export const TEMPORAL_DETAILS_FIXTURE: TemporalDetails = {
+  workflow_id: 'training-test-model-abc12345',
+  temporal_run_id: 'temporal-run-id-abc',
+  status: 'RUNNING',
+  start_time: '2024-01-01T00:00:00.000Z',
+  close_time: null,
+}
+
+export const RUN_LOGS_FIXTURE: RunLogsResponse = {
+  logs: 'epoch 1/3  loss=0.42\n',
+  source: 'local',
 }

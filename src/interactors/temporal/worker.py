@@ -16,14 +16,17 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from interactors.temporal.activities import (
+    configure_inference_store,
     configure_model_store,
     configure_run_store,
     configure_storage,
+    create_inference_activity,
     evaluate_activity,
     export_activity,
     fail_run_activity,
     finalise_run_activity,
     generate_dataset_activity,
+    record_eval_result_activity,
     save_gguf_path_activity,
     train_activity,
     update_run_status_activity,
@@ -40,8 +43,10 @@ async def main() -> None:
 
     engine = make_engine()
     init_db(engine)
+    from adapters.database.inference_store import SQLAlchemyInferenceStore
     configure_model_store(SQLAlchemyModelStore(engine))
     configure_run_store(SQLAlchemyRunStore(engine))
+    configure_inference_store(SQLAlchemyInferenceStore(engine))
 
     if os.getenv("AWS_S3_BUCKET"):
         from adapters.storage.s3 import S3StorageAdapter
@@ -64,8 +69,10 @@ async def main() -> None:
             export_activity,
             fail_run_activity,
             finalise_run_activity,
+            record_eval_result_activity,
             save_gguf_path_activity,
             update_run_status_activity,
+            create_inference_activity,
         ],
     )
 

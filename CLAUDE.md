@@ -55,6 +55,19 @@ models/
   model.gguf           # quantised Q4_K_M export for RPi
 ```
 
+### S3 path structure
+
+All compute backends share a single S3 bucket with these canonical namespaces:
+
+| Prefix | Contents |
+|--------|----------|
+| `workflow/{run_id}/` | Per-run artefacts: `status.txt`, `progress.json`, `logs.txt`, `checkpoint/`, `data/train.jsonl`, `data/eval.jsonl`, `bootstrap.py` |
+| `workflow/{run_id}/model/{model_name}.gguf` | GGUF produced by a training workflow (default name: `model`) |
+| `model/{model_id}/{model_name}.gguf` | Named GGUF exports addressable by model ID (default name: `model`) |
+| `dataset/{dataset_id}/` | Shared reusable datasets (`train.jsonl`, `eval.jsonl`) |
+
+`run_id` is always a full UUID hex string (e.g. `workflow/a3f1...`). Adapters **must not** prefix it with their backend name (`runpod/`, `vastai/`, etc.) — this ensures artefacts are identical regardless of which compute backend ran the job.
+
 > **Placement rules:**
 > - Ports (interfaces) belong in `src/domain/ports.py`.
 > - Business logic belongs in `src/domain/` — no argparse, no I/O, no adapter imports.
@@ -97,6 +110,29 @@ models/
 | 3 — API layer | 3.1 FastAPI app → 3.2 integration tests | `pytest tests/integration/` passes |
 | 4 — Training pipeline | 4.1 fine-tune script + 4.2 eval/export (parallel; runs alongside Phase 3) | `scripts/evaluate.py` reports ≥ 95% |
 | 5 — Deployment | 5.1 Docker ARM64 config | `GET /health` returns 200 on ARM64 image |
+
+## Learned lessons
+
+### Inference Docker container (ARM64 / Raspberry Pi 5)
+
+- **libgomp**: `python:3.12-slim` runtime stage does not include `libgomp1`. Add `apt-get install -y libgomp1` explicitly — llama-cpp-python's `libllama.so` links against it and crashes at import otherwise.
+- **SIGILL on Cortex-A76 (BCM2712, Pi 5)**: QEMU cross-compilation on GitHub Actions advertises a richer ARM feature set than the real Cortex-A76 supports (no SVE). Set `ENV CMAKE_ARGS="-DGGML_NATIVE=OFF -DGGML_SVE=OFF"` in the builder stage before `uv sync` so llama-cpp-python compiles to a safe ARMv8-A baseline.
+- **Model load failure debugging**: `verbose=False` in `llama_cpp.Llama(...)` suppresses the C-level rejection reason. Flip to `verbose=True` to expose why a GGUF file fails to load (format mismatch, unsupported architecture, OOM, etc.).
+- **S3 download on startup**: Use `asyncio.to_thread()` to run the blocking boto3 download inside `@app.on_event("startup")`. Return 503 from `/health` until `_adapter` is set — this acts as the K8s readiness gate.
+
+### Temporal worker dependency injection
+
+- The FastAPI `deps` module (`interactors/api/deps.py`) is only initialised in the FastAPI process. The Temporal worker runs in a separate process and never triggers FastAPI lifespan. Use module-level singletons in `interactors/temporal/activities.py` (same pattern as `_model_store` / `_run_store`) and wire them in `worker.py` `main()`.
+
+### K8s inference pods
+
+- `create_pod` must inject `GGUF_PATH` (the S3 model key) and AWS credentials (`AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) from the `llm-api-secrets` K8s Secret so the container can download the model at startup.
+- Inference pods are spawned on-demand (not a Deployment). A pod in `Error` state is not automatically cleaned up or replaced — delete it manually and trigger a new `/start` call.
+
+### Testing
+
+- **xdist isolation**: Tests in `test_k8s_adapter.py` stub `kubernetes.client` at module level via `sys.modules`. When running with `--dist=loadfile`, this pollutes other test files in the same worker. Fix: patch `adapters.compute.k8s.adapter.k8s_client` inside the test using `unittest.mock.patch` instead of inspecting real k8s objects.
+- **Docker e2e test env vars**: `tests/e2e/test_inference_docker.py` skips silently if `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, or `AWS_SECRET_ACCESS_KEY` are missing. Use `eval $(aws configure export-credentials --format env)` to populate them from a login session.
 
 ## Workflow
 

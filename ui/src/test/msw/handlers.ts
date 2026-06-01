@@ -1,17 +1,29 @@
 // apps/llm-ui/src/test/msw/handlers.ts
 import { http, HttpResponse } from 'msw'
-import type { Dataset, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
-import { MODEL_FIXTURE, RUN_FIXTURE, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE } from './fixtures'
+import type { Dataset, InferenceInstance, PaginatedResponse, RunRecord, TrainingModel, TrainingModelConfig, TriggerRunRequest, UserContext } from '@/types'
+
+function paginate<T>(items: T[], request: Request): PaginatedResponse<T> {
+  const url = new URL(request.url)
+  const page = parseInt(url.searchParams.get('page') ?? '1', 10)
+  const limit = parseInt(url.searchParams.get('limit') ?? '50', 10)
+  const offset = (page - 1) * limit
+  const sliced = items.slice(offset, offset + limit)
+  const pages = Math.max(1, Math.ceil(items.length / limit))
+  return { items: sliced, total: items.length, page, limit, pages }
+}
+import { MODEL_FIXTURE, MODEL_FIXTURE_2, RUN_FIXTURE, RUN_FIXTURE_2, PENDING_USER_FIXTURE, APPROVED_USER_FIXTURE, EVAL_DATA_FIXTURE, TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE, TEMPORAL_DETAILS_FIXTURE, RUN_LOGS_FIXTURE } from './fixtures'
 
 const BASE = 'http://localhost:8000'
 
-let models: TrainingModel[] = [MODEL_FIXTURE]
+let models: TrainingModel[] = [MODEL_FIXTURE, MODEL_FIXTURE_2]
+let runs: RunRecord[] = [RUN_FIXTURE, RUN_FIXTURE_2]
 let datasets: Dataset[] = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
+let inferences: InferenceInstance[] = []
 let pendingUsers: UserContext[] = [PENDING_USER_FIXTURE]
 let approvedUsers: UserContext[] = [APPROVED_USER_FIXTURE]
 
 export const handlers = [
-  http.get(`${BASE}/api/models`, () => HttpResponse.json(models)),
+  http.get(`${BASE}/api/models`, ({ request }) => HttpResponse.json(paginate(models, request))),
 
   http.post(`${BASE}/api/models`, async ({ request }) => {
     const config = await request.json() as TrainingModelConfig
@@ -54,21 +66,25 @@ export const handlers = [
     return HttpResponse.json({ run_id: RUN_FIXTURE.id }, { status: 202 })
   }),
 
-  http.get(`${BASE}/api/runs`, () => HttpResponse.json([RUN_FIXTURE])),
+  http.get(`${BASE}/api/runs`, ({ request }) => HttpResponse.json(paginate(runs, request))),
 
   http.get(`${BASE}/api/runs/:id`, ({ params }) => {
-    if (params.id === RUN_FIXTURE.id) return HttpResponse.json(RUN_FIXTURE)
-    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const run = runs.find(r => r.id === params.id)
+    if (!run) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    return HttpResponse.json(run)
   }),
 
   http.delete(`${BASE}/api/runs/:id`, ({ params }) => {
-    if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
-    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const run = runs.find(r => r.id === params.id)
+    if (!run) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    runs = runs.filter(r => r.id !== params.id)
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.post(`${BASE}/api/runs/:id/cancel`, ({ params }) => {
-    if (params.id === RUN_FIXTURE.id) return new HttpResponse(null, { status: 204 })
-    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    const run = runs.find(r => r.id === params.id)
+    if (!run) return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+    return new HttpResponse(null, { status: 204 })
   }),
 
   http.get(`${BASE}/api/runs/:id/evaluation`, ({ params }) => {
@@ -76,8 +92,25 @@ export const handlers = [
     return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
   }),
 
+  http.get(`${BASE}/api/runs/:id/temporal`, ({ params }) => {
+    if (params.id === RUN_FIXTURE.id) return HttpResponse.json(TEMPORAL_DETAILS_FIXTURE)
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.get(`${BASE}/api/runs/:id/logs`, ({ params }) => {
+    if (params.id === RUN_FIXTURE.id) return HttpResponse.json(RUN_LOGS_FIXTURE)
+    return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+  }),
+
+  http.get(`${BASE}/api/runs/:id/logs/stream`, () => {
+    return new HttpResponse(
+      'data: test-log-line\n\nevent: done\ndata: stream closed\n\n',
+      { headers: { 'Content-Type': 'text/event-stream' } },
+    )
+  }),
+
   // Named dataset CRUD
-  http.get(`${BASE}/api/datasets`, () => HttpResponse.json(datasets)),
+  http.get(`${BASE}/api/datasets`, ({ request }) => HttpResponse.json(paginate(datasets, request))),
 
   http.post(`${BASE}/api/datasets`, async () => {
     // Client-side validates name/file before reaching here;
@@ -137,11 +170,24 @@ export const handlers = [
     )
     return new HttpResponse(null, { status: 204 })
   }),
+
+  http.get(`${BASE}/api/inferences`, ({ request }) => HttpResponse.json(paginate(inferences, request))),
+
+  http.post(`${BASE}/api/inferences/:id/infer`, async () => {
+    return HttpResponse.json({
+      action: 'EAT',
+      stat: null,
+      target_object_id: 'bowl-1',
+      confidence: 0.92,
+    })
+  }),
 ]
 
 export function resetHandlerState() {
-  models = [MODEL_FIXTURE]
+  models = [MODEL_FIXTURE, MODEL_FIXTURE_2]
+  runs = [RUN_FIXTURE, RUN_FIXTURE_2]
   datasets = [TRAIN_DATASET_FIXTURE, EVAL_DATASET_FIXTURE]
+  inferences = []
   pendingUsers = [PENDING_USER_FIXTURE]
   approvedUsers = [APPROVED_USER_FIXTURE]
 }

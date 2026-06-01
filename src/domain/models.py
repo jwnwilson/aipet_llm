@@ -2,11 +2,26 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Generic, Literal, TypeVar, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from domain.actions import Action
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    page: int
+    limit: int
+    pages: int = 0
+
+    def model_post_init(self, __context: object) -> None:
+        if self.pages == 0:
+            computed = max(1, -(-self.total // self.limit)) if self.limit else 1
+            object.__setattr__(self, "pages", computed)
 
 
 class PetStats(BaseModel):
@@ -40,7 +55,15 @@ class InferenceResponse(BaseModel):
     confidence: float | None = None
 
 
-class RemoteTrainConfig(BaseModel):
+class EvalOutcome(str, Enum):
+    """Outcome of a discrete eval run (separate from run completion status)."""
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class TrainJobSpec(BaseModel):
+    """Job spec for a remote training job (replaces RemoteTrainConfig)."""
+    job_type: Literal["train"] = "train"
     model: str
     train_data: str
     eval_data: str
@@ -49,6 +72,62 @@ class RemoteTrainConfig(BaseModel):
     warmup_ratio: float
     experiment_name: str
     gpu_type: str = "NvidiaTeslaT4"
+    # DB run-record UUID used as the S3 key prefix (workflow/{run_id}/) so all
+    # backends write to the same path.  Adapters fall back to a random UUID when empty.
+    run_id: str = ""
+    # Original S3 keys for training data — populated when generate_dataset_activity
+    # uploads data with upload_to_storage=True.  Backends that access S3 directly
+    # (e.g. Kaggle with enable_internet=True) use these instead of staging local
+    # JSONL files inside their compute environment.
+    train_s3_key: str = ""
+    eval_s3_key: str = ""
+
+
+# Backward-compat alias so existing code using RemoteTrainConfig continues to work.
+RemoteTrainConfig = TrainJobSpec
+
+
+class EvalJobSpec(BaseModel):
+    """Job spec for a remote eval job dispatched via RemoteJobPort."""
+    job_type: Literal["eval"] = "eval"
+    experiment_name: str
+    # Adapter-agnostic reference to the training artifact:
+    # - RunPod/VastAI: S3 run_id prefix (e.g. "workflow/abc123")
+    # - Kaggle: training kernel slug (e.g. "username/exp-slug")
+    training_artifact_ref: str
+    eval_data: str   # S3 key or local path to eval.jsonl
+    gpu_type: str = "NvidiaTeslaT4"
+    # DB run-record UUID used as the S3 key prefix (workflow/{run_id}/) so the
+    # Kaggle eval kernel can locate the checkpoint at workflow/{run_id}/checkpoint/.
+    run_id: str = ""
+
+
+class ExportJobSpec(BaseModel):
+    """Job spec for a remote GGUF-export job dispatched via RemoteJobPort.
+
+    The K8s export Job downloads the checkpoint from S3, converts it to a
+    quantised GGUF using llama.cpp (pre-built in the export image), and
+    uploads the result back to S3.  The Temporal worker does NOT need
+    llama.cpp installed — it only submits this spec and polls status().
+    """
+    job_type: Literal["export"] = "export"
+    # DB run_id — used as the S3 key namespace: workflow/{experiment_name}/…
+    experiment_name: str
+    # S3 prefix for the HuggingFace checkpoint produced by the training job.
+    # Must end with "/".  Example: "workflow/{run_id}/checkpoint/"
+    checkpoint_s3_prefix: str
+    # S3 key the finished GGUF will be written to.
+    # Example: "workflow/{run_id}/model.gguf" or "gguf/{model_name}.gguf"
+    gguf_s3_key: str
+    # llama.cpp quantisation format (default matches the inference image target).
+    quantize: str = "Q4_K_M"
+
+
+# Discriminated union — adapters accept a train, eval, or export job.
+RemoteJobSpec = Annotated[
+    Union[TrainJobSpec, EvalJobSpec, ExportJobSpec],
+    Field(discriminator="job_type"),
+]
 
 
 class TrainingModelConfig(BaseModel):
@@ -106,6 +185,7 @@ class RunRecord(RunConfig):
     id: str
     status: RunStatus
     eval_valid_pct: float | None = None
+    eval_result: EvalOutcome | None = None  # None until eval runs
     progress: float | None = None
     progress_detail: str | None = None
     created_at: datetime
@@ -191,6 +271,7 @@ class InferenceStatus(str, Enum):
 
 class InferenceInstanceConfig(BaseModel):
     model_id: str
+    model_path: str = ""
     pod_name: str = ""
     pod_namespace: str = "default"
     idle_timeout_minutes: int = 120

@@ -7,12 +7,37 @@ on:
     branches: [main]
 
 env:
-  # Bump this when models/model.gguf is replaced in S3.
-  MODEL_VERSION: "2026-05-14"
+  # Bump this when the test GGUF at model/llm-test.gguf is replaced in S3.
+  MODEL_VERSION: "2026-06-01"
 
 jobs:
+  # ── Path change detection ─────────────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      ui: ${{ steps.filter.outputs.ui }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'src/**'
+              - 'tests/**'
+              - 'Dockerfile'
+              - 'docker-compose.yml'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            ui:
+              - 'ui/**'
+
   # ── Unit tests ────────────────────────────────────────────────────────────
   unit:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +53,32 @@ jobs:
       - name: Run unit tests
         run: uv run pytest tests/unit/ -v
 
+  # ── UI unit tests ─────────────────────────────────────────────────────────
+  ui:
+    needs: changes
+    if: needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Run UI tests
+        working-directory: ui
+        run: npm test -- --run
+
   # ── Integration tests (including real-inference and model quality) ─────────
   integration:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -82,74 +131,16 @@ jobs:
         run: |
           echo "Caller identity:"
           aws sts get-caller-identity
-          echo "S3 models/ listing:"
-          aws s3 ls s3://$AWS_S3_BUCKET/models/ || echo "LISTING FAILED"
+          echo "S3 model/ listing:"
+          aws s3 ls s3://$AWS_S3_BUCKET/model/ || echo "LISTING FAILED"
 
-      - name: Download and decompress test model from S3
+      - name: Download test model from S3
         if: steps.cache-model.outputs.cache-hit != 'true' && env.AWS_S3_BUCKET != ''
-        run: uv run python -m interactors.cli.model.download_model
+        run: |
+          uv run python -m interactors.cli.model.download_model \
+            --s3-key model/llm-test.gguf \
+            --dest models/test_model.gguf
 
       - name: Run integration tests
         run: uv run pytest tests/integration/ -v --timeout=120
-        timeout-minutes: 30
-
-  # ── E2E: model inference + local training pipeline ────────────────────────
-  # Optional — failures here do not block deployments.
-  # Runs on push to main only; OIDC is unavailable on fork PRs.
-  e2e:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    if: false  # temporarily disabled — re-enable when e2e tests are fixed
-    permissions:
-      id-token: write
-      contents: read
-    env:
-      AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
-      AWS_DEFAULT_REGION: us-east-1
-      LLM_API_TEST_MODEL_PATH: models/test_model.gguf
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --frozen --extra dev --extra inference --extra training
-
-      - name: Configure AWS credentials (OIDC)
-        if: env.AWS_S3_BUCKET != ''
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
-
-      - name: Cache llama.cpp build
-        uses: actions/cache@v4
-        id: cache-llama
-        with:
-          path: llama.cpp
-          key: llama-cpp-${{ runner.os }}-${{ hashFiles('Makefile') }}
-
-      - name: Install build tools
-        if: steps.cache-llama.outputs.cache-hit != 'true'
-        run: sudo apt-get install -y cmake build-essential
-
-      - name: Build llama.cpp
-        if: steps.cache-llama.outputs.cache-hit != 'true'
-        run: make setup-llama
-
-      - name: Cache test GGUF model
-        uses: actions/cache@v4
-        id: cache-model
-        with:
-          path: models/test_model.gguf
-          key: model-test-${{ env.MODEL_VERSION }}-${{ runner.os }}
-
-      - name: Download and decompress test model from S3
-        if: steps.cache-model.outputs.cache-hit != 'true' && env.AWS_S3_BUCKET != ''
-        run: uv run python -m interactors.cli.model.download_model
-
-      - name: Run E2E tests
-        run: uv run pytest tests/e2e/ -v
         timeout-minutes: 30

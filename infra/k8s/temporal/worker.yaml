@@ -28,6 +28,9 @@ spec:
             - name: TRAINING_WORKER_IMAGE
               # Placeholder — stamped by CI deploy workflow with the training image ref
               value: <ECR_TRAINING_IMAGE>
+            - name: EXPORT_WORKER_IMAGE
+              # Placeholder — stamped by CI deploy workflow with the export image ref
+              value: <ECR_EXPORT_IMAGE>
             - name: TEMPORAL_HOST
               value: "temporal:7233"
             - name: AWS_DEFAULT_REGION
@@ -47,6 +50,18 @@ spec:
                 secretKeyRef:
                   name: llm-api-secrets
                   key: aws-secret-access-key
+            - name: KAGGLE_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-secrets
+                  key: kaggle-aws-access-key-id
+                  optional: true
+            - name: KAGGLE_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-secrets
+                  key: kaggle-aws-secret-access-key
+                  optional: true
             - name: KAGGLE_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -65,6 +80,9 @@ spec:
                   name: llm-api-secrets
                   key: kaggle-key
                   optional: true
+            - name: RUNPOD_IMAGE
+              # Placeholder — stamped by CI deploy workflow with the RunPod training image ref
+              value: <ECR_RUNPOD_IMAGE>
             - name: RUNPOD_API_KEY
               valueFrom:
                 secretKeyRef:

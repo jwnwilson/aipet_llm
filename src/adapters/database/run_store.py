@@ -6,11 +6,11 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Float, String, Text, select, update
+from sqlalchemy import Float, String, Text, func, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from domain.models import RunConfig, RunRecord, RunStatus
+from domain.models import EvalOutcome, RunConfig, RunRecord, RunStatus
 from domain.ports import RunStorePort
 from adapters.database import Base
 
@@ -23,6 +23,7 @@ class _RunRow(Base):
     workflow_id: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     eval_valid_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    eval_result: Mapped[str | None] = mapped_column(String(16), nullable=True)
     progress: Mapped[float | None] = mapped_column(Float, nullable=True)
     progress_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     training_config: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -40,6 +41,7 @@ def _row_to_domain(row: _RunRow) -> RunRecord:
         workflow_id=row.workflow_id,
         status=RunStatus(row.status),
         eval_valid_pct=row.eval_valid_pct,
+        eval_result=EvalOutcome(row.eval_result) if row.eval_result else None,
         progress=row.progress,
         progress_detail=row.progress_detail,
         training_config=json.loads(row.training_config) if row.training_config else None,
@@ -83,16 +85,25 @@ class SQLAlchemyRunStore(RunStorePort):
             row = db.get(_RunRow, id)
             return _row_to_domain(row) if row else None
 
-    def list(self, model_id: str | None = None, owner_id: str | None = None) -> list[RunRecord]:  # type: ignore[override]
+    def list(self, model_id: str | None = None, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[RunRecord]:  # type: ignore[override]
         with Session(self._engine) as db:
             stmt = select(_RunRow)
             if model_id is not None:
                 stmt = stmt.where(_RunRow.model_id == model_id)
             if owner_id is not None:
                 stmt = stmt.where(_RunRow.owner_id == owner_id)
-            stmt = stmt.order_by(_RunRow.created_at.desc())
+            stmt = stmt.order_by(_RunRow.created_at.desc()).offset(offset).limit(limit)
             rows = db.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
+
+    def count(self, model_id: str | None = None, owner_id: str | None = None) -> int:
+        with Session(self._engine) as db:
+            stmt = select(func.count()).select_from(_RunRow)
+            if model_id is not None:
+                stmt = stmt.where(_RunRow.model_id == model_id)
+            if owner_id is not None:
+                stmt = stmt.where(_RunRow.owner_id == owner_id)
+            return db.scalar(stmt) or 0
 
     def update(self, id: str, config: RunConfig) -> RunRecord | None:
         with Session(self._engine) as db:
@@ -161,6 +172,21 @@ class SQLAlchemyRunStore(RunStorePort):
                 return None
             row.status = status.value
             row.progress_detail = reason
+            row.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(row)
+            return _row_to_domain(row)
+
+    def update_eval_result(
+        self, run_id: str, valid_pct: float, outcome: EvalOutcome
+    ) -> RunRecord | None:
+        """Persist eval score and pass/fail outcome atomically."""
+        with Session(self._engine) as db:
+            row = db.get(_RunRow, run_id)
+            if row is None:
+                return None
+            row.eval_valid_pct = valid_pct
+            row.eval_result = outcome.value
             row.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(row)

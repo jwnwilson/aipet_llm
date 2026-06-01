@@ -9,16 +9,17 @@ import re
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from domain.models import EvaluationData, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
+from domain.models import EvaluationData, PaginatedResponse, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
 from domain.ports import DatasetStorePort, ModelStorePort, RunStorePort
 from interactors.api.auth import require_approved
 from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
 
 log = logging.getLogger(__name__)
+
 
 _UUID_HEX_RE = re.compile(r"^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$")
 
@@ -70,15 +71,37 @@ class RunLogsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Diagnostics response schemas
+# ---------------------------------------------------------------------------
+
+class TemporalDetails(BaseModel):
+    workflow_id: str
+    temporal_run_id: str
+    status: str
+    start_time: str | None
+    close_time: str | None
+
+
+class RunLogsResponse(BaseModel):
+    logs: str | None
+    source: str | None
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.get("", response_model=list[RunRecord])
+@router.get("", response_model=PaginatedResponse[RunRecord])
 def list_runs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
     run_store: RunStorePort = Depends(get_run_store),
     user: UserContext = Depends(require_approved),
-) -> list[RunRecord]:
-    return run_store.list(owner_id=user.user_id)
+) -> PaginatedResponse[RunRecord]:
+    offset = (page - 1) * limit
+    items = run_store.list(owner_id=user.user_id, offset=offset, limit=limit)
+    total = run_store.count(owner_id=user.user_id)
+    return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 
 @router.get("/{run_id}", response_model=RunRecord)
@@ -247,6 +270,108 @@ async def cancel_run(
     run_store.update_status(run_id, RunStatus.CANCELLED)
 
 
+@router.get("/{run_id}/temporal", response_model=TemporalDetails)
+async def get_run_temporal(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> TemporalDetails:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    try:
+        from temporalio.client import Client
+
+        temporal_host = os.getenv("TEMPORAL_HOST", "localhost:7233")
+        client = await Client.connect(temporal_host)
+        handle = client.get_workflow_handle(run.workflow_id)
+        desc = await handle.describe()
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Failed to describe Temporal workflow %s", run.workflow_id)
+        raise HTTPException(status_code=502, detail="Temporal unreachable")
+
+    return TemporalDetails(
+        workflow_id=desc.id,
+        temporal_run_id=desc.run_id,
+        status=desc.status.name,
+        start_time=desc.start_time.isoformat() if desc.start_time else None,
+        close_time=desc.close_time.isoformat() if desc.close_time else None,
+    )
+
+
+@router.get("/{run_id}/logs", response_model=RunLogsResponse)
+def get_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> RunLogsResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = _log_path_for_run(run_id)
+    if not log_path.exists():
+        return RunLogsResponse(logs=None, source=None)
+
+    return RunLogsResponse(logs=log_path.read_text(), source="local")
+
+
+_TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
+
+
+@router.get("/{run_id}/logs/stream")
+async def stream_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> StreamingResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = _log_path_for_run(run_id)
+
+    async def _event_generator():
+        sent_bytes = 0
+        while True:
+            current_run = run_store.get(run_id)
+            is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
+
+            if log_path.exists():
+                with open(log_path, "rb") as f:
+                    f.seek(sent_bytes)
+                    chunk = f.read()
+                if chunk:
+                    sent_bytes += len(chunk)
+                    new_text = chunk.decode("utf-8", errors="replace")
+                    for line in new_text.splitlines():
+                        yield f"data: {line}\n\n"
+
+            if is_terminal:
+                yield "event: done\ndata: stream closed\n\n"
+                return
+
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/trigger", status_code=202)
 async def trigger_run(
     body: TriggerRunRequest,
@@ -295,6 +420,17 @@ async def trigger_run(
     num_eval_samples = body.num_eval_samples
     if remote_backend == "local":
         remote_backend = ""
+
+    # Remote backends cannot fall back to a local data dir — require an explicit
+    # dataset when skip_generate=True and train_data is a local-only default path.
+    if remote_backend and skip_generate and body.train_dataset_id is None:
+        is_s3_key = train_data.startswith("datasets/") or train_data.startswith("workflow/")
+        if not is_s3_key:
+            raise HTTPException(
+                status_code=422,
+                detail="Remote training with skip_generate=True requires a train_dataset_id "
+                       f"(model train_data '{train_data}' is a local path, not an S3 key).",
+            )
 
     log.info(
         "Trigger run: model=%s epochs=%s patience=%s warmup_ratio=%s "
@@ -399,7 +535,8 @@ def activate_run(
         )
 
     from adapters.inference import LlamaCppInferenceAdapter
-    from adapters.storage import LocalStorageAdapter
+    from adapters.storage import LocalStorageAdapter, download_model
+    from adapters.storage.paths import workflow_model_key
     from interactors.api.deps import configure
     from interactors.temporal.activities import _get_storage
 
@@ -408,10 +545,10 @@ def activate_run(
     except RuntimeError:
         storage = LocalStorageAdapter()
 
-    gguf_key = f"workflow/{run_id}/model.gguf"
+    gguf_key = workflow_model_key(run_id)
     local_path = Path(f"data/workflow/{run_id}/model.gguf")
     try:
-        storage.download(gguf_key, local_path)
+        download_model(storage, gguf_key, local_path)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load run model from storage: {exc}") from exc
 

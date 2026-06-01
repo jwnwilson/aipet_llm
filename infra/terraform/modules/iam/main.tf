@@ -170,6 +170,50 @@ resource "aws_iam_access_key" "llm_api" {
   user = aws_iam_user.llm_api.name
 }
 
+# IAM user for Kaggle training kernels.
+# Scoped to S3 read/write on the project bucket only — no ECR, no other AWS
+# services.  Credentials are embedded in the private Kaggle notebook at render
+# time by the Temporal worker.
+
+resource "aws_iam_user" "kaggle_training" {
+  name = "${var.repo_name}-kaggle-training"
+}
+
+data "aws_iam_policy_document" "kaggle_training_s3" {
+  statement {
+    sid     = "ListBucket"
+    effect  = "Allow"
+    actions = ["s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.s3_bucket}"]
+  }
+
+  statement {
+    sid    = "ReadWrite"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:HeadObject",
+    ]
+    resources = ["arn:aws:s3:::${var.s3_bucket}/*"]
+  }
+}
+
+resource "aws_iam_policy" "kaggle_training_s3" {
+  name   = "${var.repo_name}-kaggle-training-s3"
+  policy = data.aws_iam_policy_document.kaggle_training_s3.json
+}
+
+resource "aws_iam_user_policy_attachment" "kaggle_training_s3" {
+  user       = aws_iam_user.kaggle_training.name
+  policy_arn = aws_iam_policy.kaggle_training_s3.arn
+}
+
+resource "aws_iam_access_key" "kaggle_training" {
+  user = aws_iam_user.kaggle_training.name
+}
+
 data "aws_iam_policy_document" "ui_deploy" {
   count = var.create_ui_resources ? 1 : 0
 

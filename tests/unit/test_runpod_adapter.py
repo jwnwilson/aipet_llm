@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import json
 import os
-import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from domain.models import RemoteTrainConfig
+from domain.models import EvalJobSpec, RemoteTrainConfig
 
 
 def _config(**kwargs) -> RemoteTrainConfig:
@@ -27,20 +26,18 @@ def _config(**kwargs) -> RemoteTrainConfig:
 
 
 def _make_adapter(monkeypatch, tmp_path: Path):
-    """Return a RunPodTrainingAdapter with mocked S3 client."""
+    """Return a RunPodTrainingAdapter with a mock StoragePort injected."""
     monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "fake-key")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "fake-secret")
     monkeypatch.setenv("RUNPOD_API_KEY", "fake-runpod-key")
 
-    mock_s3 = MagicMock()
+    mock_storage = MagicMock()
+    mock_storage.read_text.return_value = ""   # default: nothing in storage
 
-    with patch("boto3.client", return_value=mock_s3):
-        from adapters.compute.runpod.adapter import RunPodTrainingAdapter
-        adapter = RunPodTrainingAdapter(work_dir=tmp_path / "runs")
-
-    adapter._s3 = mock_s3
-    return adapter, mock_s3
+    from adapters.compute.runpod.adapter import RunPodTrainingAdapter
+    adapter = RunPodTrainingAdapter(storage=mock_storage, work_dir=tmp_path / "runs")
+    return adapter, mock_storage
 
 
 class TestRunPodAdapterSubmit:
@@ -48,7 +45,7 @@ class TestRunPodAdapterSubmit:
         """Run submit() and return (run_id, create_pod call kwargs)."""
         adapter, s3 = _make_adapter(monkeypatch, tmp_path)
         monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
-        monkeypatch.setattr(adapter, "_upload_to_s3", lambda staging, run_id, config: None)
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
 
         mock_runpod = MagicMock()
         mock_runpod.create_pod.return_value = {"id": "pod-abc123"}
@@ -72,7 +69,7 @@ class TestRunPodAdapterSubmit:
         adapter, s3 = _make_adapter(monkeypatch, tmp_path)
 
         monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
-        monkeypatch.setattr(adapter, "_upload_to_s3", lambda staging, run_id, config: None)
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
 
         mock_runpod = MagicMock()
         mock_runpod.create_pod.return_value = {"id": "pod-abc123"}
@@ -82,127 +79,177 @@ class TestRunPodAdapterSubmit:
 
         run_id = adapter.submit(_config())
 
-        assert run_id.startswith("runpod/test-exp-")
+        assert run_id.startswith("workflow/")
         mock_runpod.create_pod.assert_called_once()
-        # pod_id.txt written to S3
-        s3.put_object.assert_called_once()
-        call_kwargs = s3.put_object.call_args.kwargs
-        assert call_kwargs["Key"].endswith("/pod_id.txt")
-        assert call_kwargs["Body"] == b"pod-abc123"
+        # pod_id.txt and job_type.txt written via StoragePort
+        write_calls = {call.args[0]: call.args[1] for call in s3.write_bytes.call_args_list}
+        pod_id_key = next((k for k in write_calls if k.endswith("/pod_id.txt")), None)
+        assert pod_id_key is not None, "pod_id.txt not written to storage"
+        assert write_calls[pod_id_key] == b"pod-abc123"
+
+
+    def test_eval_submit_does_not_reuse_training_run_id(self, monkeypatch, tmp_path):
+        # Eval jobs must get a fresh run_id so the bootstrap idempotency guard
+        # (which exits immediately when status.txt="done") doesn't fire against
+        # the training run's completed status.
+        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+        training_run_id = "41688c29-09f8-4af0-b92e-291d76bcfa4d"
+
+        monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
+
+        mock_runpod = MagicMock()
+        mock_runpod.create_pod.return_value = {"id": "pod-eval-123"}
+        import sys
+        sys.modules["runpod"] = mock_runpod
+
+        spec = EvalJobSpec(
+            experiment_name="eval-test",
+            training_artifact_ref=f"workflow/{training_run_id}",
+            eval_data="workflow/abc/data/eval.jsonl",
+            run_id=training_run_id,
+        )
+        eval_run_id = adapter.submit(spec)
+
+        assert eval_run_id.startswith("workflow/")
+        assert eval_run_id != f"workflow/{training_run_id}", (
+            "Eval job must not reuse the training run_id — doing so causes the "
+            "bootstrap idempotency guard to self-terminate before eval runs."
+        )
 
 
 class TestRunPodAdapterStatus:
-    def test_returns_status_from_s3(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"running")}
+    def test_returns_status_from_storage(self, monkeypatch, tmp_path):
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = "running"
 
-        assert adapter.status("runpod/test-exp-aabbcc") == "running"
+        assert adapter.status("workflow/test-exp-aabbcc") == "running"
 
     def test_returns_pending_when_no_status_txt_and_no_pod_id(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.side_effect = Exception("NoSuchKey")
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = ""   # nothing in storage
 
-        assert adapter.status("runpod/test-exp-aabbcc") == "pending"
+        assert adapter.status("workflow/test-exp-aabbcc") == "pending"
 
     def test_falls_back_to_runpod_api_on_missing_status_txt(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
 
-        def get_object(Bucket, Key):
-            if Key.endswith("status.txt"):
-                raise Exception("NoSuchKey")
-            return {"Body": MagicMock(read=lambda: b"pod-xyz")}
+        def read_text(key):
+            if key.endswith("status.txt"):
+                return ""
+            if key.endswith("pod_id.txt"):
+                return "pod-xyz"
+            return ""
 
-        s3.get_object.side_effect = get_object
+        storage.read_text.side_effect = read_text
 
         import sys
         mock_runpod = MagicMock()
         mock_runpod.get_pod.return_value = {"desiredStatus": "RUNNING"}
         sys.modules["runpod"] = mock_runpod
 
-        assert adapter.status("runpod/test-exp-aabbcc") == "running"
+        assert adapter.status("workflow/test-exp-aabbcc") == "running"
 
 
 class TestRunPodAdapterDownload:
-    def test_download_extracts_checkpoint(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-
-        # Create a real tar.gz with a dummy file inside
-        checkpoint_dir = tmp_path / "checkpoints"
-        checkpoint_dir.mkdir()
-        (checkpoint_dir / "config.json").write_text('{"model": "test"}')
-        archive = tmp_path / "checkpoint.tar.gz"
-        with tarfile.open(archive, "w:gz") as tf:
-            tf.add(checkpoint_dir, arcname="checkpoints")
-
-        def fake_download(Bucket, Key, Filename):
-            import shutil
-            shutil.copy2(archive, Filename)
-
-        s3.download_file.side_effect = fake_download
+    def test_download_uses_storage_download_directory(self, monkeypatch, tmp_path):
+        adapter, mock_storage = _make_adapter(monkeypatch, tmp_path)
 
         dest = tmp_path / "output"
-        result = adapter.download("runpod/test-exp-aabbcc", dest)
+        result = adapter.download("workflow/test-exp-aabbcc", dest)
 
-        assert Path(result) == dest / "checkpoints"
-        assert (dest / "checkpoints" / "config.json").exists()
-        assert not (dest / "checkpoint.tar.gz").exists()
+        mock_storage.download_directory.assert_called_once_with(
+            "workflow/test-exp-aabbcc/checkpoint/", dest
+        )
+        assert result == str(dest)
+
+    def test_download_eval_job_returns_eval_results_json_path(self, monkeypatch, tmp_path):
+        adapter, mock_storage = _make_adapter(monkeypatch, tmp_path)
+        mock_storage.read_text.return_value = "eval"  # job_type.txt = "eval"
+
+        dest = tmp_path / "output"
+        result = adapter.download("workflow/eval-uuid-abc", dest)
+
+        mock_storage.download.assert_called_once_with(
+            "workflow/eval-uuid-abc/eval_results.json", dest / "eval_results.json"
+        )
+        assert result == str(dest / "eval_results.json")
+
+    def test_build_pod_env_includes_data_keys(self, monkeypatch, tmp_path):
+        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+        env = adapter._build_pod_env("workflow/my-exp-abc123", _config())
+        assert env["TRAIN_DATA_KEY"] == "workflow/my-exp-abc123/data/train.jsonl"
+        assert env["EVAL_DATA_KEY"] == "workflow/my-exp-abc123/data/eval.jsonl"
+        assert env["STORAGE_BACKEND"] == "s3"
+
+    def test_build_pod_env_includes_runpod_api_key(self, monkeypatch, tmp_path):
+        """RUNPOD_API_KEY must be forwarded to the pod so it can self-terminate.
+
+        Without this the bootstrap cannot call runpod.terminate_pod() and the
+        pod loops indefinitely because RunPod restarts it when the process exits.
+        """
+        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+        env = adapter._build_pod_env("workflow/my-exp-abc123", _config())
+        assert "RUNPOD_API_KEY" in env, (
+            "Pod env must contain RUNPOD_API_KEY so bootstrap can self-terminate"
+        )
+        assert env["RUNPOD_API_KEY"] == "fake-runpod-key"
 
 
 class TestRunPodAdapterLogs:
     def test_terminate_pod_terminates_without_archiving_logs(self, monkeypatch, tmp_path):
         # logs are written by the training script; _terminate_pod only terminates the pod
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"pod-xyz")}
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = "pod-xyz"
 
         import sys
         mock_runpod = MagicMock(spec=["terminate_pod"])
         sys.modules["runpod"] = mock_runpod
 
-        adapter._terminate_pod("runpod/test-exp-aabbcc")
+        adapter._terminate_pod("workflow/test-exp-aabbcc")
 
         mock_runpod.terminate_pod.assert_called_once_with("pod-xyz")
-        s3.put_object.assert_not_called()
+        storage.write_bytes.assert_not_called()
 
-    def test_logs_reads_from_s3_via_storage_adapter(self, monkeypatch, tmp_path):
-        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+    def test_logs_reads_from_storage(self, monkeypatch, tmp_path):
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
 
-        storage_mock = MagicMock()
-        storage_mock.read_text.return_value = "epoch 1 loss=0.5\nepoch 2 loss=0.3\n"
+        def read_text(key):
+            if key.endswith("pod_id.txt"):
+                return ""   # no pod_id → fall through to logs.txt
+            return "epoch 1 loss=0.5\nepoch 2 loss=0.3\n"
 
-        with patch("adapters.storage.s3.S3StorageAdapter", return_value=storage_mock):
-            result = adapter.logs("runpod/test-exp-aabbcc")
+        storage.read_text.side_effect = read_text
+
+        result = adapter.logs("workflow/test-exp-aabbcc")
 
         assert result == "epoch 1 loss=0.5\nepoch 2 loss=0.3\n"
-        storage_mock.read_text.assert_called_once_with("runpod/test-exp-aabbcc/logs.txt")
+        storage.read_text.assert_called_with("workflow/test-exp-aabbcc/logs.txt")
 
-    def test_logs_returns_empty_string_when_no_log_in_s3(self, monkeypatch, tmp_path):
-        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+    def test_logs_returns_empty_string_when_no_log_in_storage(self, monkeypatch, tmp_path):
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = ""
 
-        storage_mock = MagicMock()
-        storage_mock.read_text.return_value = ""
-
-        with patch("adapters.storage.s3.S3StorageAdapter", return_value=storage_mock):
-            result = adapter.logs("runpod/test-exp-aabbcc")
+        result = adapter.logs("workflow/test-exp-aabbcc")
 
         assert result == ""
 
 
 class TestRunPodAdapterProgress:
     def test_returns_fraction_and_detail(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        payload = json.dumps({"fraction": 0.5, "detail": "epoch=1"}).encode()
-        s3.get_object.return_value = {"Body": MagicMock(read=lambda: payload)}
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = json.dumps({"fraction": 0.5, "detail": "epoch=1"})
 
-        fraction, detail = adapter.progress("runpod/test-exp-aabbcc")
+        fraction, detail = adapter.progress("workflow/test-exp-aabbcc")
 
         assert fraction == pytest.approx(0.5)
         assert detail == "epoch=1"
 
     def test_returns_zero_on_missing_progress_json(self, monkeypatch, tmp_path):
-        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
-        s3.get_object.side_effect = Exception("NoSuchKey")
+        adapter, storage = _make_adapter(monkeypatch, tmp_path)
+        storage.read_text.return_value = ""
 
-        fraction, detail = adapter.progress("runpod/test-exp-aabbcc")
+        fraction, detail = adapter.progress("workflow/test-exp-aabbcc")
 
         assert fraction == 0.0
         assert detail == ""

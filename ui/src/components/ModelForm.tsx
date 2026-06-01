@@ -8,7 +8,7 @@ import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Combobox } from './ui/combobox'
 
-const REMOTE_BACKEND_OPTIONS = ['local', 'kaggle', 'ssh', 'colab', 'runpod', 'vastai'] as const
+const REMOTE_BACKEND_OPTIONS = ['k8s', 'kaggle', 'ssh', 'colab', 'runpod'] as const
 
 const BASE_MODEL_OPTIONS = [
   'HuggingFaceTB/SmolLM2-360M',
@@ -51,7 +51,7 @@ const DEFAULTS: FormValues = {
   epochs: 5,
   patience: 3,
   warmup_ratio: 0.05,
-  remote_backend: 'local',
+  remote_backend: 'k8s',
   skip_generate: false,
 }
 

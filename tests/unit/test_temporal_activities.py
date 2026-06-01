@@ -10,9 +10,7 @@ import pytest
 from temporalio.exceptions import ApplicationError
 from temporalio.testing import ActivityEnvironment
 
-from adapters.compute.ssh import SshTrainingAdapter
-
-_parse_valid_pct = SshTrainingAdapter._parse_valid_pct
+from domain.ports import SubmitRetryConfig as _SubmitRetryConfig
 
 from interactors.temporal.activities import (
     CheckpointPath,
@@ -219,32 +217,25 @@ async def test_evaluate_activity_raises_on_exception():
 
 
 @pytest.mark.asyncio
-async def test_evaluate_remote_kaggle_fallback_passes_inner_checkpoint_to_local(monkeypatch):
-    """When a backend raises NotImplementedError on eval(), download() is called and the
-    path it returns (the inner HF checkpoint dir) must be forwarded to _evaluate_local."""
+async def test_evaluate_remote_backend_dispatches_via_remote_job(monkeypatch):
+    """With a remote_backend set, evaluate_activity must dispatch to _evaluate_via_remote_job,
+    NOT download the checkpoint to the Temporal worker.  The worker is an orchestrator only."""
     import asyncio
     import interactors.temporal.activities as acts
-    from unittest.mock import MagicMock
 
-    inner_ckpt = "/tmp/dest/checkpoints"
-    mock_adapter = MagicMock()
-    mock_adapter.eval.side_effect = NotImplementedError
-    mock_adapter.download.return_value = inner_ckpt
+    remote_calls: list[str] = []
 
-    local_calls: list[str] = []
-
-    async def fake_local(config, loop):
-        local_calls.append(config.checkpoint)
+    async def fake_remote_job(config, loop):
+        remote_calls.append(config.remote_backend)
         return EvalResult(valid_pct=0.95, passed=True)
 
-    monkeypatch.setattr(acts, "_evaluate_local", fake_local)
-    monkeypatch.setattr(acts, "_make_remote_adapter", lambda _: mock_adapter)
+    monkeypatch.setattr(acts, "_evaluate_via_remote_job", fake_remote_job)
 
     config = EvalConfig(remote_backend="kaggle", run_id="u/exp", eval_data="data/eval.jsonl")
-    await acts._evaluate_remote(config, asyncio.get_event_loop())
+    await acts._evaluate_via_remote_job(config, asyncio.get_event_loop())
 
-    assert local_calls == [inner_ckpt], (
-        "_evaluate_local must receive the inner checkpoint path returned by download(), not the extraction root"
+    assert remote_calls == ["kaggle"], (
+        "remote_backend must route to _evaluate_via_remote_job, not download checkpoint to Temporal"
     )
 
 
@@ -270,7 +261,9 @@ def mock_storage():
 
 
 @pytest.mark.asyncio
-async def test_export_activity_uses_model_name_for_storage_key(mock_storage):
+async def test_export_activity_uses_model_name_as_filename_within_workflow_path(mock_storage):
+    # When both pipeline_run_id and model_name are set, pipeline_run_id determines the
+    # top-level prefix and model_name becomes the filename.
     with patch("domain.train.export.export"):
         result = await ENV.run(
             export_activity,
@@ -283,11 +276,12 @@ async def test_export_activity_uses_model_name_for_storage_key(mock_storage):
             ),
         )
 
-    assert result.path == "gguf/my-pet-v2.gguf.gz"
+    assert result.path == "workflow/r1/model/my-pet-v2.gguf.gz"
 
 
 @pytest.mark.asyncio
-async def test_export_activity_model_name_takes_precedence_over_pipeline_run_id(mock_storage):
+async def test_export_activity_pipeline_run_id_takes_precedence_with_named_model(mock_storage):
+    # pipeline_run_id always wins the prefix; model_name becomes the filename.
     with patch("domain.train.export.export"):
         result = await ENV.run(
             export_activity,
@@ -299,8 +293,7 @@ async def test_export_activity_model_name_takes_precedence_over_pipeline_run_id(
             ),
         )
 
-    assert result.path == "gguf/my-pet-v2.gguf.gz"
-    assert "r1" not in result.path
+    assert result.path == "workflow/r1/model/my-pet-v2.gguf.gz"
 
 
 @pytest.mark.asyncio
@@ -317,7 +310,7 @@ async def test_export_activity_uses_pipeline_run_id_for_storage_key(mock_storage
         )
 
     # The GGUFPath is the storage key returned by the activity (always .gz).
-    assert result == GGUFPath(path="workflow/r1/model.gguf.gz")
+    assert result == GGUFPath(path="workflow/r1/model/model.gguf.gz")
     # Verify upload_model was called (port contract boundary).
     mock_storage.mock_upload_model.assert_called_once()
 
@@ -335,7 +328,7 @@ async def test_export_activity_pipeline_run_id_takes_precedence_over_model_id(mo
             ),
         )
 
-    assert result.path == "workflow/run-42/model.gguf.gz"
+    assert result.path == "workflow/run-42/model/model.gguf.gz"
 
 
 @pytest.mark.asyncio
@@ -346,7 +339,7 @@ async def test_export_activity_falls_back_to_model_id_when_no_pipeline_run_id(mo
             ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/gguf/m.gguf", model_id="m"),
         )
 
-    assert result == GGUFPath(path="gguf/m.gguf.gz")
+    assert result == GGUFPath(path="model/m/model.gguf.gz")
     mock_storage.mock_upload_model.assert_called_once()
 
 
@@ -371,20 +364,6 @@ async def test_export_activity_raises_application_error_on_system_exit():
 
 
 # ---------------------------------------------------------------------------
-# _parse_valid_pct helper
-# ---------------------------------------------------------------------------
-
-
-def test_parse_valid_pct_extracts_percentage():
-    output = "Valid: 190/200 (95.0%)  [PASS]"
-    assert abs(_parse_valid_pct(output) - 0.95) < 1e-6
-
-
-def test_parse_valid_pct_returns_none_on_no_match():
-    assert _parse_valid_pct("no match here") is None
-
-
-# ---------------------------------------------------------------------------
 # _train_remote polling loop
 # ---------------------------------------------------------------------------
 
@@ -395,6 +374,7 @@ class TestTrainRemotePolling:
     def _make_adapter(self, statuses, log_output="step 10 loss=0.5", download_path="/tmp/ckpt"):
         adapter = MagicMock()
         adapter.submit.return_value = "run-42"
+        adapter.submit_retry_config.return_value = _SubmitRetryConfig()
         adapter.status.side_effect = list(statuses)
         adapter.logs.return_value = log_output
         adapter.download.return_value = download_path
@@ -456,22 +436,18 @@ class TestTrainRemotePolling:
         assert captured[0]["logs"] == ""
 
 
-def test_parse_valid_pct_handles_multiline_output():
-    output = "Loading model...\nValid: 180/200 (90.0%)  [FAIL]\nAction distribution:"
-    assert abs(_parse_valid_pct(output) - 0.90) < 1e-6
-
-
 # ---------------------------------------------------------------------------
 # _train_remote progress tracking
 # ---------------------------------------------------------------------------
 
 
 class TestTrainRemoteProgress:
-    """Verify _train_remote calls adapter.progress() and persists it when db_run_id is set."""
+    """Verify _train_remote calls adapter.progress() and persists it when run_id is set."""
 
     def _make_adapter(self, statuses, progress_return=(0.0, ""), download_path="/tmp/ckpt"):
         adapter = MagicMock()
         adapter.submit.return_value = "run-42"
+        adapter.submit_retry_config.return_value = _SubmitRetryConfig()
         adapter.status.side_effect = list(statuses)
         adapter.logs.return_value = ""
         adapter.progress.return_value = progress_return
@@ -491,13 +467,13 @@ class TestTrainRemoteProgress:
         return acts
 
     @pytest.mark.asyncio
-    async def test_calls_adapter_progress_and_persists_when_db_run_id_set(self, monkeypatch):
+    async def test_calls_adapter_progress_and_persists_when_run_id_set(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0  loss=0.4312"))
-        config = TrainConfig(db_run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
@@ -511,7 +487,7 @@ class TestTrainRemoteProgress:
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.0, ""))
-        config = TrainConfig(db_run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
@@ -519,13 +495,13 @@ class TestTrainRemoteProgress:
         mock_store.update_progress.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_progress_entirely_when_no_db_run_id(self, monkeypatch):
+    async def test_skips_progress_entirely_when_no_run_id(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.75, "epoch=2.0"))
-        config = TrainConfig(db_run_id="", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
@@ -540,7 +516,7 @@ class TestTrainRemoteProgress:
         monkeypatch.setattr(acts, "_run_store", mock_store)
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0"))
-        config = TrainConfig(db_run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             result = await acts._train_remote(config, adapter)
 
@@ -595,7 +571,7 @@ class TestPollLocalProgress:
         assert "eval_loss=0.3210" in call_args[0][2]
 
     @pytest.mark.asyncio
-    async def test_skips_update_when_db_run_id_is_empty(self, monkeypatch, tmp_path):
+    async def test_skips_update_when_run_id_is_empty(self, monkeypatch, tmp_path):
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -672,7 +648,8 @@ class TestFinaliseRunActivity:
 
         await ENV.run(finalise_run_activity, "run-3", True, 0.95)
 
-        mock_store.update_eval.assert_called_once_with("run-3", 0.95)
+        # eval persistence is now owned by record_eval_result_activity, not finalise_run_activity
+        mock_store.update_eval.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -789,7 +766,7 @@ class TestFailRunActivity:
 
 @pytest.mark.asyncio
 async def test_evaluate_local_saves_quality_report(tmp_path, monkeypatch):
-    """Quality report is saved to data/workflow/{db_run_id}/quality_report.json."""
+    """Quality report is saved to data/workflow/{run_id}/quality_report.json."""
     monkeypatch.chdir(tmp_path)
 
     fake_report = {
@@ -816,7 +793,7 @@ async def test_evaluate_local_saves_quality_report(tmp_path, monkeypatch):
             EvalConfig(
                 checkpoint="some-checkpoint",
                 eval_data="data/eval.jsonl",
-                db_run_id="test-run-123",
+                run_id="test-run-123",
             ),
         )
 
@@ -834,8 +811,8 @@ async def test_evaluate_local_saves_quality_report(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_evaluate_local_skips_quality_report_without_db_run_id(tmp_path, monkeypatch):
-    """No quality_report.json is written when db_run_id is empty."""
+async def test_evaluate_local_skips_quality_report_without_run_id(tmp_path, monkeypatch):
+    """No quality_report.json is written when run_id is empty."""
     monkeypatch.chdir(tmp_path)
 
     with (
@@ -908,3 +885,320 @@ class TestSaveGgufPathActivity:
         await ENV.run(save_gguf_path_activity, "nonexistent-model", "gguf/x.gguf")
 
         mock_store.update.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _resolve_training_data — download from storage when skip_generate=True
+# ---------------------------------------------------------------------------
+
+
+class TestResolveTrainingData:
+    """Unit tests for the _resolve_training_data helper.
+
+    File-based backends (Kaggle, Colab, SSH) stage data from the local filesystem
+    and need S3 keys materialised locally when skip_generate=True.
+    S3-backed backends (K8s, RunPod, VastAI) must receive the original S3 key so
+    the remote pod can download it — replacing the key with a local path breaks them.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_paths_unchanged_when_files_exist_locally(self, tmp_path):
+        """No-op when both files already exist locally (file-based backend)."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        train = tmp_path / "train.jsonl"
+        eval_ = tmp_path / "eval.jsonl"
+        train.write_text('{"prompt":"p","completion":"c"}\n')
+        eval_.write_text('{"prompt":"p","completion":"c"}\n')
+
+        config = TrainConfig(train_data=str(train), eval_data=str(eval_), remote_backend="kaggle")
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == str(train)
+        assert eval_out == str(eval_)
+
+    @pytest.mark.asyncio
+    async def test_passes_s3_keys_unchanged_for_kaggle(self, tmp_path, monkeypatch):
+        """Kaggle is no longer file-based: S3 keys are returned unchanged (no local download)."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="datasets/eval.jsonl",
+            remote_backend="kaggle",
+        )
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == "datasets/abc123.jsonl"
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_derives_eval_key_from_train_parent_when_eval_not_configured(
+        self, tmp_path, monkeypatch
+    ):
+        """When eval_data is empty, the eval key defaults to the train parent / eval.jsonl."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="",
+            remote_backend="kaggle",
+        )
+        loop = asyncio.get_event_loop()
+        _, eval_out = await acts._resolve_training_data(config, loop)
+
+        # Kaggle is S3-backed — keys are passed through; eval key is derived from train parent
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_skips_download_when_both_files_already_local(self, tmp_path, monkeypatch):
+        """Storage.download must not be called when both files already exist locally."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        train = tmp_path / "data" / "train.jsonl"
+        eval_ = tmp_path / "data" / "eval.jsonl"
+        train.parent.mkdir(parents=True)
+        train.write_text("{}\n")
+        eval_.write_text("{}\n")
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+
+        config = TrainConfig(
+            train_data=str(train), eval_data=str(eval_), remote_backend="kaggle"
+        )
+        loop = asyncio.get_event_loop()
+        await acts._resolve_training_data(config, loop)
+
+        mock_storage.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_k8s_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
+        """K8s (S3-backed) must receive the original S3 key — never a local path.
+
+        Replacing the key with a local path would make the K8s pod look for
+        'data/train.jsonl' in S3, where it doesn't exist for skip_generate=True runs.
+        """
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="datasets/eval.jsonl",
+            remote_backend="k8s",
+        )
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == "datasets/abc123.jsonl"
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_runpod_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
+        """RunPod (S3-backed) also passes S3 keys through unchanged."""
+        import asyncio
+        import interactors.temporal.activities as acts
+
+        mock_storage = MagicMock()
+        monkeypatch.setattr(acts, "_storage", mock_storage)
+        monkeypatch.chdir(tmp_path)
+
+        config = TrainConfig(
+            train_data="datasets/abc123.jsonl",
+            eval_data="datasets/eval.jsonl",
+            remote_backend="runpod",
+        )
+        loop = asyncio.get_event_loop()
+        train_out, eval_out = await acts._resolve_training_data(config, loop)
+
+        assert train_out == "datasets/abc123.jsonl"
+        assert eval_out == "datasets/eval.jsonl"
+        mock_storage.download.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _is_retryable_submit_error and _retryable_submit
+# ---------------------------------------------------------------------------
+
+
+import asyncio as _asyncio
+import interactors.temporal.activities as _acts
+
+
+async def _noop_heartbeat_loop(*args, **kwargs):  # noqa: D401
+    pass
+
+
+_RETRYABLE_CFG = _SubmitRetryConfig(
+    max_retries=2,
+    base_delay_s=0.0,
+    retryable_errors=("rate limit", "temporarily unavailable", "timeout"),
+)
+
+
+class TestIsRetryableSubmitError:
+    def test_matches_rate_limit(self):
+        assert _acts._is_retryable_submit_error(RuntimeError("rate limit exceeded"), _RETRYABLE_CFG)
+
+    def test_matches_case_insensitively(self):
+        assert _acts._is_retryable_submit_error(RuntimeError("RATE LIMIT HIT"), _RETRYABLE_CFG)
+
+    def test_matches_timeout(self):
+        assert _acts._is_retryable_submit_error(RuntimeError("connection timeout"), _RETRYABLE_CFG)
+
+    def test_rejects_auth_failure(self):
+        assert not _acts._is_retryable_submit_error(RuntimeError("authentication failed"), _RETRYABLE_CFG)
+
+    def test_rejects_disk_quota(self):
+        assert not _acts._is_retryable_submit_error(RuntimeError("disk quota exceeded"), _RETRYABLE_CFG)
+
+
+class TestRetryableSubmit:
+    def _make_adapter(self, config: _SubmitRetryConfig = _RETRYABLE_CFG):
+        adapter = MagicMock()
+        adapter.submit_retry_config.return_value = config
+        return adapter
+
+    @pytest.mark.asyncio
+    async def test_succeeds_on_first_attempt(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.return_value = "run-ok"
+
+        result = await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert result == "run-ok"
+        assert adapter.submit.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_retries_on_retryable_error_and_succeeds(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = [RuntimeError("rate limit exceeded"), "run-after-retry"]
+
+        result = await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert result == "run-after-retry"
+        assert adapter.submit.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_raises_immediately_on_non_retryable_error(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("authentication failed")
+
+        with pytest.raises(ApplicationError, match="non-retryable"):
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert adapter.submit.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_flag_set_on_immediate_failure(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("disk quota exceeded")
+
+        with pytest.raises(ApplicationError) as exc_info:
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert exc_info.value.non_retryable is True
+
+    @pytest.mark.asyncio
+    async def test_exhausts_all_retries_and_includes_history(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("temporarily unavailable")
+
+        with pytest.raises(ApplicationError) as exc_info:
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        err_msg = str(exc_info.value)
+        assert "attempt 1" in err_msg
+        assert adapter.submit.call_count == _RETRYABLE_CFG.max_retries + 1
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_flag_set_on_exhaustion(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        adapter = self._make_adapter()
+        adapter.submit.side_effect = RuntimeError("temporarily unavailable")
+
+        with pytest.raises(ApplicationError) as exc_info:
+            await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert exc_info.value.non_retryable is True
+
+    @pytest.mark.asyncio
+    async def test_backoff_grows_exponentially(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        sleep_calls: list[float] = []
+
+        async def record_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+
+        monkeypatch.setattr(_asyncio, "sleep", record_sleep)
+        cfg = _SubmitRetryConfig(max_retries=3, base_delay_s=5.0, retryable_errors=("timeout",))
+        adapter = self._make_adapter(cfg)
+        adapter.submit.side_effect = [
+            RuntimeError("timeout"),
+            RuntimeError("timeout"),
+            "run-eventual",
+        ]
+
+        await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert sleep_calls[0] == pytest.approx(5.0)   # 5 * 2^0
+        assert sleep_calls[1] == pytest.approx(10.0)  # 5 * 2^1
+
+    @pytest.mark.asyncio
+    async def test_uses_adapter_specific_config(self, monkeypatch):
+        monkeypatch.setattr(_acts, "_heartbeat_loop", _noop_heartbeat_loop)
+        custom_cfg = _SubmitRetryConfig(
+            max_retries=1,
+            base_delay_s=0.0,
+            retryable_errors=("custom error",),
+        )
+        adapter = self._make_adapter(custom_cfg)
+        adapter.submit.side_effect = [RuntimeError("custom error"), "run-custom"]
+
+        result = await _acts._retryable_submit(adapter, MagicMock(), _asyncio.get_event_loop())
+
+        assert result == "run-custom"
+        assert adapter.submit.call_count == 2
+
+
+class TestAdapterSubmitRetryConfig:
+    def test_runpod_returns_submit_retry_config(self):
+        from adapters.compute.runpod.adapter import RunPodTrainingAdapter
+        adapter = RunPodTrainingAdapter.__new__(RunPodTrainingAdapter)
+        cfg = adapter.submit_retry_config()
+        assert isinstance(cfg, _SubmitRetryConfig)
+        assert cfg.max_retries > 0
+        assert len(cfg.retryable_errors) > 0
+
+    def test_vastai_returns_submit_retry_config(self):
+        from adapters.compute.vastai.adapter import VastAiTrainingAdapter
+        adapter = VastAiTrainingAdapter.__new__(VastAiTrainingAdapter)
+        cfg = adapter.submit_retry_config()
+        assert isinstance(cfg, _SubmitRetryConfig)
+        assert cfg.max_retries > 0
+        assert len(cfg.retryable_errors) > 0

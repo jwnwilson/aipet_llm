@@ -3,10 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, UploadCloud } from 'lucide-react'
 import type { Dataset, DatasetType } from '@/types'
 import { listDatasets, createDataset, deleteDataset } from '@/api/datasets'
+import { Pagination } from '@/components/Pagination'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
@@ -52,6 +54,65 @@ function DatasetRow({ dataset, onDelete, index }: { dataset: Dataset; onDelete: 
         </button>
       </td>
     </tr>
+  )
+}
+
+function DatasetMobileCard({
+  dataset,
+  onDelete,
+  index,
+}: {
+  dataset: Dataset
+  onDelete: (id: string) => void
+  index: number
+}) {
+  return (
+    <div
+      data-testid="dataset-mobile-card"
+      className="border-b border-[#e5e3d8] px-4 py-4 bg-white last:border-b-0"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888]">
+              {String(index + 1).padStart(2, '0')}
+            </span>
+            <span
+              className={[
+                "inline-flex items-center font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em]",
+                'px-2 py-[3px] rounded-[2px] border',
+                dataset.dataset_type === 'train'
+                  ? 'border-[#1a1a1a] bg-[#1a1a1a] text-[#fafaf7]'
+                  : 'border-[#2d6a4f] bg-[#e8efe9] text-[#2d6a4f]',
+              ].join(' ')}
+            >
+              {dataset.dataset_type}
+            </span>
+          </div>
+          <p className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a]">
+            {dataset.name}
+          </p>
+          {dataset.description && (
+            <p className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-2">
+              {dataset.description}
+            </p>
+          )}
+          <p className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888] mt-1 truncate">
+            {dataset.key}
+          </p>
+          <p className="font-['Outfit'] text-[0.72rem] text-[#888888] mt-0.5">
+            {new Date(dataset.created_at).toLocaleDateString()}
+          </p>
+        </div>
+        <button
+          onClick={() => onDelete(dataset.id)}
+          aria-label={`Delete dataset ${dataset.name}`}
+          className="text-[#888888] hover:text-[#7f1d1d] transition-colors p-1.5 shrink-0 mt-1"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -204,15 +265,19 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
 
 export function DatasetsPage() {
   const queryClient = useQueryClient()
-  const { data: datasets, isLoading, error } = useQuery({
-    queryKey: ['datasets'],
-    queryFn: listDatasets,
+  const [page, setPage] = useState(1)
+  const { data: datasetsData, isLoading, error } = useQuery({
+    queryKey: ['datasets', page],
+    queryFn: () => listDatasets(page),
   })
+  const datasets = datasetsData?.items
 
   const deleteMutation = useMutation({
     mutationFn: deleteDataset,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['datasets'] }),
   })
+
+  const isMobile = useMediaQuery('(max-width: 767px)')
 
   function handleDelete(id: string) {
     if (!window.confirm('Delete this dataset? This cannot be undone.')) return
@@ -290,24 +355,37 @@ export function DatasetsPage() {
               </div>
             )}
             {datasets && datasets.length > 0 && (
-              <table className="ed-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '3rem' }}>№</th>
-                    <th>Name</th>
-                    <th>Type</th>
-                    <th>Description</th>
-                    <th>Storage key</th>
-                    <th>Created</th>
-                    <th style={{ width: '3rem' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+              {isMobile ? (
+                <div>
                   {datasets.map((ds, i) => (
-                    <DatasetRow key={ds.id} dataset={ds} onDelete={handleDelete} index={i} />
+                    <DatasetMobileCard key={ds.id} dataset={ds} onDelete={handleDelete} index={i} />
                   ))}
-                </tbody>
-              </table>
+                </div>
+              ) : (
+                <table className="ed-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '3rem' }}>№</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Description</th>
+                      <th>Storage key</th>
+                      <th>Created</th>
+                      <th style={{ width: '3rem' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {datasets.map((ds, i) => (
+                      <DatasetRow key={ds.id} dataset={ds} onDelete={handleDelete} index={i} />
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="px-6 pb-4">
+                <Pagination page={page} pages={datasetsData?.pages ?? 1} onPageChange={setPage} />
+              </div>
+              </>
             )}
           </div>
         </section>

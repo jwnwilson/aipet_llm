@@ -1,4 +1,4 @@
-import type { Dataset, DatasetType } from '@/types'
+import type { Dataset, DatasetType, PaginatedResponse } from '@/types'
 import { apiClient } from './client'
 
 export interface DatasetUploadResult {
@@ -9,8 +9,8 @@ export interface DatasetUploadResult {
 // Named dataset CRUD
 // ---------------------------------------------------------------------------
 
-export async function listDatasets(): Promise<Dataset[]> {
-  const { data } = await apiClient.get<Dataset[]>('/api/datasets')
+export async function listDatasets(page = 1, limit = 50): Promise<PaginatedResponse<Dataset>> {
+  const { data } = await apiClient.get<PaginatedResponse<Dataset>>('/api/datasets', { params: { page, limit } })
   return data
 }
 

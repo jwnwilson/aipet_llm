@@ -13,7 +13,7 @@ import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Combobox } from './ui/combobox'
 
-const REMOTE_BACKEND_OPTIONS = ['local', 'kaggle', 'ssh', 'colab', 'runpod', 'vastai'] as const
+const REMOTE_BACKEND_OPTIONS = ['k8s', 'kaggle', 'ssh', 'colab', 'runpod'] as const
 
 const BASE_MODEL_OPTIONS = [
   'HuggingFaceTB/SmolLM2-360M',
@@ -67,10 +67,11 @@ export function RunModal({ model, onClose }: RunModalProps) {
 
   const skipGenerate = watch('skip_generate')
 
-  const { data: allDatasets = [] } = useQuery({
+  const { data: allDatasetsData } = useQuery({
     queryKey: ['datasets'],
-    queryFn: listDatasets,
+    queryFn: () => listDatasets(),
   })
+  const allDatasets = allDatasetsData?.items ?? []
   const trainDatasets = allDatasets.filter(d => d.dataset_type === 'train')
   const evalDatasets  = allDatasets.filter(d => d.dataset_type === 'eval')
 

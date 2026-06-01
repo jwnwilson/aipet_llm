@@ -16,9 +16,16 @@ log = logging.getLogger(__name__)
 
 
 def _make_storage_adapter():
-    if os.getenv("AWS_S3_BUCKET"):
+    bucket = os.getenv("AWS_S3_BUCKET")
+    if bucket:
+        log.info("Storage: S3StorageAdapter  bucket=%s", bucket)
         from adapters.storage.s3 import S3StorageAdapter
         return S3StorageAdapter()
+    log.warning(
+        "Storage: LocalStorageAdapter (AWS_S3_BUCKET not set) — "
+        "dataset uploads will be stored on local disk only. "
+        "Remote training backends (RunPod, VastAI, K8s) will fail to download datasets."
+    )
     from adapters.storage.local import LocalStorageAdapter
     return LocalStorageAdapter()
 
@@ -126,7 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         configure(adapter)
         log.info("Inference adapter configured (model will load on first request): %s", model_path)
 
-    from adapters.compute.k8s import K8sPodAdapter, MockPodAdapter
+    from adapters.compute.k8s.adapter import K8sPodAdapter, MockPodAdapter
     from interactors.api.deps import clear_pod_adapter, configure_pod_adapter
     if os.environ.get("K8S_MOCK", "false").lower() == "true":
         pod_adapter = MockPodAdapter()

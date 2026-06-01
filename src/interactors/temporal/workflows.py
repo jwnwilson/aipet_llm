@@ -29,6 +29,7 @@ with workflow.unsafe.imports_passed_through():
         fail_run_activity,
         finalise_run_activity,
         generate_dataset_activity,
+        record_eval_result_activity,
         save_gguf_path_activity,
         train_activity,
         update_run_status_activity,
@@ -53,7 +54,7 @@ class ExperimentConfig:
     train_size: int = TRAIN_SIZE
     eval_size: int = EVAL_SIZE
     seed: int = SEED
-    # "local", "kaggle", or "ssh" — controls where fine-tuning runs.
+    # "k8s", "kaggle", or "ssh" — controls where fine-tuning runs.
     remote_backend: str = ""
     # None = auto-detect based on model size; True = always QLoRA; False = never QLoRA.
     force_qlora: bool | None = None
@@ -63,6 +64,9 @@ class ExperimentConfig:
     # forwarded to the remote training job rather than a non-existent local path.
     train_data: str = ""
     eval_data: str = ""
+    # When True (default), create an inference record after export regardless of eval outcome.
+    # Set to False to gate inference record creation on eval success.
+    always_create_inference: bool = True
 
 
 @dataclass
@@ -72,6 +76,7 @@ class PipelineResult:
     dataset_paths: DatasetPaths = field(default_factory=DatasetPaths)
     checkpoint: CheckpointPath = field(default_factory=CheckpointPath)
     eval_result: EvalResult = field(default_factory=EvalResult)
+    eval_outcome: str = ""   # "succeeded" | "failed" | "" (before eval runs)
     gguf_path: GGUFPath = field(default_factory=GGUFPath)
     passed: bool = False
 
@@ -159,7 +164,7 @@ class TrainingPipelineWorkflow:
                     dry_run=config.dry_run,
                     remote_backend=config.remote_backend,
                     experiment_name=config.experiment_name,
-                    db_run_id=config.run_id,
+                    run_id=config.run_id,
                     force_qlora=config.force_qlora,
                 ),
                 start_to_close_timeout=timedelta(hours=6),
@@ -167,6 +172,7 @@ class TrainingPipelineWorkflow:
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
 
+            # ── EVAL (non-fatal) ──────────────────────────────────────────────
             if config.run_id:
                 await workflow.execute_activity(
                     update_run_status_activity,
@@ -175,79 +181,106 @@ class TrainingPipelineWorkflow:
                     retry_policy=_RETRY,
                 )
 
-            result.eval_result = await workflow.execute_activity(
-                evaluate_activity,
-                EvalConfig(
-                    checkpoint=result.checkpoint.path,
-                    eval_data=result.dataset_paths.eval,
-                    run_id=result.checkpoint.run_id,
-                    remote_backend=result.checkpoint.remote_backend,
-                    output_dir=config.output_dir,
-                    db_run_id=config.run_id,
-                ),
-                start_to_close_timeout=timedelta(minutes=30),
-                heartbeat_timeout=timedelta(minutes=2),
-                retry_policy=_RETRY,
-            )
+            eval_valid_pct = 0.0
+            eval_outcome_value = "failed"   # pessimistic default
 
-            result.passed = result.eval_result.passed
-
-            if result.eval_result.passed:
-                if config.run_id:
-                    await workflow.execute_activity(
-                        update_run_status_activity,
-                        args=[config.run_id, RunStatus.EXPORTING.value],
-                        start_to_close_timeout=timedelta(minutes=5),
-                        retry_policy=_RETRY,
-                    )
-
-                result.gguf_path = await workflow.execute_activity(
-                    export_activity,
-                    ExportConfig(
-                        checkpoint_path=result.checkpoint.path,
-                        gguf_output=config.gguf_output,
-                        run_id=result.checkpoint.run_id,
+            try:
+                result.eval_result = await workflow.execute_activity(
+                    evaluate_activity,
+                    EvalConfig(
+                        checkpoint=result.checkpoint.path,
+                        eval_data=result.dataset_paths.eval,
+                        artifact_run_id=result.checkpoint.run_id,
                         remote_backend=result.checkpoint.remote_backend,
-                        model_id=config.model_id,
-                        pipeline_run_id=config.run_id,
-                        model_name=config.model_name,
+                        output_dir=config.output_dir,
+                        run_id=config.run_id,
                     ),
-                    start_to_close_timeout=timedelta(hours=1),
+                    start_to_close_timeout=timedelta(minutes=30),
                     heartbeat_timeout=timedelta(minutes=2),
-                    retry_policy=_NO_RETRY,
+                    retry_policy=_RETRY,
                 )
-
-                if config.model_id:
-                    await workflow.execute_activity(
-                        save_gguf_path_activity,
-                        args=[config.model_id, result.gguf_path.path],
-                        start_to_close_timeout=timedelta(minutes=5),
-                        retry_policy=_RETRY,
-                    )
-                    await workflow.execute_activity(
-                        create_inference_activity,
-                        args=[config.model_id],
-                        start_to_close_timeout=timedelta(minutes=5),
-                        retry_policy=_RETRY,
-                    )
-
-                workflow.logger.info(
-                    "experiment=%s PASS valid_pct=%.1f%% gguf=%s",
-                    config.experiment_name,
-                    result.eval_result.valid_pct * 100,
-                    result.gguf_path.path,
-                )
-            else:
+                eval_valid_pct = result.eval_result.valid_pct
+                eval_outcome_value = "succeeded" if result.eval_result.passed else "failed"
+            except Exception as eval_exc:
+                if is_cancelled_exception(eval_exc):
+                    raise   # propagate cancellation — do not absorb it as an eval failure
                 workflow.logger.warning(
-                    "experiment=%s FAIL valid_pct=%.1f%% (threshold=95%%) — export skipped",
-                    config.experiment_name,
-                    result.eval_result.valid_pct * 100,
+                    "experiment=%s eval failed (non-fatal) — checkpoint preserved: %s",
+                    config.experiment_name, eval_exc,
+                    exc_info=True,
                 )
+
+            result.eval_outcome = eval_outcome_value
+            result.passed = (eval_outcome_value == "succeeded")
 
             if config.run_id:
                 await workflow.execute_activity(
+                    record_eval_result_activity,
+                    args=[config.run_id, eval_valid_pct, eval_outcome_value],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+
+            # ── EXPORT (always runs after training succeeds) ──────────────────
+            if config.run_id:
+                await workflow.execute_activity(
+                    update_run_status_activity,
+                    args=[config.run_id, RunStatus.EXPORTING.value],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+
+            result.gguf_path = await workflow.execute_activity(
+                export_activity,
+                ExportConfig(
+                    checkpoint_path=result.checkpoint.path,
+                    gguf_output=config.gguf_output,
+                    run_id=result.checkpoint.run_id,
+                    remote_backend="k8s",  # export always runs on k8s
+                    model_id=config.model_id,
+                    pipeline_run_id=config.run_id,
+                    model_name=config.model_name,
+                ),
+                start_to_close_timeout=timedelta(hours=1),
+                heartbeat_timeout=timedelta(minutes=2),
+                retry_policy=_NO_RETRY,
+            )
+
+            if config.model_id:
+                await workflow.execute_activity(
+                    save_gguf_path_activity,
+                    args=[config.model_id, result.gguf_path.path],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+
+            # Inference instance: created when eval succeeded, or when always_create_inference
+            # is True (default) — allowing the user to start/test the model even after a
+            # failed eval.
+            should_create_inference = config.model_id and (
+                config.always_create_inference or eval_outcome_value == "succeeded"
+            )
+            if should_create_inference:
+                await workflow.execute_activity(
+                    create_inference_activity,
+                    args=[config.model_id, result.gguf_path.path],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
+
+            workflow.logger.info(
+                "experiment=%s training=PASS eval=%s valid_pct=%.1f%% gguf=%s",
+                config.experiment_name,
+                eval_outcome_value,
+                eval_valid_pct * 100,
+                result.gguf_path.path,
+            )
+
+            # Training always COMPLETED — eval outcome is in eval_result field.
+            if config.run_id:
+                await workflow.execute_activity(
                     finalise_run_activity,
-                    args=[config.run_id, result.passed, result.eval_result.valid_pct],
+                    args=[config.run_id, True, eval_valid_pct],
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=_RETRY,
                 )
@@ -301,16 +334,23 @@ class EvaluateWorkflow:
                 EvalConfig(
                     checkpoint=config.checkpoint_path,
                     eval_data=config.eval_data,
-                    run_id=config.remote_run_id,
+                    artifact_run_id=config.remote_run_id,
                     remote_backend=config.remote_backend,
                     output_dir=config.output_dir,
-                    db_run_id=config.run_id,
+                    run_id=config.run_id,
                 ),
                 start_to_close_timeout=timedelta(minutes=30),
                 heartbeat_timeout=timedelta(minutes=2),
                 retry_policy=_RETRY,
             )
             if config.run_id:
+                outcome = "succeeded" if result.passed else "failed"
+                await workflow.execute_activity(
+                    record_eval_result_activity,
+                    args=[config.run_id, result.valid_pct, outcome],
+                    start_to_close_timeout=timedelta(minutes=5),
+                    retry_policy=_RETRY,
+                )
                 await workflow.execute_activity(
                     finalise_run_activity,
                     args=[config.run_id, result.passed, result.valid_pct],
@@ -358,8 +398,8 @@ class ExportWorkflow:
                 ExportConfig(
                     checkpoint_path=config.checkpoint_path,
                     gguf_output=config.gguf_output,
-                    run_id=config.remote_run_id,
-                    remote_backend=config.remote_backend,
+                    artifact_run_id=config.remote_run_id,
+                    remote_backend="k8s",  # export always runs on k8s
                     model_id=config.model_id,
                     pipeline_run_id=config.run_id,
                 ),

@@ -1,18 +1,11 @@
 """Eval entry point executed inside a RunPod (or VastAI) pod.
 
-Pure infrastructure: receive env config → download → subprocess CLI → upload.
-
-No domain imports — all ML logic lives in interactors.cli.training.eval,
-mirroring how training_script.py delegates to interactors.cli.training.train.
-
-Environment variables (set by the adapter before pod creation):
-  RUN_ID                — S3 key prefix for status/progress/logs/results
-  TRAINING_ARTIFACT_REF — S3 key prefix of the completed training run
-  EVAL_DATA_S3_KEY      — S3 key for the eval.jsonl file
-  AWS_S3_BUCKET         — S3 bucket (consumed by S3StorageAdapter)
+Downloads checkpoint + eval data from S3, runs evaluate(), writes eval_results.json.
+Reads all configuration from environment variables set by the adapter.
 """
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
@@ -22,17 +15,45 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+BUCKET = os.environ.get("AWS_S3_BUCKET", "")
+RUN_ID = os.environ.get("RUN_ID", "")
+TRAINING_ARTIFACT_REF = os.environ.get("TRAINING_ARTIFACT_REF", "")
+EVAL_DATA_S3_KEY = os.environ.get("EVAL_DATA_S3_KEY", "")
+
+# Module-level log buffer: attached once in main() so _flush_logs_to_s3 can read it.
+_log_stream: io.StringIO | None = None
+
+
+def _storage():
+    """Return an S3StorageAdapter for the current bucket."""
+    from adapters.storage.s3 import S3StorageAdapter
+    return S3StorageAdapter()
+
+
+def _flush_logs_to_s3(storage) -> None:
+    """Upload buffered log output to S3 as ``{RUN_ID}/logs.txt`` (best-effort)."""
+    try:
+        run_id = os.environ.get("RUN_ID", "")
+        if not run_id or _log_stream is None:
+            return
+        content = _log_stream.getvalue().encode()
+        storage.write_bytes(f"{run_id}/logs.txt", content)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("failed to flush logs to S3: %s", exc)
+
 
 def main() -> None:
-    # Lazy import: training_script has module-level env reads that fail outside a pod.
-    from adapters.compute.runpod.training_script import (
-        _flush_logs_to_s3,
-        _run_subprocess_streaming,
-        _storage,
-    )
+    global _log_stream
 
-    run_id        = os.environ["RUN_ID"]
-    artifact_ref  = os.environ["TRAINING_ARTIFACT_REF"]
+    # Attach an in-memory log handler so we can ship logs to S3.
+    _log_stream = io.StringIO()
+    _mem_handler = logging.StreamHandler(_log_stream)
+    _mem_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s  %(message)s"))
+    logging.getLogger().addHandler(_mem_handler)
+
+    bucket = os.environ["AWS_S3_BUCKET"]
+    run_id = os.environ["RUN_ID"]
+    artifact_ref = os.environ["TRAINING_ARTIFACT_REF"]
     eval_data_key = os.environ["EVAL_DATA_S3_KEY"]
 
     storage = _storage()
@@ -73,41 +94,31 @@ def main() -> None:
     )
     _flush_logs_to_s3(storage)
 
-    # ── 3. Delegate ALL eval logic to the CLI ─────────────────────────────
-    # Mirrors training_script.py → interactors.cli.training.train.
-    # Exit codes: 0 = passed threshold, 1 = below threshold, >1 = crash.
-    results_path = Path("eval_results.json")
-    cmd = [
-        sys.executable, "-m", "interactors.cli.training.eval",
-        "--checkpoint", str(checkpoint_path),
-        "--eval-data", str(eval_data),
-        "--output", str(results_path),
-    ]
-    log.info("running eval CLI  cmd=%s", " ".join(cmd))
-    returncode = _run_subprocess_streaming(cmd, storage, log=log)
-    if returncode > 1:
-        # returncode 0 or 1 are expected (pass/fail threshold); anything higher is a crash.
-        storage.write_bytes(f"{run_id}/status.txt", b"failed")
-        _flush_logs_to_s3(storage)
-        sys.exit(f"Eval CLI crashed (exit {returncode})")
-
-    # ── 4. Upload results written by the CLI ──────────────────────────────
+    # ── 3. Run eval ────────────────────────────────────────────────────────
     try:
-        data = json.loads(results_path.read_text())
+        from domain.train.evaluate import evaluate, infer_hf, load_hf_pipeline
+        pipe = load_hf_pipeline(str(checkpoint_path))
+        exit_code, valid_pct = evaluate(eval_data, lambda p: infer_hf(pipe, p))
     except Exception as exc:
-        log.error("failed to read eval_results.json: %s", exc)
+        log.error("eval failed: %s", exc, exc_info=True)
         storage.write_bytes(f"{run_id}/status.txt", b"failed")
         _flush_logs_to_s3(storage)
         sys.exit(str(exc))
 
-    valid_pct = data.get("valid_pct", 0.0)
+    passed = exit_code == 0
+    log.info("eval complete  valid_pct=%.3f  passed=%s", valid_pct, passed)
+
+    # ── 4. Upload results ──────────────────────────────────────────────────
+    results_path = Path("eval_results.json")
+    results_path.write_text(json.dumps({"valid_pct": valid_pct, "passed": passed}))
     storage.upload(results_path, f"{run_id}/eval_results.json")
+
     storage.write_bytes(
         f"{run_id}/progress.json",
         json.dumps({"fraction": 1.0, "detail": f"done valid_pct={valid_pct:.3f}"}).encode(),
     )
     storage.write_bytes(f"{run_id}/status.txt", b"done")
-    log.info("eval run complete  run_id=%s  valid_pct=%.3f", run_id, valid_pct)
+    log.info("eval run complete  run_id=%s", run_id)
     _flush_logs_to_s3(storage)
 
 

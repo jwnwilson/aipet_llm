@@ -5,11 +5,26 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from adapters.compute.kaggle.adapter import KaggleTrainingAdapter
+from adapters.storage.kaggle_local import KaggleLocalStorageAdapter
 from domain.models import RemoteTrainConfig
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _aws_env(monkeypatch):
+    """Inject dummy Kaggle-specific AWS credentials so the _stage_dataset guard doesn't fire."""
+    monkeypatch.setenv("KAGGLE_AWS_ACCESS_KEY_ID", "test-key-id")
+    monkeypatch.setenv("KAGGLE_AWS_SECRET_ACCESS_KEY", "test-secret")
+    monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
 
 
 # ---------------------------------------------------------------------------
@@ -29,6 +44,22 @@ def _config(**kwargs) -> RemoteTrainConfig:
     )
     defaults.update(kwargs)
     return RemoteTrainConfig(**defaults)
+
+
+def _make_data(tmp_path: Path, **kwargs) -> RemoteTrainConfig:
+    """Return a config with S3 keys for train/eval data.
+
+    _stage_dataset now requires train_s3_key and eval_s3_key (data comes from S3
+    directly; JSONL files are no longer staged in the Kaggle dataset).
+    """
+    return _config(
+        train_data="data/workflow/test-run/train.jsonl",
+        eval_data="data/workflow/test-run/eval.jsonl",
+        train_s3_key="data/workflow/test-run/train.jsonl",
+        eval_s3_key="data/workflow/test-run/eval.jsonl",
+        run_id="test-run-id",
+        **kwargs,
+    )
 
 
 def _ok(stdout: str = "", stderr: str = "") -> MagicMock:
@@ -81,7 +112,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        adapter.submit(_config())
+        adapter.submit(_make_data(tmp_path))
 
         dataset_calls = [c for c in calls if "datasets" in c]
         assert len(dataset_calls) == 2  # create (non-zero) + version
@@ -102,7 +133,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        adapter.submit(_config())
+        adapter.submit(_make_data(tmp_path))
 
         push_calls = [c for c in calls if "kernels" in c and "push" in c]
         assert len(push_calls) == 1
@@ -114,7 +145,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        slug = adapter.submit(_config(experiment_name="myexp"))
+        slug = adapter.submit(_make_data(tmp_path, experiment_name="myexp"))
 
         assert slug == "myuser/myexp"
 
@@ -125,14 +156,15 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        cfg = _config(experiment_name="render-test", epochs=7)
+        cfg = _make_data(tmp_path, experiment_name="render-test", epochs=7)
         adapter.submit(cfg)
 
         notebook_path = tmp_path / "render-test" / "notebook.ipynb"
         assert notebook_path.exists(), "Rendered notebook not written"
         content = notebook_path.read_text()
         assert "{{config}}" not in content, "Template placeholder was not replaced"
-        assert "'epochs': 7" in content  # injected as Python repr, not JSON
+        assert "'7'" in content  # EPOCHS injected as env var string
+        assert "remote_worker" in content  # delegates to unified worker
 
     def test_writes_kernel_metadata(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KAGGLE_USERNAME", "testuser")
@@ -141,7 +173,7 @@ class TestKaggleAdapterSubmit:
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         adapter = KaggleTrainingAdapter(work_dir=tmp_path)
-        adapter.submit(_config(experiment_name="meta-test"))
+        adapter.submit(_make_data(tmp_path, experiment_name="meta-test"))
 
         meta_path = tmp_path / "meta-test" / "kernel-metadata.json"
         assert meta_path.exists()
@@ -197,51 +229,44 @@ class TestKaggleAdapterDownload:
         assert any("output" in c for c in calls)
         assert result == str(tmp_path / "dest")
 
-    def test_returns_inner_hf_checkpoint_path_when_archive_has_nested_structure(self, tmp_path, monkeypatch):
+    def test_returns_checkpoint_dir_when_present_in_kernel_output(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KAGGLE_USERNAME", "testuser")
         monkeypatch.setattr("adapters.compute.kaggle.adapter._kaggle_bin", lambda: "kaggle")
-        monkeypatch.setattr("adapters.compute.kaggle.adapter.subprocess.run", lambda *a, **kw: _ok())
-
-        import io
-        import tarfile
 
         dest = tmp_path / "dest"
-        dest.mkdir()
-        config_content = '{"model_type": "llama", "architectures": []}'
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            data = config_content.encode()
-            info = tarfile.TarInfo(name="checkpoints/config.json")
-            info.size = len(data)
-            tf.addfile(info, io.BytesIO(data))
-        (dest / "checkpoint.tar.gz").write_bytes(buf.getvalue())
+
+        def fake_run(cmd, **kw):
+            # Simulate remote_worker writing checkpoint/ in /kaggle/working/
+            (dest / "checkpoint").mkdir(parents=True, exist_ok=True)
+            (dest / "checkpoint" / "config.json").write_text('{"model_type": "gpt2"}')
+            return _ok()
+
+        monkeypatch.setattr("adapters.compute.kaggle.adapter.subprocess.run", fake_run)
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
         result = KaggleTrainingAdapter(work_dir=tmp_path).download("testuser/exp", dest)
 
-        assert result == str(dest / "checkpoints"), (
-            "download() should return the inner HF checkpoint dir, not the extraction root"
+        assert result == str(dest / "checkpoint"), (
+            "download() should return the checkpoint/ directory written by remote_worker"
         )
 
-    def test_unpacks_archive_if_present(self, tmp_path, monkeypatch):
+    def test_falls_back_to_config_json_when_no_checkpoint_dir(self, tmp_path, monkeypatch):
         monkeypatch.setenv("KAGGLE_USERNAME", "testuser")
         monkeypatch.setattr("adapters.compute.kaggle.adapter._kaggle_bin", lambda: "kaggle")
-        monkeypatch.setattr("adapters.compute.kaggle.adapter.subprocess.run", lambda *a, **kw: _ok())
 
-        import tarfile
         dest = tmp_path / "dest"
-        dest.mkdir()
-        marker = tmp_path / "marker.txt"
-        marker.write_text("hello")
-        archive = dest / "checkpoint.tar.gz"
-        with tarfile.open(archive, "w:gz") as tf:
-            tf.add(marker, arcname="marker.txt")
+
+        def fake_run(cmd, **kw):
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "config.json").write_text('{"model_type": "gpt2"}')
+            return _ok()
+
+        monkeypatch.setattr("adapters.compute.kaggle.adapter.subprocess.run", fake_run)
 
         from adapters.compute.kaggle import KaggleTrainingAdapter
-        KaggleTrainingAdapter(work_dir=tmp_path).download("testuser/exp", dest)
+        result = KaggleTrainingAdapter(work_dir=tmp_path).download("testuser/exp", dest)
 
-        assert not archive.exists(), "Archive should be deleted after extraction"
-        assert (dest / "marker.txt").exists(), "Archive contents should be extracted"
+        assert result == str(dest)
 
 
 class TestKaggleAdapterProjectRoot:
@@ -943,3 +968,97 @@ class TestKaggleAdapterProgress:
         result = adapter.logs("testuser/exp")
         assert "epoch=0.6" in result
         assert "loss=0.5555" in result
+
+
+# ---------------------------------------------------------------------------
+# TestKaggleStagingOutput — Root cause A: does _stage_dataset stage the files?
+# ---------------------------------------------------------------------------
+
+
+class TestKaggleStagingOutput:
+    """Verify _stage_dataset places the right files in staging before Kaggle upload.
+
+    Training data (JSONL) is no longer staged — the Kaggle kernel downloads it from
+    S3 directly.  Only the project wheel must be present in the dataset.
+    """
+
+    def _stage(self, adapter, config, staging, monkeypatch, whl_name="fake.whl"):
+        monkeypatch.setattr(
+            "adapters.compute.kaggle.adapter.build_wheel",
+            lambda root, dest: (dest / whl_name).touch(),
+        )
+        adapter._stage_dataset(config, staging, dataset_slug="test-exp-data")
+
+    def test_stage_dataset_does_not_include_jsonl(self, tmp_path, monkeypatch):
+        """JSONL files must NOT be staged — data comes from S3, not the Kaggle dataset."""
+        adapter = KaggleTrainingAdapter()
+        config = _make_data(tmp_path)
+        staging = tmp_path / "staging"
+        self._stage(adapter, config, staging, monkeypatch)
+        staged = {f.name for f in staging.iterdir()}
+        assert "train.jsonl" not in staged, "train.jsonl should not be staged (comes from S3)"
+        assert "eval.jsonl" not in staged, "eval.jsonl should not be staged (comes from S3)"
+
+    def test_stage_dataset_includes_wheel(self, tmp_path, monkeypatch):
+        adapter = KaggleTrainingAdapter()
+        config = _make_data(tmp_path)
+        staging = tmp_path / "staging"
+        self._stage(adapter, config, staging, monkeypatch, whl_name="llm_api-0.1.0.whl")
+        wheels = [f for f in staging.iterdir() if f.suffix == ".whl"]
+        assert wheels, f"No .whl found in staging: {list(staging.iterdir())}"
+
+    def test_stage_dataset_guard_raises_when_s3_keys_missing(self, tmp_path, monkeypatch):
+        """Pre-flight guard must fire when train_s3_key / eval_s3_key are absent."""
+        monkeypatch.setattr(
+            "adapters.compute.kaggle.adapter.build_wheel",
+            lambda root, dest: (dest / "fake.whl").touch(),
+        )
+        adapter = KaggleTrainingAdapter()
+        config = _config()  # no train_s3_key / eval_s3_key
+        with pytest.raises(ValueError, match="train_s3_key"):
+            adapter._stage_dataset(config, tmp_path / "staging", dataset_slug="x")
+
+
+# ---------------------------------------------------------------------------
+# TestKaggleNotebookKernelSim — Root cause C: does the notebook derive KAGGLE_DATA_DIR correctly?
+# ---------------------------------------------------------------------------
+
+
+class TestKaggleNotebookKernelSim:
+    """Verify the rendered training notebook uses S3 for data and checkpoint storage."""
+
+    def _cell_source(self, tmp_path) -> str:
+        """Render notebook via _render_notebook and return the single cell source."""
+        kernel_dir = tmp_path / "kernel"
+        kernel_dir.mkdir()
+        config = _make_data(tmp_path, experiment_name="smoke-test")
+        adapter = KaggleTrainingAdapter()
+        adapter._render_notebook(config, kernel_dir, dataset_slug="smoke-test-model-data")
+        nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
+        return "".join(nb["cells"][0]["source"])
+
+    def test_notebook_sets_storage_backend_to_s3(self, tmp_path):
+        source = self._cell_source(tmp_path)
+        assert "'STORAGE_BACKEND': 's3'" in source
+
+    def test_notebook_does_not_set_kaggle_data_dir(self, tmp_path):
+        """KAGGLE_DATA_DIR must not appear — data comes from S3, not the Kaggle dataset."""
+        source = self._cell_source(tmp_path)
+        assert "KAGGLE_DATA_DIR" not in source
+
+    def test_notebook_sets_s3_key_prefix(self, tmp_path):
+        source = self._cell_source(tmp_path)
+        assert "'S3_KEY_PREFIX'" in source
+        assert "workflow/test-run-id" in source
+
+    def test_notebook_sets_train_and_eval_s3_keys(self, tmp_path):
+        source = self._cell_source(tmp_path)
+        assert "'TRAIN_DATA_KEY'" in source
+        assert "data/workflow/test-run/train.jsonl" in source
+        assert "'EVAL_DATA_KEY'" in source
+        assert "data/workflow/test-run/eval.jsonl" in source
+
+    def test_notebook_wheel_glob_covers_new_kaggle_mount_path(self, tmp_path):
+        """New Kaggle path /kaggle/input/datasets/<owner>/<slug>/ needs a recursive glob."""
+        source = self._cell_source(tmp_path)
+        assert "recursive=True" in source

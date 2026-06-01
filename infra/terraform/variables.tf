@@ -13,7 +13,7 @@ variable "repo_name" {
 variable "image_retention_count" {
   description = "Number of tagged images to retain before expiring older ones"
   type        = number
-  default     = 10
+  default     = 5
 }
 
 variable "github_repo" {
@@ -30,5 +30,5 @@ variable "s3_bucket" {
 variable "vps_ip" {
   description = "Public IP of the VPS / inlets exit node — used for the llm-api DNS A record"
   type        = string
-  default     = "167.71.134.141"
+  default     = "104.248.160.76"
 }

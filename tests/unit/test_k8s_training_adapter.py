@@ -1,7 +1,6 @@
 """Unit tests for K8sTrainingAdapter."""
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,15 +24,15 @@ def adapter():
     """K8sTrainingAdapter with mocked k8s clients and a mock StoragePort."""
     mock_storage = MagicMock()
     with (
-        patch("adapters.compute.k8s_training._K8S_AVAILABLE", True),
-        patch("adapters.compute.k8s_training.k8s_client") as mock_k8s,
-        patch("adapters.compute.k8s_training.k8s_config") as mock_cfg,
+        patch("adapters.compute.k8s.adapter._K8S_AVAILABLE", True),
+        patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s,
+        patch("adapters.compute.k8s.adapter.k8s_config") as mock_cfg,
     ):
         mock_cfg.load_incluster_config.side_effect = Exception("not in cluster")
         mock_cfg.load_kube_config.return_value = None
         mock_k8s.BatchV1Api.return_value = MagicMock()
         mock_k8s.CoreV1Api.return_value = MagicMock()
-        from adapters.compute.k8s_training import K8sTrainingAdapter
+        from adapters.compute.k8s.adapter import K8sTrainingAdapter
         inst = K8sTrainingAdapter(
             storage=mock_storage,
             training_image="test/training:latest",
@@ -45,7 +44,7 @@ def adapter():
 
 
 def test_submit_creates_job(adapter):
-    with patch("adapters.compute.k8s_training.k8s_client") as mock_k8s:
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
         mock_k8s.V1Job.return_value = MagicMock()
         mock_k8s.V1ObjectMeta.return_value = MagicMock()
         adapter._batch.create_namespaced_job.return_value = MagicMock()
@@ -84,22 +83,6 @@ def test_status_failed(adapter):
     assert adapter.status("train-abc") == "failed"
 
 
-def test_eval_reads_result_via_storage(adapter):
-    result = {"valid_pct": 0.97, "passed": True}
-    adapter._storage.read_text.return_value = json.dumps(result)
-    job_meta = MagicMock()
-    job_meta.metadata.annotations = {"llm-api/run-id": "db-run-id-123"}
-    adapter._batch.read_namespaced_job.return_value = job_meta
-
-    valid_pct, passed = adapter.eval("train-abc", "unused")
-
-    assert valid_pct == pytest.approx(0.97)
-    assert passed is True
-    adapter._storage.read_text.assert_called_once_with(
-        "workflow/db-run-id-123/eval_result.json"
-    )
-
-
 def test_download_uses_storage_download_directory(adapter, tmp_path):
     job_meta = MagicMock()
     job_meta.metadata.annotations = {"llm-api/run-id": "db-run-id-123"}
@@ -111,6 +94,32 @@ def test_download_uses_storage_download_directory(adapter, tmp_path):
         "workflow/db-run-id-123/checkpoint/", tmp_path
     )
     assert result == str(tmp_path)
+
+
+def test_submit_sets_container_command_to_remote_worker(adapter):
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
+        mock_k8s.V1Container.return_value = MagicMock()
+        adapter._batch.create_namespaced_job.return_value = MagicMock()
+        adapter.submit(_CONFIG)
+
+    container_call = mock_k8s.V1Container.call_args
+    assert container_call.kwargs["command"] == [
+        "python", "-m", "interactors.cli.training.remote_worker"
+    ]
+
+
+def test_submit_passes_s3_key_prefix_matching_workflow_prefix(adapter):
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
+        mock_k8s.V1EnvVar.side_effect = (
+            lambda name, value=None, value_from=None: MagicMock(env_name=name, env_value=value)
+        )
+        adapter._batch.create_namespaced_job.return_value = MagicMock()
+        adapter.submit(_CONFIG)
+
+    env_var_calls = mock_k8s.V1EnvVar.call_args_list
+    s3_prefix_calls = [c for c in env_var_calls if c.kwargs.get("name") == "S3_KEY_PREFIX"]
+    assert s3_prefix_calls, "V1EnvVar(name='S3_KEY_PREFIX') must be passed to the container"
+    assert s3_prefix_calls[0].kwargs["value"] == "workflow/db-run-id-123"
 
 
 # ---------------------------------------------------------------------------

@@ -1,24 +1,26 @@
-"""K8s training Job entrypoint: download data → train → eval → upload results.
+"""K8s training Job entrypoint: download data → train → upload checkpoint.
 
 This is a thin interactor. All ML logic lives in domain.train.*; all storage
 I/O goes through S3StorageAdapter (StoragePort) — no raw boto3 here.
+
+Eval is intentionally omitted. The Temporal evaluate_activity downloads the
+checkpoint and runs eval locally on the worker after this job completes.
 
 Required environment variables:
   RUN_ID            — DB run ID used as the S3 key prefix (workflow/{run_id}/…)
   AWS_S3_BUCKET     — S3 bucket name (consumed by S3StorageAdapter)
   TRAIN_DATA_KEY    — S3 key for training JSONL (e.g. datasets/{id}.jsonl)
-  EVAL_DATA_KEY     — S3 key for eval JSONL
+  EVAL_DATA_KEY     — S3 key for eval JSONL (downloaded for use by trainer's
+                      built-in validation loss; eval *scoring* happens externally)
   MODEL             — HuggingFace model ID (e.g. HuggingFaceTB/SmolLM2-360M)
 
 Optional environment variables (defaults shown):
   EPOCHS            — int, default 1
   PATIENCE          — int, default 3
   WARMUP_RATIO      — float, default 0.05
-  EVAL_PASS_THRESHOLD — float fraction, default 0.95
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -26,8 +28,6 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-_EVAL_PASS_THRESHOLD = float(os.environ.get("EVAL_PASS_THRESHOLD", "0.95"))
 
 
 def _require(name: str) -> str:
@@ -86,15 +86,7 @@ def run() -> None:
     )
     log.info("Training complete — checkpoint at %s", checkpoint_dir)
 
-    # 3. Evaluate with the fine-tuned checkpoint
-    from domain.train.evaluate import evaluate, infer_hf, load_hf_pipeline
-    pipe = load_hf_pipeline(str(checkpoint_dir))
-    infer_fn = lambda prompt: infer_hf(pipe, prompt)  # noqa: E731
-    _exit_code, valid_pct = evaluate(eval_path, infer_fn)
-    passed = valid_pct >= _EVAL_PASS_THRESHOLD
-    log.info("Eval complete — valid_pct=%.1f%% passed=%s", valid_pct * 100, passed)
-
-    # 4. Upload checkpoint directory to S3
+    # 3. Upload checkpoint directory to S3
     checkpoint_prefix = f"workflow/{run_id}/checkpoint/"
     for local_file in checkpoint_dir.rglob("*"):
         if not local_file.is_file():
@@ -104,13 +96,7 @@ def run() -> None:
         log.info("Uploading %s → %s", local_file.name, s3_key)
         storage.upload(local_file, s3_key)
 
-    # 5. Write eval result to S3
-    eval_result = {"valid_pct": valid_pct, "passed": passed}
-    eval_s3_key = f"workflow/{run_id}/eval_result.json"
-    storage.write_bytes(eval_s3_key, json.dumps(eval_result).encode())
-    log.info("Uploaded eval_result.json → %s", eval_s3_key)
-
-    log.info("Job complete — passed=%s valid_pct=%.1f%%", passed, valid_pct * 100)
+    log.info("Job complete — checkpoint uploaded to %s", checkpoint_prefix)
     sys.exit(0)
 
 

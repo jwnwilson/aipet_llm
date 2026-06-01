@@ -30,16 +30,29 @@ class TestS3StorageAdapterUpload:
         adapter.upload(local, "gguf/model.gguf")
 
         s3.upload_file.assert_called_once_with(
-            str(local), "test-bucket", "gguf/model.gguf", Callback=None
+            str(local), "test-bucket", "gguf/model.gguf"
         )
 
-    def test_upload_forwards_callback(self, tmp_path):
+    def test_upload_does_not_accept_callback_kwarg(self, tmp_path):
+        """upload() matches the port contract — no callback parameter.
+
+        Progress callbacks are S3-specific UX; callers that need them must call
+        adapter._s3.upload_file() directly (see upload_model.py).
+        """
+        adapter, _ = _make_adapter(tmp_path)
+        local = tmp_path / "model.gguf"
+        local.write_bytes(b"weights")
+        with pytest.raises(TypeError):
+            adapter.upload(local, "gguf/model.gguf", callback=MagicMock())  # type: ignore[call-arg]
+
+    def test_boto3_client_accepts_callback_for_progress_reporting(self, tmp_path):
+        """Callers needing upload progress (e.g. upload_model CLI) call _s3.upload_file directly."""
         adapter, s3 = _make_adapter(tmp_path)
         local = tmp_path / "model.gguf"
         local.write_bytes(b"weights")
         cb = MagicMock()
 
-        adapter.upload(local, "gguf/model.gguf", callback=cb)
+        adapter._s3.upload_file(str(local), adapter._bucket, "gguf/model.gguf", Callback=cb)
 
         s3.upload_file.assert_called_once_with(
             str(local), "test-bucket", "gguf/model.gguf", Callback=cb
@@ -113,3 +126,46 @@ class TestS3StorageAdapterReadText:
             {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject"
         )
         assert adapter.read_text("runpod/run-1/status.txt") == ""
+
+
+class TestS3StorageAdapterDeleteDirectory:
+    def test_calls_delete_objects_with_correct_payload(self, tmp_path):
+        adapter, s3 = _make_adapter(tmp_path)
+        s3.get_paginator.return_value.paginate.return_value = iter([
+            {"Contents": [
+                {"Key": "workflow/abc/checkpoint/config.json"},
+                {"Key": "workflow/abc/checkpoint/model.safetensors"},
+            ]}
+        ])
+
+        adapter.delete_directory("workflow/abc/checkpoint/")
+
+        s3.delete_objects.assert_called_once_with(
+            Bucket="test-bucket",
+            Delete={
+                "Objects": [
+                    {"Key": "workflow/abc/checkpoint/config.json"},
+                    {"Key": "workflow/abc/checkpoint/model.safetensors"},
+                ],
+                "Quiet": True,
+            },
+        )
+
+    def test_silent_when_prefix_empty(self, tmp_path):
+        adapter, s3 = _make_adapter(tmp_path)
+        s3.get_paginator.return_value.paginate.return_value = iter([{"Contents": []}])
+
+        adapter.delete_directory("workflow/nonexistent/checkpoint/")  # must not raise
+
+        s3.delete_objects.assert_not_called()
+
+    def test_handles_multiple_pages(self, tmp_path):
+        adapter, s3 = _make_adapter(tmp_path)
+        s3.get_paginator.return_value.paginate.return_value = iter([
+            {"Contents": [{"Key": "workflow/abc/checkpoint/config.json"}]},
+            {"Contents": [{"Key": "workflow/abc/checkpoint/model.safetensors"}]},
+        ])
+
+        adapter.delete_directory("workflow/abc/checkpoint/")
+
+        assert s3.delete_objects.call_count == 2

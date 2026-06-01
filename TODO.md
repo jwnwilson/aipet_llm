@@ -1,19 +1,20 @@
-#TODO
+# TODO
 
-- Focus on kaggle + K8 for now
-    - validate training working
-- Fix kaggle and verify vastai runpod training works
-    - All erroring unable to find training data
-- Break up training and eval jobs, make eval not stop the workflow
-- Setup test from training to running inference locally on k8 or remotely on a 3rd party.
+## Validate Inference
+- Add test to load a small model and validate inference is working, currently tests only check for a response from inference which will defaut to IDLE if it fails.
 
-## Better llm-api architecture
-- Setup functionality to set a model to "active"
-- Spin up a container for each "active" llm models requesting the right memory for the model.
-- Setup scaling for each model independanlty
-    - Scale to 0 if model is not used for 1 hour
-- Track status on active llm models to show on the ui.
-- Handle requests to loading models and return a result or good http status with "not_ready_yet" 
+## UI improvements
+- Setup BE / FE consistent pagination for all listing compnents
+    - Good potential fully ai job 
+- Need better logging visibility and progress visualisation on ui.
+    - Logs need to stream to UI.
+- Group inference under a model and version the different inferences to see the latest inferences for each model
+- After triggering a model run re-direct to run in the UI.
+
+## AI productivity gains
+
+- Create skill to consolidate learnings from session and update memory of claude.md then compact context.
+- Setup linear and try to trigger fully AI run of bug fix / feature.
 
 ## LLM API
 - Setup llm adapter to either 
@@ -22,5 +23,5 @@
 - Add rate limiting per user 
 
 ## Fast E2E tests
-- Re-enable E2E tests on CI/CD to run once a day or something
+- Re-enable fast E2E tests on CI/CD now we have working smoke tests
 
