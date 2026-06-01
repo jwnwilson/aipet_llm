@@ -62,8 +62,10 @@ describe('RunDetailsPanel — expanded state', () => {
     await waitFor(() =>
       expect(screen.getByText(/training logs — live/i)).toBeInTheDocument()
     )
-    // No data from stub EventSource yet → shows placeholder
-    expect(screen.getByText(/waiting for output/i)).toBeInTheDocument()
+    // Fetch-based stream receives data from MSW handler
+    await waitFor(() =>
+      expect(screen.getByText(/test-log-line/i)).toBeInTheDocument()
+    )
   })
 
   it('shows static log content for a completed run when logs exist', async () => {
