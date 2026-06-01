@@ -101,3 +101,22 @@ class S3StorageAdapter(StoragePort):
             log.warning("s3 download_directory empty  bucket=%s  prefix=%s  dest=%s", self._bucket, prefix, dest)
         else:
             log.info("s3 download_directory ok  bucket=%s  prefix=%s  files=%d", self._bucket, prefix, count)
+
+    def delete_directory(self, prefix: str) -> None:
+        """Delete all S3 objects under ``prefix`` in batches of 1000 (S3 API max)."""
+        log.debug("s3 delete_directory  bucket=%s  prefix=%s", self._bucket, prefix)
+        paginator = self._s3.get_paginator("list_objects_v2")
+        total = 0
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            objects = [{"Key": obj["Key"]} for obj in page.get("Contents", [])]
+            if not objects:
+                continue
+            self._s3.delete_objects(
+                Bucket=self._bucket,
+                Delete={"Objects": objects, "Quiet": True},
+            )
+            total += len(objects)
+        if total == 0:
+            log.warning("s3 delete_directory empty  bucket=%s  prefix=%s", self._bucket, prefix)
+        else:
+            log.info("s3 delete_directory ok  bucket=%s  prefix=%s  deleted=%d", self._bucket, prefix, total)

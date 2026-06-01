@@ -22,8 +22,56 @@ env:
   ECR_RUNPOD_REPOSITORY: ${{ vars.ECR_RUNPOD_REPOSITORY }}
 
 jobs:
+  # ── Changes: detect which images need rebuilding ──────────────────────────
+  changes:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      proxy: ${{ steps.filter.outputs.proxy }}
+      inference: ${{ steps.filter.outputs.inference }}
+      training: ${{ steps.filter.outputs.training }}
+      export: ${{ steps.filter.outputs.export }}
+      runpod: ${{ steps.filter.outputs.runpod }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            proxy:
+              - 'docker/proxy/Dockerfile'
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            inference:
+              - 'docker/inference/**'
+              - 'src/adapters/inference.py'
+              - 'src/adapters/prompt.py'
+              - 'src/adapters/storage/s3.py'
+              - 'src/domain/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            training:
+              - 'docker/training/Dockerfile'
+              - 'src/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            export:
+              - 'docker/export/Dockerfile'
+              - 'src/**'
+              - 'llama.cpp/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+            runpod:
+              - 'docker/runpod/Dockerfile'
+              - 'pyproject.toml'
+              - 'uv.lock'
+
   # ── Build: push ARM64 images to ECR ───────────────────────────────────────
   build:
+    needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
@@ -61,6 +109,7 @@ jobs:
 
       # ── Proxy API image (lightweight — no torch/llama-cpp) ─────────────────
       - name: Build and push proxy API image (ARM64)
+        if: ${{ needs.changes.outputs.proxy == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -71,15 +120,20 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:latest
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:buildcache,mode=max
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:buildcache,mode=min
 
       - name: Export proxy image ref
         id: proxy-image
         run: |
-          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.changes.outputs.proxy }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       # ── Inference worker image (heavy — llama-cpp-python cached at layer) ──
       - name: Build and push inference worker image (ARM64)
+        if: ${{ needs.changes.outputs.inference == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -90,15 +144,20 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:latest
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:buildcache,mode=max
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:buildcache,mode=min
 
       - name: Export inference worker image ref
         id: inference-image
         run: |
-          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.changes.outputs.inference }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       # ── Training image (torch/transformers — k8s training Jobs) ──────────────
       - name: Build and push training image (ARM64)
+        if: ${{ needs.changes.outputs.training == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -109,15 +168,20 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:latest
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:buildcache,mode=max
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:buildcache,mode=min
 
       - name: Export training image ref
         id: training-image
         run: |
-          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.changes.outputs.training }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       # ── Export image (llama.cpp pre-built — k8s GGUF-export Jobs) ────────
       - name: Build and push export image (ARM64)
+        if: ${{ needs.changes.outputs.export == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -128,15 +192,20 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:latest
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:buildcache,mode=max
+          cache-to: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:buildcache,mode=min
 
       - name: Export export image ref
         id: export-image
         run: |
-          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.changes.outputs.export }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       # ── RunPod training image (AMD64 + CUDA — public ECR, no auth required) ──
       - name: Build and push RunPod training image (AMD64)
+        if: ${{ needs.changes.outputs.runpod == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -147,12 +216,16 @@ jobs:
             ${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}
             ${{ env.ECR_RUNPOD_REPOSITORY }}:latest
           cache-from: type=registry,ref=${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache
-          cache-to: type=registry,ref=${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache,mode=max
+          cache-to: type=registry,ref=${{ env.ECR_RUNPOD_REPOSITORY }}:buildcache,mode=min
 
       - name: Export RunPod image ref
         id: runpod-image
         run: |
-          echo "image=${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ needs.changes.outputs.runpod }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "image=${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=${{ env.ECR_RUNPOD_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+          fi
 
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
   deploy:
@@ -229,16 +302,27 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Mirror Temporal UI image to ECR
+      - name: Mirror Temporal UI image to ECR (skip if already current)
         run: |
           AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
           ECR_REGISTRY="${AWS_ACCOUNT}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          ECR_IMAGE="${ECR_REGISTRY}/${{ env.ECR_TEMPORAL_UI_REPOSITORY }}:latest"
           aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
             docker login --username AWS --password-stdin "${ECR_REGISTRY}"
-          docker buildx imagetools create \
-            -t "${ECR_REGISTRY}/${{ env.ECR_TEMPORAL_UI_REPOSITORY }}:latest" \
-            temporalio/ui:latest
-          echo "TEMPORAL_UI_IMAGE=${ECR_REGISTRY}/${{ env.ECR_TEMPORAL_UI_REPOSITORY }}:latest" >> "$GITHUB_ENV"
+          SRC_DIGEST=$(docker buildx imagetools inspect temporalio/ui:latest \
+            --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"' || true)
+          DST_DIGEST=$(aws ecr describe-images \
+            --repository-name ${{ env.ECR_TEMPORAL_UI_REPOSITORY }} \
+            --image-ids imageTag=latest \
+            --query 'imageDetails[0].imageDigest' \
+            --output text 2>/dev/null || true)
+          if [ "${SRC_DIGEST}" = "${DST_DIGEST}" ] && [ -n "${SRC_DIGEST}" ]; then
+            echo "Temporal UI already at ${SRC_DIGEST}, skipping mirror."
+          else
+            echo "Mirroring Temporal UI (src=${SRC_DIGEST}, ecr=${DST_DIGEST})"
+            docker buildx imagetools create -t "${ECR_IMAGE}" temporalio/ui:latest
+          fi
+          echo "TEMPORAL_UI_IMAGE=${ECR_IMAGE}" >> "$GITHUB_ENV"
 
       - name: Apply k8s manifests
         run: |

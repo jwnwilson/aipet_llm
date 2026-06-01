@@ -66,3 +66,9 @@ class LocalStorageAdapter(StoragePort):
                 out = dest / rel
                 out.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_file, out)
+
+    def delete_directory(self, prefix: str) -> None:
+        """Remove all files under base/prefix, then the directory tree itself."""
+        src_dir = self._resolve(prefix.rstrip("/"))
+        if src_dir.exists():
+            shutil.rmtree(src_dir)
