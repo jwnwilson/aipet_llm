@@ -368,6 +368,10 @@ class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig
     def list_active(self) -> list[InferenceInstance]:
         """Return instances not in SHUTDOWN or FAILED status."""
 
+    @abstractmethod
+    def delete_by_model(self, model_id: str) -> list[InferenceInstance]:
+        """Delete all inference instances for model_id. Returns the deleted instances."""
+
 
 class PodLifecyclePort(ABC):
     """Abstract interface for managing inference pod lifecycle."""

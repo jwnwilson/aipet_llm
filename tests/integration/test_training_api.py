@@ -13,8 +13,9 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 from interactors.api.app import app
-from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
+from interactors.api.deps import get_dataset_store, get_inference_store, get_model_store, get_pod_adapter, get_run_store
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
+from adapters.database.inference_store import SQLAlchemyInferenceStore
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
 
@@ -41,9 +42,14 @@ async def client(db_engine):
     store = SQLAlchemyModelStore(db_engine)
     run_store = SQLAlchemyRunStore(db_engine)
     dataset_store = SQLAlchemyDatasetStore(db_engine)
+    inference_store = SQLAlchemyInferenceStore(db_engine)
+    pod_adapter = MagicMock()
+    pod_adapter.delete_pod = MagicMock()
     app.dependency_overrides[get_model_store] = lambda: store
     app.dependency_overrides[get_run_store] = lambda: run_store
     app.dependency_overrides[get_dataset_store] = lambda: dataset_store
+    app.dependency_overrides[get_inference_store] = lambda: inference_store
+    app.dependency_overrides[get_pod_adapter] = lambda: pod_adapter
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -205,6 +211,60 @@ class TestDeleteModel:
     async def test_unknown_id_returns_404(self, client):
         resp = await client.delete("/api/models/does-not-exist")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# TestDeleteModelCascade
+# ---------------------------------------------------------------------------
+
+class TestDeleteModelCascade:
+    @pytest.mark.asyncio
+    async def test_deleting_model_removes_its_inference_instances(self, client, db_engine):
+        # Arrange — create a model and two inference instances for it
+        resp = await client.post("/api/models", json=_VALID_CONFIG)
+        assert resp.status_code == 201
+        model_id = resp.json()["id"]
+
+        inference_store = SQLAlchemyInferenceStore(db_engine)
+        from domain.models import InferenceInstanceConfig
+        inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="pod-a", pod_namespace="default", idle_timeout_minutes=60))
+        inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="pod-b", pod_namespace="default", idle_timeout_minutes=60))
+        assert inference_store.count(model_id=model_id) == 2
+
+        # Act — delete the model
+        del_resp = await client.delete(f"/api/models/{model_id}")
+        assert del_resp.status_code == 204
+
+        # Assert — inference instances are gone
+        assert inference_store.count(model_id=model_id) == 0
+
+    @pytest.mark.asyncio
+    async def test_deleting_model_without_instances_succeeds(self, client):
+        resp = await client.post("/api/models", json=_VALID_CONFIG)
+        assert resp.status_code == 201
+        model_id = resp.json()["id"]
+
+        del_resp = await client.delete(f"/api/models/{model_id}")
+        assert del_resp.status_code == 204
+
+    @pytest.mark.asyncio
+    async def test_pod_teardown_called_for_instances_with_pod_names(self, client, db_engine):
+        # Arrange
+        resp = await client.post("/api/models", json=_VALID_CONFIG)
+        model_id = resp.json()["id"]
+
+        inference_store = SQLAlchemyInferenceStore(db_engine)
+        from domain.models import InferenceInstanceConfig
+        inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="my-pod", pod_namespace="ns", idle_timeout_minutes=60))
+
+        # Capture the mock pod adapter from the overrides
+        pod_adapter = app.dependency_overrides[get_pod_adapter]()
+
+        # Act
+        await client.delete(f"/api/models/{model_id}")
+
+        # Assert — best-effort teardown was attempted
+        pod_adapter.delete_pod.assert_called_once_with("my-pod", "ns")
 
 
 # ---------------------------------------------------------------------------
