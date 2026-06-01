@@ -136,7 +136,7 @@ async def create_dataset(
     import uuid as _uuid
 
     dataset_id = str(_uuid.uuid4())
-    key = f"datasets/{dataset_id}.jsonl"
+    key = f"dataset/{dataset_id}/train.jsonl"
     await _upload_to_storage(file, storage, key)
 
     config = DatasetConfig(

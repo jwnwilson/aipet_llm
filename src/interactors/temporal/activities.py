@@ -82,6 +82,8 @@ class DatasetConfig:
     # The activity will upload the generated files to the configured StoragePort so
     # the remote job can download them — without this the pod gets a 404 from S3.
     upload_to_storage: bool = False
+    # DB run ID — used to derive the canonical S3 key: workflow/{run_id}/data/train.jsonl
+    run_id: str = ""
 
 
 @dataclass
@@ -264,15 +266,24 @@ async def generate_dataset_activity(config: DatasetConfig) -> DatasetPaths:
     if config.upload_to_storage:
         # Remote backends (K8s, Kaggle, SSH, …) fetch training data from S3.
         # Upload the generated files now so the remote job can call storage.download().
+        # Use the canonical S3 path (workflow/{run_id}/data/…) so the Terraform lifecycle
+        # rule (prefix = "workflow/") covers these objects.
         storage = _get_storage()
+        if config.run_id:
+            train_s3_key = f"workflow/{config.run_id}/data/train.jsonl"
+            eval_s3_key = f"workflow/{config.run_id}/data/eval.jsonl"
+        else:
+            train_s3_key = train_path
+            eval_s3_key = eval_path
         await loop.run_in_executor(
             None,
             lambda: (
-                storage.upload(Path(train_path), train_path),
-                storage.upload(Path(eval_path), eval_path),
+                storage.upload(Path(train_path), train_s3_key),
+                storage.upload(Path(eval_path), eval_s3_key),
             ),
         )
-        log.info("Dataset uploaded to storage: train=%s eval=%s", train_path, eval_path)
+        log.info("Dataset uploaded to storage: train=%s eval=%s", train_s3_key, eval_s3_key)
+        return DatasetPaths(train=train_s3_key, eval=eval_s3_key)
 
     return DatasetPaths(train=train_path, eval=eval_path)
 
