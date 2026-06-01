@@ -261,7 +261,9 @@ def mock_storage():
 
 
 @pytest.mark.asyncio
-async def test_export_activity_uses_model_name_for_storage_key(mock_storage):
+async def test_export_activity_uses_model_name_as_filename_within_workflow_path(mock_storage):
+    # When both pipeline_run_id and model_name are set, pipeline_run_id determines the
+    # top-level prefix and model_name becomes the filename.
     with patch("domain.train.export.export"):
         result = await ENV.run(
             export_activity,
@@ -274,11 +276,12 @@ async def test_export_activity_uses_model_name_for_storage_key(mock_storage):
             ),
         )
 
-    assert result.path == "model/my-pet-v2.gguf.gz"
+    assert result.path == "workflow/r1/model/my-pet-v2.gguf.gz"
 
 
 @pytest.mark.asyncio
-async def test_export_activity_model_name_takes_precedence_over_pipeline_run_id(mock_storage):
+async def test_export_activity_pipeline_run_id_takes_precedence_with_named_model(mock_storage):
+    # pipeline_run_id always wins the prefix; model_name becomes the filename.
     with patch("domain.train.export.export"):
         result = await ENV.run(
             export_activity,
@@ -290,8 +293,7 @@ async def test_export_activity_model_name_takes_precedence_over_pipeline_run_id(
             ),
         )
 
-    assert result.path == "model/my-pet-v2.gguf.gz"
-    assert "r1" not in result.path
+    assert result.path == "workflow/r1/model/my-pet-v2.gguf.gz"
 
 
 @pytest.mark.asyncio
@@ -308,7 +310,7 @@ async def test_export_activity_uses_pipeline_run_id_for_storage_key(mock_storage
         )
 
     # The GGUFPath is the storage key returned by the activity (always .gz).
-    assert result == GGUFPath(path="workflow/r1/model.gguf.gz")
+    assert result == GGUFPath(path="workflow/r1/model/model.gguf.gz")
     # Verify upload_model was called (port contract boundary).
     mock_storage.mock_upload_model.assert_called_once()
 
@@ -326,7 +328,7 @@ async def test_export_activity_pipeline_run_id_takes_precedence_over_model_id(mo
             ),
         )
 
-    assert result.path == "workflow/run-42/model.gguf.gz"
+    assert result.path == "workflow/run-42/model/model.gguf.gz"
 
 
 @pytest.mark.asyncio
@@ -337,7 +339,7 @@ async def test_export_activity_falls_back_to_model_id_when_no_pipeline_run_id(mo
             ExportConfig(checkpoint_path="models/checkpoints", gguf_output="models/gguf/m.gguf", model_id="m"),
         )
 
-    assert result == GGUFPath(path="model/m.gguf.gz")
+    assert result == GGUFPath(path="model/m/model.gguf.gz")
     mock_storage.mock_upload_model.assert_called_once()
 
 

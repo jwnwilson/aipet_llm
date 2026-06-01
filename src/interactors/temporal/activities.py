@@ -138,13 +138,13 @@ class ExportConfig:
     run_id: str = ""           # non-empty → download checkpoint from remote before export
     remote_backend: str = ""
     model_id: str = ""         # fallback storage key when pipeline_run_id is unset
-    pipeline_run_id: str = ""  # pipeline UUID; drives storage key workflow/{id}/model.gguf
-    model_name: str = ""       # human-readable name; drives gguf/{model_name}.gguf key
+    pipeline_run_id: str = ""  # pipeline UUID; drives storage key workflow/{id}/model/{name}.gguf
+    model_name: str = ""       # human-readable name; drives model/{model_id}/{name}.gguf key
 
 
 @dataclass
 class GGUFPath:
-    path: str = ""            # storage key (e.g. "gguf/{model_id}.gguf")
+    path: str = ""            # storage key (e.g. "model/{model_id}/model.gguf")
 
 
 # ---------------------------------------------------------------------------
@@ -656,12 +656,15 @@ async def _evaluate_local(config: EvalConfig, loop: asyncio.AbstractEventLoop) -
 @activity.defn
 async def export_activity(config: ExportConfig) -> GGUFPath:
     # Determine the destination GGUF storage key upfront — shared by all paths.
-    if config.model_name:
-        gguf_key = f"model/{config.model_name}.gguf"
-    elif config.pipeline_run_id:
-        gguf_key = f"workflow/{config.pipeline_run_id}/model.gguf"
-    elif config.model_id:
-        gguf_key = f"model/{config.model_id}.gguf"
+    from adapters.storage.paths import standalone_model_key, workflow_model_key
+
+    if config.pipeline_run_id:
+        name = config.model_name or "model"
+        gguf_key = workflow_model_key(config.pipeline_run_id, name)
+    elif config.model_name or config.model_id:
+        key_id = config.model_id or config.model_name
+        name = config.model_name or "model"
+        gguf_key = standalone_model_key(key_id, name)
     else:
         gguf_key = config.gguf_output
 
