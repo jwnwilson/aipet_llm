@@ -9,9 +9,9 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from domain.models import InferenceRequest, InferenceResponse, PaginatedResponse, TrainingModel, TrainingModelConfig, UserContext
-from domain.ports import ModelStorePort
+from domain.ports import InferenceStorePort, ModelStorePort, PodLifecyclePort
 from interactors.api.auth import require_approved
-from interactors.api.deps import get_adapter, get_model_store
+from interactors.api.deps import get_adapter, get_inference_store, get_model_store, get_pod_adapter
 
 log = logging.getLogger(__name__)
 
@@ -84,11 +84,21 @@ def update_model(
 def delete_model(
     model_id: str,
     store: ModelStorePort = Depends(get_model_store),
+    inference_store: InferenceStorePort = Depends(get_inference_store),
+    pod_adapter: PodLifecyclePort = Depends(get_pod_adapter),
     user: UserContext = Depends(require_approved),
 ) -> None:
     existing = store.get(model_id)
     if existing is None or (existing.owner_id is not None and existing.owner_id != user.user_id):
         raise HTTPException(status_code=404, detail="Model not found")
+
+    for instance in inference_store.delete_by_model(model_id):
+        if instance.pod_name:
+            try:
+                pod_adapter.delete_pod(instance.pod_name, instance.pod_namespace)
+            except Exception:
+                log.warning("Could not delete pod %s for model %s — continuing", instance.pod_name, model_id)
+
     store.delete(model_id)
 
 
