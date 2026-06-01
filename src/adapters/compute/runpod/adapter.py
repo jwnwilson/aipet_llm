@@ -78,7 +78,14 @@ class RunPodTrainingAdapter(RemoteJobPort):
     def submit(self, spec: RemoteJobSpec) -> str:
         runpod = self._configure_runpod()
 
-        run_id = f"workflow/{spec.run_id}" if spec.run_id else f"workflow/{uuid.uuid4().hex}"
+        # Eval jobs always get a fresh S3 namespace so the bootstrap idempotency
+        # guard (which exits early when status.txt="done") does not fire against
+        # the training run's completed status.  The checkpoint reference travels
+        # via TRAINING_ARTIFACT_REF, not run_id.
+        if spec.job_type == "eval":
+            run_id = f"workflow/{uuid.uuid4().hex}"
+        else:
+            run_id = f"workflow/{spec.run_id}" if spec.run_id else f"workflow/{uuid.uuid4().hex}"
         staging = self._work_dir / spec.experiment_name
 
         self._stage_files(spec, staging)
