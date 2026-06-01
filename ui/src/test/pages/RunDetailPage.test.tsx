@@ -61,7 +61,7 @@ describe('RunDetailPage', () => {
     await waitFor(() => screen.getByRole('button', { name: /delete run/i }))
     await userEvent.click(screen.getByRole('button', { name: /delete run/i }))
     expect(screen.queryByText('runs-list')).not.toBeInTheDocument()
-    expect(screen.getByText(RUN_FIXTURE.workflow_id)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: RUN_FIXTURE.workflow_id })).toBeInTheDocument()
   })
 
   it('shows error message when delete fails', async () => {
@@ -208,14 +208,10 @@ describe('RunDetailPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows temporal workflow_id after expanding the panel', async () => {
+  it('shows temporal workflow_id in the expanded panel on initial render', async () => {
     renderPage(RUN_FIXTURE.id)
-    await waitFor(() => screen.getByText(RUN_FIXTURE.workflow_id))
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
-      expect(
-        screen.getByText('Temporal Run ID')
-      ).toBeInTheDocument()
+      expect(screen.getByText('Temporal Run ID')).toBeInTheDocument()
     )
   })
 })

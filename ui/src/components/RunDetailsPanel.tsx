@@ -8,6 +8,7 @@ import type { RunRecord, TemporalDetails, RunLogsResponse } from '@/types'
 interface RunDetailsPanelProps {
   runId: string
   run: RunRecord
+  datasetById?: Record<string, string>
 }
 
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -19,6 +20,42 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
       <dd className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a] break-all">
         {value}
       </dd>
+    </div>
+  )
+}
+
+function MetricsSection({ run, datasetById }: { run: RunRecord; datasetById: Record<string, string> }) {
+  return (
+    <div className="mb-4">
+      <div className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+        Metrics
+      </div>
+      <dl>
+        <DetailRow label="Run ID" value={run.id} />
+        <DetailRow label="Created" value={new Date(run.created_at).toLocaleString()} />
+        <DetailRow label="Updated" value={new Date(run.updated_at).toLocaleString()} />
+        {run.progress != null && (
+          <DetailRow label="Progress" value={`${Math.round(run.progress * 100)}%`} />
+        )}
+        {run.eval_valid_pct != null && (
+          <DetailRow label="Eval valid" value={`${Math.round(run.eval_valid_pct * 100)}%`} />
+        )}
+        {run.progress_detail && (
+          <DetailRow label="Detail" value={run.progress_detail} />
+        )}
+        {run.train_dataset_id != null && (
+          <DetailRow
+            label="Train dataset"
+            value={datasetById[run.train_dataset_id] ?? run.train_dataset_id}
+          />
+        )}
+        {run.eval_dataset_id != null && (
+          <DetailRow
+            label="Eval dataset"
+            value={datasetById[run.eval_dataset_id] ?? run.eval_dataset_id}
+          />
+        )}
+      </dl>
     </div>
   )
 }
@@ -69,8 +106,8 @@ function LogsSection({ logsData }: { logsData: RunLogsResponse }) {
   )
 }
 
-export function RunDetailsPanel({ runId, run }: RunDetailsPanelProps) {
-  const [expanded, setExpanded] = useState(false)
+export function RunDetailsPanel({ runId, run, datasetById = {} }: RunDetailsPanelProps) {
+  const [expanded, setExpanded] = useState(true)
   const isActive = isRunActive(run)
   const pollInterval = isActive ? 5000 : false
 
@@ -107,6 +144,23 @@ export function RunDetailsPanel({ runId, run }: RunDetailsPanelProps) {
 
       {expanded && (
         <div className="mt-3 pb-1">
+          <MetricsSection run={run} datasetById={datasetById} />
+
+          {run.training_config != null && Object.keys(run.training_config).length > 0 && (
+            <div className="mb-4">
+              <div className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+                Run configuration
+              </div>
+              <dl>
+                {Object.entries(run.training_config)
+                  .filter(([, v]) => v != null)
+                  .map(([k, v]) => (
+                    <DetailRow key={k} label={k.replace(/_/g, ' ')} value={String(v)} />
+                  ))}
+              </dl>
+            </div>
+          )}
+
           {temporalError && (
             <p className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#7f1d1d] mb-3">
               Failed to load workflow details

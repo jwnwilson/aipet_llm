@@ -19,35 +19,41 @@ function renderPanel(runOverride: Partial<typeof RUN_FIXTURE> = {}) {
   )
 }
 
-describe('RunDetailsPanel — collapsed state', () => {
+describe('RunDetailsPanel — initial expanded state', () => {
   it('renders the toggle button with "Stage details" label', () => {
     renderPanel()
     expect(screen.getByRole('button', { name: /stage details/i })).toBeInTheDocument()
   })
 
-  it('does not show temporal or log content when collapsed', () => {
+  it('shows metrics immediately on render', () => {
     renderPanel()
-    expect(screen.queryByText(/workflow id/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/no logs captured/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/run id/i)).toBeInTheDocument()
+    expect(screen.getByText(/created/i)).toBeInTheDocument()
   })
 
-  it('does not fetch from the network when collapsed', () => {
-    let temporalCalled = false
-    server.use(
-      http.get('http://localhost:8000/api/runs/:id/temporal', () => {
-        temporalCalled = true
-        return HttpResponse.json(TEMPORAL_DETAILS_FIXTURE)
-      })
-    )
+  it('shows live log section for an active (running) run without any interaction', async () => {
     renderPanel()
-    expect(temporalCalled).toBe(false)
+    await waitFor(() =>
+      expect(screen.getByText(/training logs — live/i)).toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.getByText(/test-log-line/i)).toBeInTheDocument()
+    )
+  })
+})
+
+describe('RunDetailsPanel — collapsed state', () => {
+  it('does not show temporal or log content after collapsing', async () => {
+    renderPanel()
+    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
+    expect(screen.queryByText(/workflow id/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/no logs captured/i)).not.toBeInTheDocument()
   })
 })
 
 describe('RunDetailsPanel — expanded state', () => {
-  it('shows temporal workflow details after toggle', async () => {
+  it('shows temporal workflow details on initial render', async () => {
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).toBeInTheDocument()
     )
@@ -55,22 +61,8 @@ describe('RunDetailsPanel — expanded state', () => {
     expect(screen.getByText('RUNNING')).toBeInTheDocument()
   })
 
-  it('shows live log section for an active (running) run', async () => {
-    // RUN_FIXTURE.status = 'running' → isActive=true → live stream section shown
-    renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
-    await waitFor(() =>
-      expect(screen.getByText(/training logs — live/i)).toBeInTheDocument()
-    )
-    // Fetch-based stream receives data from MSW handler
-    await waitFor(() =>
-      expect(screen.getByText(/test-log-line/i)).toBeInTheDocument()
-    )
-  })
-
   it('shows static log content for a completed run when logs exist', async () => {
     renderPanel({ status: 'completed' })
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(/epoch 1\/3/)).toBeInTheDocument()
     )
@@ -85,21 +77,23 @@ describe('RunDetailsPanel — expanded state', () => {
       })
     )
     renderPanel({ status: 'completed' })
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(/no logs captured/i)).toBeInTheDocument()
     )
   })
 
-  it('collapses again on second toggle', async () => {
+  it('collapses on first toggle and expands again on second', async () => {
     renderPanel()
     const button = screen.getByRole('button', { name: /stage details/i })
-    await userEvent.click(button)
     await waitFor(() =>
       expect(screen.getByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).toBeInTheDocument()
     )
     await userEvent.click(button)
     expect(screen.queryByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).not.toBeInTheDocument()
+    await userEvent.click(button)
+    await waitFor(() =>
+      expect(screen.getByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).toBeInTheDocument()
+    )
   })
 
   it('shows error message when temporal fetch fails', async () => {
@@ -109,7 +103,6 @@ describe('RunDetailsPanel — expanded state', () => {
       )
     )
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(/failed to load workflow details/i)).toBeInTheDocument()
     )
@@ -117,46 +110,44 @@ describe('RunDetailsPanel — expanded state', () => {
 })
 
 describe('RunDetailsPanel — accessibility', () => {
-  it('has aria-expanded=false on initial render', () => {
+  it('has aria-expanded=true on initial render', () => {
     renderPanel()
-    expect(screen.getByRole('button', { name: /stage details/i })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    )
-  })
-
-  it('sets aria-expanded=true after expanding', async () => {
-    renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     expect(screen.getByRole('button', { name: /stage details/i })).toHaveAttribute(
       'aria-expanded',
       'true'
     )
   })
 
-  it('sets aria-expanded back to false after collapsing', async () => {
+  it('sets aria-expanded=false after collapsing', async () => {
+    renderPanel()
+    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
+    expect(screen.getByRole('button', { name: /stage details/i })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    )
+  })
+
+  it('sets aria-expanded back to true after expanding again', async () => {
     renderPanel()
     const button = screen.getByRole('button', { name: /stage details/i })
     await userEvent.click(button)
     await userEvent.click(button)
-    expect(button).toHaveAttribute('aria-expanded', 'false')
+    expect(button).toHaveAttribute('aria-expanded', 'true')
   })
 })
 
 describe('RunDetailsPanel — temporal data display', () => {
-  it('renders the "Started" row when start_time is present', async () => {
+  it('renders the temporal "Started" row when start_time is present', async () => {
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).toBeInTheDocument()
     )
-    expect(screen.getByText(/started/i)).toBeInTheDocument()
+    expect(screen.getByText('Started')).toBeInTheDocument()
   })
 
   it('does not render "Finished" row when close_time is null', async () => {
     // TEMPORAL_DETAILS_FIXTURE has close_time: null
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() =>
       expect(screen.getByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).toBeInTheDocument()
     )
@@ -176,14 +167,12 @@ describe('RunDetailsPanel — temporal data display', () => {
       })
     )
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() => expect(screen.getByText(/finished/i)).toBeInTheDocument())
   })
 })
 
 describe('RunDetailsPanel — loading state', () => {
-  it('shows only the toggle button while data is loading', async () => {
-    // Delay responses so we can inspect the loading state
+  it('shows only the metrics and toggle button while temporal data is loading', async () => {
     server.use(
       http.get('http://localhost:8000/api/runs/:id/temporal', async () => {
         await new Promise(resolve => setTimeout(resolve, 5000))
@@ -195,11 +184,9 @@ describe('RunDetailsPanel — loading state', () => {
       })
     )
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
-    // Queries are in-flight — no content yet
+    // Queries are in-flight — temporal workflow ID not yet in DOM
     expect(screen.queryByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).not.toBeInTheDocument()
     expect(screen.queryByText(/epoch 1\/3/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/no logs captured/i)).not.toBeInTheDocument()
     // Button is still accessible
     expect(screen.getByRole('button', { name: /stage details/i })).toBeInTheDocument()
   })
@@ -213,12 +200,9 @@ describe('RunDetailsPanel — logs error handling', () => {
       )
     )
     renderPanel()
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
-    // Temporal data still loads fine
     await waitFor(() =>
       expect(screen.getByText(TEMPORAL_DETAILS_FIXTURE.workflow_id)).toBeInTheDocument()
     )
-    // No logs-specific error message shown
     expect(screen.queryByText(/failed to load.*log/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/no logs captured/i)).not.toBeInTheDocument()
   })
@@ -236,11 +220,8 @@ describe('RunDetailsPanel — polling', () => {
         return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
       })
     )
-    // Render with a completed run — isRunActive returns false → refetchInterval: false
     renderPanel({ status: 'completed' })
-    await userEvent.click(screen.getByRole('button', { name: /stage details/i }))
     await waitFor(() => expect(callCount).toBe(1))
-    // Count stays at 1 — no background polling
     await new Promise(resolve => setTimeout(resolve, 200))
     expect(callCount).toBe(1)
   })
