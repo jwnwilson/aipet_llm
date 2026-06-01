@@ -457,15 +457,23 @@ def main() -> None:
                 )
                 if del_resp.status_code == 204:
                     print("OK — inference instance deleted\n")
+                elif del_resp.status_code == 409:
+                    # Instance not yet stopped (e.g. pod still active) — the model delete
+                    # below will cascade-delete this record and tear down the pod.
+                    print(
+                        "WARN: inference delete returned 409 (instance not stopped)"
+                        " — model delete will cascade-clean this record",
+                        file=sys.stderr,
+                    )
                 else:
                     print(
                         f"WARN: inference delete returned {del_resp.status_code}"
-                        " — manual cleanup may be needed",
+                        " — model delete will cascade-clean this record",
                         file=sys.stderr,
                     )
             except Exception as exc:
                 print(
-                    f"WARN: inference cleanup raised {exc} — manual cleanup may be needed",
+                    f"WARN: inference cleanup raised {exc} — model delete will cascade-clean",
                     file=sys.stderr,
                 )
 

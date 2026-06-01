@@ -65,6 +65,11 @@ class ExportRequest(BaseModel):
     remote_run_id: str = ""
 
 
+class RunLogsResponse(BaseModel):
+    logs: str | None
+    source: str | None
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics response schemas
 # ---------------------------------------------------------------------------
@@ -141,6 +146,71 @@ def get_run_evaluation(
     )
 
 
+@router.get("/{run_id}/logs", response_model=RunLogsResponse)
+def get_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> RunLogsResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = _log_path_for_run(run_id)
+    if not log_path.exists():
+        return RunLogsResponse(logs=None, source=None)
+
+    return RunLogsResponse(logs=log_path.read_text(), source="local")
+
+
+@router.get("/{run_id}/logs/stream")
+async def stream_run_logs(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> StreamingResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    log_path = _log_path_for_run(run_id)
+
+    async def _event_generator():
+        sent_bytes = 0
+        while True:
+            current_run = run_store.get(run_id)
+            is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
+
+            if log_path.exists():
+                with open(log_path, "rb") as f:
+                    f.seek(sent_bytes)
+                    chunk = f.read()
+                if chunk:
+                    sent_bytes += len(chunk)
+                    new_text = chunk.decode("utf-8", errors="replace")
+                    for line in new_text.splitlines():
+                        yield f"data: {line}\n\n"
+
+            if is_terminal:
+                yield "event: done\ndata: stream closed\n\n"
+                return
+
+            try:
+                await asyncio.sleep(1.0)
+            except asyncio.CancelledError:
+                return
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.delete("/{run_id}", status_code=204)
 def delete_run(
     run_id: str,
@@ -163,6 +233,8 @@ _CANCELLABLE_STATUSES = frozenset({
     RunStatus.EXPORTING,
     RunStatus.RUNNING,
 })
+
+_TERMINAL_STATUSES = frozenset({RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED})
 
 
 @router.post("/{run_id}/cancel", status_code=204)
@@ -463,7 +535,8 @@ def activate_run(
         )
 
     from adapters.inference import LlamaCppInferenceAdapter
-    from adapters.storage import LocalStorageAdapter
+    from adapters.storage import LocalStorageAdapter, download_model
+    from adapters.storage.paths import workflow_model_key
     from interactors.api.deps import configure
     from interactors.temporal.activities import _get_storage
 
@@ -472,10 +545,10 @@ def activate_run(
     except RuntimeError:
         storage = LocalStorageAdapter()
 
-    gguf_key = f"workflow/{run_id}/model.gguf"
+    gguf_key = workflow_model_key(run_id)
     local_path = Path(f"data/workflow/{run_id}/model.gguf")
     try:
-        storage.download(gguf_key, local_path)
+        download_model(storage, gguf_key, local_path)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to load run model from storage: {exc}") from exc
 

@@ -58,6 +58,11 @@ export interface RunRecord {
   updated_at: string
 }
 
+export interface RunLogsResponse {
+  logs: string | null
+  source: string | null
+}
+
 export type DatasetType = 'train' | 'eval'
 
 export interface Dataset {

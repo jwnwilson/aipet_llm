@@ -126,3 +126,46 @@ class TestS3StorageAdapterReadText:
             {"Error": {"Code": "NoSuchKey", "Message": "Not found"}}, "GetObject"
         )
         assert adapter.read_text("runpod/run-1/status.txt") == ""
+
+
+class TestS3StorageAdapterDeleteDirectory:
+    def test_calls_delete_objects_with_correct_payload(self, tmp_path):
+        adapter, s3 = _make_adapter(tmp_path)
+        s3.get_paginator.return_value.paginate.return_value = iter([
+            {"Contents": [
+                {"Key": "workflow/abc/checkpoint/config.json"},
+                {"Key": "workflow/abc/checkpoint/model.safetensors"},
+            ]}
+        ])
+
+        adapter.delete_directory("workflow/abc/checkpoint/")
+
+        s3.delete_objects.assert_called_once_with(
+            Bucket="test-bucket",
+            Delete={
+                "Objects": [
+                    {"Key": "workflow/abc/checkpoint/config.json"},
+                    {"Key": "workflow/abc/checkpoint/model.safetensors"},
+                ],
+                "Quiet": True,
+            },
+        )
+
+    def test_silent_when_prefix_empty(self, tmp_path):
+        adapter, s3 = _make_adapter(tmp_path)
+        s3.get_paginator.return_value.paginate.return_value = iter([{"Contents": []}])
+
+        adapter.delete_directory("workflow/nonexistent/checkpoint/")  # must not raise
+
+        s3.delete_objects.assert_not_called()
+
+    def test_handles_multiple_pages(self, tmp_path):
+        adapter, s3 = _make_adapter(tmp_path)
+        s3.get_paginator.return_value.paginate.return_value = iter([
+            {"Contents": [{"Key": "workflow/abc/checkpoint/config.json"}]},
+            {"Contents": [{"Key": "workflow/abc/checkpoint/model.safetensors"}]},
+        ])
+
+        adapter.delete_directory("workflow/abc/checkpoint/")
+
+        assert s3.delete_objects.call_count == 2

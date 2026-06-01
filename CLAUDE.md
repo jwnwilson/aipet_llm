@@ -61,8 +61,9 @@ All compute backends share a single S3 bucket with these canonical namespaces:
 
 | Prefix | Contents |
 |--------|----------|
-| `workflow/{run_id}/` | Per-run artefacts: `status.txt`, `progress.json`, `logs.txt`, `checkpoint/`, `data/train.jsonl`, `data/eval.jsonl`, `bootstrap.py`, `model.gguf` |
-| `model/{model_id}.gguf` | Named GGUF exports addressable by model name or ID |
+| `workflow/{run_id}/` | Per-run artefacts: `status.txt`, `progress.json`, `logs.txt`, `checkpoint/`, `data/train.jsonl`, `data/eval.jsonl`, `bootstrap.py` |
+| `workflow/{run_id}/model/{model_name}.gguf` | GGUF produced by a training workflow (default name: `model`) |
+| `model/{model_id}/{model_name}.gguf` | Named GGUF exports addressable by model ID (default name: `model`) |
 | `dataset/{dataset_id}/` | Shared reusable datasets (`train.jsonl`, `eval.jsonl`) |
 
 `run_id` is always a full UUID hex string (e.g. `workflow/a3f1...`). Adapters **must not** prefix it with their backend name (`runpod/`, `vastai/`, etc.) — this ensures artefacts are identical regardless of which compute backend ran the job.

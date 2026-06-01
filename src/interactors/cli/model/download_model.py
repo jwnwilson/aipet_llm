@@ -51,26 +51,34 @@ def main(argv: list[str] | None = None) -> None:
         print(f"ERROR: missing environment variable {exc}", file=sys.stderr)
         sys.exit(1)
 
-    gz_path = dest.parent / (dest.name + ".gz")
     dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest.parent / (dest.name + ".tmp")
 
-    print(f"Downloading s3://<bucket>/{args.s3_key} → {gz_path}")
+    print(f"Downloading s3://<bucket>/{args.s3_key} → {tmp_path}")
     try:
-        storage.download(args.s3_key, gz_path)
+        storage.download(args.s3_key, tmp_path)
     except Exception as exc:
         print(f"ERROR: download failed — {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Decompressing → {dest}")
-    try:
-        with gzip.open(gz_path, "rb") as f_in, open(dest, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
-    except Exception as exc:
-        print(f"ERROR: decompression failed — {exc}", file=sys.stderr)
-        gz_path.unlink(missing_ok=True)
-        sys.exit(1)
-    finally:
-        gz_path.unlink(missing_ok=True)
+    # Detect gzip by magic bytes so both .gguf and .gguf.gz keys work.
+    with open(tmp_path, "rb") as f:
+        magic = f.read(2)
+
+    if magic == b"\x1f\x8b":
+        print(f"Decompressing (gzip) → {dest}")
+        try:
+            with gzip.open(tmp_path, "rb") as f_in, open(dest, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        except Exception as exc:
+            print(f"ERROR: decompression failed — {exc}", file=sys.stderr)
+            tmp_path.unlink(missing_ok=True)
+            sys.exit(1)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    else:
+        print(f"Not gzip-compressed, moving → {dest}")
+        shutil.move(str(tmp_path), dest)
 
     size_mb = dest.stat().st_size / (1024 * 1024)
     print(f"Done. {dest} ({size_mb:.1f} MB)")

@@ -300,3 +300,43 @@ class TestStoragePortUploadDirectory:
             restored = dest / rel
             assert restored.exists(), f"Missing after roundtrip: {rel}"
             assert restored.read_bytes() == content, f"Content mismatch for {rel}"
+
+
+# ---------------------------------------------------------------------------
+# LocalStorageAdapter — delete_directory
+# ---------------------------------------------------------------------------
+
+
+class TestLocalStorageAdapterDeleteDirectory:
+    def test_deletes_all_files_under_prefix(self, tmp_path: Path) -> None:
+        base = tmp_path / "store"
+        target = base / "workflow" / "abc" / "checkpoint"
+        target.mkdir(parents=True)
+        (target / "config.json").write_bytes(b"{}")
+        (target / "model.safetensors").write_bytes(b"weights")
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.delete_directory("workflow/abc/checkpoint/")
+
+        assert not target.exists()
+
+    def test_silent_when_prefix_absent(self, tmp_path: Path) -> None:
+        base = tmp_path / "store"
+        base.mkdir()
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.delete_directory("workflow/nonexistent/checkpoint/")  # must not raise
+
+    def test_does_not_delete_sibling_directories(self, tmp_path: Path) -> None:
+        base = tmp_path / "store"
+        keep = base / "workflow" / "abc" / "data"
+        keep.mkdir(parents=True)
+        (keep / "train.jsonl").write_bytes(b"data")
+        delete_me = base / "workflow" / "abc" / "checkpoint"
+        delete_me.mkdir(parents=True)
+        (delete_me / "config.json").write_bytes(b"{}")
+
+        adapter = LocalStorageAdapter(base_dir=base)
+        adapter.delete_directory("workflow/abc/checkpoint/")
+
+        assert not delete_me.exists()
+        assert (keep / "train.jsonl").exists()

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from domain.models import RemoteTrainConfig
+from domain.models import EvalJobSpec, RemoteTrainConfig
 
 
 def _config(**kwargs) -> RemoteTrainConfig:
@@ -88,6 +88,36 @@ class TestRunPodAdapterSubmit:
         assert write_calls[pod_id_key] == b"pod-abc123"
 
 
+    def test_eval_submit_does_not_reuse_training_run_id(self, monkeypatch, tmp_path):
+        # Eval jobs must get a fresh run_id so the bootstrap idempotency guard
+        # (which exits immediately when status.txt="done") doesn't fire against
+        # the training run's completed status.
+        adapter, s3 = _make_adapter(monkeypatch, tmp_path)
+        training_run_id = "41688c29-09f8-4af0-b92e-291d76bcfa4d"
+
+        monkeypatch.setattr(adapter, "_stage_files", lambda config, staging: staging.mkdir(parents=True, exist_ok=True))
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda staging, run_id, config: None)
+
+        mock_runpod = MagicMock()
+        mock_runpod.create_pod.return_value = {"id": "pod-eval-123"}
+        import sys
+        sys.modules["runpod"] = mock_runpod
+
+        spec = EvalJobSpec(
+            experiment_name="eval-test",
+            training_artifact_ref=f"workflow/{training_run_id}",
+            eval_data="workflow/abc/data/eval.jsonl",
+            run_id=training_run_id,
+        )
+        eval_run_id = adapter.submit(spec)
+
+        assert eval_run_id.startswith("workflow/")
+        assert eval_run_id != f"workflow/{training_run_id}", (
+            "Eval job must not reuse the training run_id — doing so causes the "
+            "bootstrap idempotency guard to self-terminate before eval runs."
+        )
+
+
 class TestRunPodAdapterStatus:
     def test_returns_status_from_storage(self, monkeypatch, tmp_path):
         adapter, storage = _make_adapter(monkeypatch, tmp_path)
@@ -132,6 +162,18 @@ class TestRunPodAdapterDownload:
             "workflow/test-exp-aabbcc/checkpoint/", dest
         )
         assert result == str(dest)
+
+    def test_download_eval_job_returns_eval_results_json_path(self, monkeypatch, tmp_path):
+        adapter, mock_storage = _make_adapter(monkeypatch, tmp_path)
+        mock_storage.read_text.return_value = "eval"  # job_type.txt = "eval"
+
+        dest = tmp_path / "output"
+        result = adapter.download("workflow/eval-uuid-abc", dest)
+
+        mock_storage.download.assert_called_once_with(
+            "workflow/eval-uuid-abc/eval_results.json", dest / "eval_results.json"
+        )
+        assert result == str(dest / "eval_results.json")
 
     def test_build_pod_env_includes_data_keys(self, monkeypatch, tmp_path):
         adapter, _ = _make_adapter(monkeypatch, tmp_path)
