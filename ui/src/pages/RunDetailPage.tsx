@@ -118,21 +118,18 @@ export function RunDetailPage() {
     <div className="ed-page max-w-4xl">
       <Link
         to="/runs"
-        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-5"
+        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-3"
       >
         <ArrowLeft className="h-3 w-3" />
         Back to runs
       </Link>
 
-      <header className="mb-8">
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
-          Run · {run.id.slice(0, 8)}
-        </div>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="min-w-0">
-            <h1 className="font-['DM_Serif_Display'] text-[2rem] leading-tight text-[#1a1a1a] mb-3 break-all">
-              {run.workflow_id}
-            </h1>
+      <header className="mb-4">
+        <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] shrink-0">
+              Run · {run.id.slice(0, 8)}
+            </span>
             <RunStatusBadge status={run.status} />
           </div>
           <div className="flex gap-2 shrink-0">
@@ -146,6 +143,9 @@ export function RunDetailPage() {
             </Button>
           </div>
         </div>
+        <h1 className="font-['DM_Serif_Display'] text-[1.75rem] leading-tight text-[#1a1a1a] break-all">
+          {run.workflow_id}
+        </h1>
       </header>
 
       {(cancelMutation.isError || deleteMutation.isError) && (
@@ -157,9 +157,9 @@ export function RunDetailPage() {
       )}
 
       {/* Pipeline */}
-      <section className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] px-8 py-6 mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-5">
-          Pipeline stages
+      <section className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] px-5 py-4 mb-6">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+          Pipeline
         </div>
         <PipelineStages stages={buildStages(run.status)} />
         <RunDetailsPanel runId={runId!} run={run} datasetById={datasetById} />
