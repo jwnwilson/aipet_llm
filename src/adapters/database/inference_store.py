@@ -143,6 +143,17 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
             s.refresh(row)
             return _row_to_domain(row)
 
+    def delete_by_model(self, model_id: str) -> int:
+        with self._session() as s:
+            rows = s.scalars(
+                sa_select(_InferenceInstanceRow).where(_InferenceInstanceRow.model_id == model_id)
+            ).all()
+            count = len(rows)
+            for row in rows:
+                s.delete(row)
+            s.commit()
+            return count
+
     def update_last_used(self, id: str) -> InferenceInstance | None:
         with self._session() as s:
             row = s.get(_InferenceInstanceRow, id)
