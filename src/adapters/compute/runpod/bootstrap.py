@@ -73,10 +73,20 @@ def main() -> None:
     s3 = _s3()
     print(f"[bootstrap] run_id={RUN_ID}  bucket={BUCKET}", flush=True)
 
+    # Log non-secret env vars to help diagnose startup failures.
+    _MASK = {"AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "RUNPOD_API_KEY"}
+    env_dump = "  ".join(
+        f"{k}={'***' if k in _MASK else v}"
+        for k, v in sorted(os.environ.items())
+        if k.startswith(("AWS_", "RUNPOD_", "JOB_TYPE", "RUN_ID", "TRAINING_", "EVAL_", "MODEL", "EPOCHS", "STORAGE_"))
+    )
+    print(f"[bootstrap] env: {env_dump}", flush=True)
+
     # ── Idempotency guard ────────────────────────────────────────────────────
     # If the pod was restarted after a completed run, terminate immediately
     # rather than overwriting the finished status and re-running the job.
     existing_status = _read_existing_status(s3)
+    print(f"[bootstrap] existing status.txt={existing_status!r}", flush=True)
     if existing_status in ("done", "failed"):
         print(
             f"[bootstrap] run already {existing_status}"

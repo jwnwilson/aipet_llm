@@ -1,14 +1,16 @@
 # TODO
 
-## Validate Inference
-- Add test to load a small model and validate inference is working, currently tests only check for a response from inference which will defaut to IDLE if it fails.
+## Fixes
+- Fix runpod eval
+    - Test run pod eval locally
+- Fix log streaming
+- Improve worker performance
+- improve run details design
+- Fix E2E tests to avoid breaking the platform
 
 ## UI improvements
-- Setup BE / FE consistent pagination for all listing compnents
-    - Good potential fully ai job 
 - Need better logging visibility and progress visualisation on ui.
     - Logs need to stream to UI.
-- Group inference under a model and version the different inferences to see the latest inferences for each model
 - After triggering a model run re-direct to run in the UI.
 
 ## AI productivity gains
