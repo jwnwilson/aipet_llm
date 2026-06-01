@@ -88,6 +88,44 @@ class TestRunPodAdapterSubmit:
         assert write_calls[pod_id_key] == b"pod-abc123"
 
 
+    def _submit_eval(self, monkeypatch, tmp_path, **env_overrides):
+        """Run submit() with an EvalJobSpec; return create_pod call kwargs."""
+        adapter, _ = _make_adapter(monkeypatch, tmp_path)
+        for k, v in env_overrides.items():
+            monkeypatch.setenv(k, v)
+        monkeypatch.setattr(adapter, "_stage_files", lambda c, s: s.mkdir(parents=True, exist_ok=True))
+        monkeypatch.setattr(adapter, "_upload_staged_files", lambda s, r, c: None)
+        mock_runpod = MagicMock()
+        mock_runpod.create_pod.return_value = {"id": "pod-eval-x"}
+        import sys
+        sys.modules["runpod"] = mock_runpod
+        spec = EvalJobSpec(
+            experiment_name="eval-img-test",
+            training_artifact_ref="workflow/abc",
+            eval_data="workflow/abc/data/eval.jsonl",
+        )
+        adapter.submit(spec)
+        return mock_runpod.create_pod.call_args.kwargs
+
+    def test_eval_uses_runpod_eval_image_when_set(self, monkeypatch, tmp_path):
+        kwargs = self._submit_eval(monkeypatch, tmp_path, RUNPOD_EVAL_IMAGE="my-eval-image:latest")
+        assert kwargs["image_name"] == "my-eval-image:latest"
+
+    def test_eval_falls_back_to_runpod_image_when_eval_image_unset(self, monkeypatch, tmp_path):
+        kwargs = self._submit_eval(monkeypatch, tmp_path, RUNPOD_IMAGE="my-train-image:latest")
+        assert kwargs["image_name"] == "my-train-image:latest"
+
+    def test_eval_sets_training_deps_preinstalled_when_image_configured(self, monkeypatch, tmp_path):
+        kwargs = self._submit_eval(monkeypatch, tmp_path, RUNPOD_EVAL_IMAGE="my-eval-image:latest")
+        assert kwargs["env"].get("TRAINING_DEPS_PREINSTALLED") == "1"
+
+    def test_eval_does_not_set_training_deps_preinstalled_on_default_image(self, monkeypatch, tmp_path):
+        # No RUNPOD_EVAL_IMAGE or RUNPOD_IMAGE set — vanilla image, must pip-install deps.
+        monkeypatch.delenv("RUNPOD_EVAL_IMAGE", raising=False)
+        monkeypatch.delenv("RUNPOD_IMAGE", raising=False)
+        kwargs = self._submit_eval(monkeypatch, tmp_path)
+        assert "TRAINING_DEPS_PREINSTALLED" not in kwargs["env"]
+
     def test_eval_submit_does_not_reuse_training_run_id(self, monkeypatch, tmp_path):
         # Eval jobs must get a fresh run_id so the bootstrap idempotency guard
         # (which exits immediately when status.txt="done") doesn't fire against
