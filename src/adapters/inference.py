@@ -93,7 +93,7 @@ class LlamaCppInferenceAdapter(InferencePort):
             n_ctx=self._context_size,
             n_threads=n_threads,
             n_batch=512,
-            use_mlock=True,   # pin model in RAM, prevent swap on RPi
+            use_mlock=False,
             verbose=True,
         )
 
