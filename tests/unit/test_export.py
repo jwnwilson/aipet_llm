@@ -10,7 +10,11 @@ import pytest
 from domain.train.export import _ensure_tokenizer_files
 
 
-def _make_tokenizer_json(checkpoint: Path, merges: list[str] | None = None, vocab: dict | None = None) -> None:
+def _make_tokenizer_json(
+    checkpoint: Path,
+    merges: list[str] | list[list[str]] | None = None,
+    vocab: dict | None = None,
+) -> None:
     if merges is None:
         merges = ["Ġ t", "h e", "Ġt he", "i n", "in g"]
     if vocab is None:
@@ -37,14 +41,25 @@ class TestEnsureTokenizerFiles:
         assert merges_file.exists(), "merges.txt not created"
         assert vocab_file.exists(), "vocab.json not created"
 
-    def test_merges_content_matches_tokenizer_json(self, tmp_path: Path) -> None:
-        merges = ["Ġ t", "h e", "Ġt he"]
-        _make_tokenizer_json(tmp_path, merges=merges)
+    @pytest.mark.parametrize(
+        "merges_input, expected_lines",
+        [
+            # slow-tokenizer format: list of space-separated strings
+            (["Ġ t", "h e", "Ġt he"], ["Ġ t", "h e", "Ġt he"]),
+            # fast-tokenizer format (e.g. SmolLM): list of two-element lists
+            ([["Ġ", "t"], ["h", "e"], ["Ġt", "he"]], ["Ġ t", "h e", "Ġt he"]),
+        ],
+        ids=["strings", "list-of-lists"],
+    )
+    def test_merges_content_matches_tokenizer_json(
+        self, tmp_path: Path, merges_input: list, expected_lines: list[str]
+    ) -> None:
+        _make_tokenizer_json(tmp_path, merges=merges_input)
 
         _ensure_tokenizer_files(tmp_path)
 
         written = (tmp_path / "merges.txt").read_text().splitlines()
-        assert written == merges
+        assert written == expected_lines
 
     def test_vocab_content_matches_tokenizer_json(self, tmp_path: Path) -> None:
         vocab = {"<|endoftext|>": 0, "hello": 1, "world": 2}
@@ -97,6 +112,16 @@ class TestEnsureTokenizerFiles:
 
         assert (tmp_path / "vocab.json").read_text() == '{"existing": 0}'
         assert (tmp_path / "merges.txt").exists()
+
+    def test_merges_as_list_of_lists_is_handled(self, tmp_path: Path) -> None:
+        # HuggingFace fast tokenizers (e.g. SmolLM) store merges as [["Ġ", "t"], ...]
+        merges = [["Ġ", "t"], ["h", "e"], ["Ġt", "he"]]
+        _make_tokenizer_json(tmp_path, merges=merges)
+
+        _ensure_tokenizer_files(tmp_path)
+
+        written = (tmp_path / "merges.txt").read_text().splitlines()
+        assert written == ["Ġ t", "h e", "Ġt he"]
 
     def test_no_op_when_merges_empty_in_tokenizer_json(self, tmp_path: Path) -> None:
         _make_tokenizer_json(tmp_path, merges=[])
