@@ -19,6 +19,9 @@ from domain.ports import RemoteJobPort, StoragePort, SubmitRetryConfig
 
 _DEFAULT_GPU = "NVIDIA GeForce RTX 3090"
 _DEFAULT_IMAGE = "pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel"
+# Eval only needs transformers + boto3; a slimmer image starts faster.
+# Set RUNPOD_EVAL_IMAGE to override; falls back to RUNPOD_IMAGE, then _DEFAULT_IMAGE.
+_DEFAULT_EVAL_IMAGE = _DEFAULT_IMAGE
 
 # Fetcher script: downloads bootstrap.py from S3 and exec()s it.
 # Base64-encoded because RunPod's SDK embeds docker_args directly into a
@@ -95,9 +98,14 @@ class RunPodTrainingAdapter(RemoteJobPort):
         self._storage.write_bytes(f"{run_id}/backend.txt", b"runpod")
         self._storage.write_bytes(f"{run_id}/job_type.txt", spec.job_type.encode())
 
+        if isinstance(spec, EvalJobSpec):
+            image = os.getenv("RUNPOD_EVAL_IMAGE", os.getenv("RUNPOD_IMAGE", _DEFAULT_EVAL_IMAGE))
+        else:
+            image = os.getenv("RUNPOD_IMAGE", _DEFAULT_IMAGE)
+
         pod = runpod.create_pod(
             name=spec.experiment_name[:63],
-            image_name=os.getenv("RUNPOD_IMAGE", _DEFAULT_IMAGE),
+            image_name=image,
             gpu_type_id=os.getenv("RUNPOD_GPU_TYPE_ID", _DEFAULT_GPU),
             container_disk_in_gb=50,
             docker_args=(
@@ -224,6 +232,10 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 "TRAINING_ARTIFACT_REF": spec.training_artifact_ref,
                 "EVAL_DATA_S3_KEY": spec.eval_data,
             }
+            # If a prebuilt eval/training image is configured, deps are already
+            # present — tell bootstrap.py to skip the slow pip install.
+            if os.getenv("RUNPOD_EVAL_IMAGE") or os.getenv("RUNPOD_IMAGE"):
+                env["TRAINING_DEPS_PREINSTALLED"] = "1"
         return env
 
     def _terminate_pod(self, run_id: str) -> None:
@@ -260,7 +272,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 shutil.copy2(jsonl, staging / jsonl.name)
 
             if not staged:
-                if not (spec.train_data.startswith("datasets/") or spec.train_data.startswith("workflow/")):
+                if not (spec.train_data.startswith("dataset/") or spec.train_data.startswith("datasets/") or spec.train_data.startswith("workflow/")):
                     raise ValueError(
                         f"No local training data at {train_data.parent} and "
                         f"'{spec.train_data}' is not a recognised S3 key. "
