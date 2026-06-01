@@ -91,3 +91,35 @@ module "dns" {
   ui_cf_domain     = module.s3_ui.cloudfront_domain
   create_ui_record = true
 }
+
+# ── ML artifact bucket lifecycle — reduces storage costs ──────────────────
+# The bucket was created manually; use a data source to attach lifecycle rules
+# without importing or recreating it.
+data "aws_s3_bucket" "ml_artifacts" {
+  bucket = var.s3_bucket
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "ml_artifacts" {
+  bucket = data.aws_s3_bucket.ml_artifacts.id
+
+  rule {
+    id     = "expire-workflow-artifacts"
+    status = "Enabled"
+    filter { prefix = "workflow/" }
+    expiration { days = 30 }
+  }
+
+  rule {
+    id     = "expire-datasets"
+    status = "Enabled"
+    filter { prefix = "dataset/" }
+    expiration { days = 90 }
+  }
+
+  rule {
+    id     = "abort-incomplete-multipart"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload { days_after_initiation = 3 }
+  }
+}

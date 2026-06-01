@@ -13,7 +13,7 @@ variable "repo_name" {
 variable "image_retention_count" {
   description = "Number of tagged images to retain before expiring older ones"
   type        = number
-  default     = 10
+  default     = 5
 }
 
 variable "github_repo" {

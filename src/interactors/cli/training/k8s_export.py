@@ -104,6 +104,14 @@ def run() -> None:
     storage.upload(gguf_output, gguf_s3_key)
     log.info("Export complete → %s", gguf_s3_key)
 
+    # Delete checkpoint from S3 — multi-GB, no longer needed after GGUF export
+    try:
+        storage.delete_directory(checkpoint_prefix)
+        log.info("Checkpoint deleted  prefix=%s", checkpoint_prefix)
+    except Exception as exc:
+        # Cleanup failure must not fail the export — GGUF is already uploaded
+        log.warning("Checkpoint cleanup failed  prefix=%s  error=%s", checkpoint_prefix, exc)
+
 
 if __name__ == "__main__":
     run()

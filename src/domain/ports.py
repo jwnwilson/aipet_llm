@@ -80,6 +80,15 @@ class StoragePort(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement download_directory")
 
+    def delete_directory(self, prefix: str) -> None:
+        """Delete all objects whose key starts with ``prefix``.
+
+        ``prefix`` should end with ``/`` (e.g. ``workflow/{run_id}/checkpoint/``).
+        Silent no-op if no objects match. Override in adapters that support prefix
+        deletion. Raises ``NotImplementedError`` on adapters that do not.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement delete_directory")
+
     def upload_directory(self, local_dir: Path, prefix: str) -> None:
         """Upload all files under ``local_dir`` to storage, keyed as ``{prefix}/{relative_path}``.
 
