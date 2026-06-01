@@ -22,8 +22,7 @@ function fmt(iso: string) {
 }
 
 function TruncId({ id }: { id: string }) {
-  const display = id.length > 22 ? `${id.slice(0, 9)}…${id.slice(-5)}` : id
-  return <span title={id} className="block truncate">{display}</span>
+  return <span title={id} className="block truncate">{id}</span>
 }
 
 function ProgressBar({ value }: { value: number }) {
@@ -84,6 +83,9 @@ function MetricsSection({ run, datasetById }: { run: RunRecord; datasetById: Rec
 
   return (
     <div>
+      <GridGroup cols={1}>
+        <MetricCell label="Run ID" value={run.id} />
+      </GridGroup>
       <GridGroup cols={4}>
         <MetricCell label="Created" value={fmt(run.created_at)} />
         <MetricCell label="Updated" value={fmt(run.updated_at)} />
@@ -200,7 +202,7 @@ export function RunDetailsPanel({ runId, run, datasetById = {} }: RunDetailsPane
           ? <ChevronUp className="h-3 w-3" aria-hidden />
           : <ChevronDown className="h-3 w-3" aria-hidden />
         }
-        Details
+        Stage details
       </button>
 
       {expanded && (
