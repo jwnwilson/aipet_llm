@@ -2,12 +2,14 @@ import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
-import { cancelRun, deleteRun, getRunEvaluation, getRun, isRunActive, isRunCancellable } from '@/api/runs'
+import { cancelRun, deleteRun, getRunEvaluation, getRun, getRunLogs, isRunActive, isRunCancellable } from '@/api/runs'
 import { listDatasets } from '@/api/datasets'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
 import { EvalMetrics } from '@/components/EvalMetrics'
+import { RunLogViewer } from '@/components/RunLogViewer'
 import { Button } from '@/components/ui/button'
+import { useLogStream } from '@/hooks/useLogStream'
 import type { PipelineStage, StageStatus } from '@/components/PipelineStages'
 import type { RunStatus } from '@/types'
 
@@ -95,6 +97,17 @@ export function RunDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['runs', runId] })
     },
   })
+
+  const runIsActive = run != null && isRunActive(run)
+  const { lines } = useLogStream(runId!, runIsActive)
+
+  const { data: logsData } = useQuery({
+    queryKey: ['runs', runId, 'logs'],
+    queryFn: () => getRunLogs(runId!),
+    enabled: run != null && !runIsActive,
+  })
+
+  const logContent = runIsActive ? lines.join('\n') : (logsData?.logs ?? '')
 
   function handleDelete() {
     if (window.confirm('Delete this run? This cannot be undone.')) {
@@ -211,6 +224,14 @@ export function RunDetailPage() {
             />
           )}
         </dl>
+      </section>
+
+      <hr className="ed-rule" />
+      <section className="mb-10">
+        <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">
+          Workflow logs
+        </h2>
+        <RunLogViewer logs={logContent} />
       </section>
 
       {run.training_config && Object.keys(run.training_config).length > 0 && (
