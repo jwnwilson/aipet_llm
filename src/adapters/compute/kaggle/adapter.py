@@ -118,7 +118,11 @@ class KaggleTrainingAdapter(RemoteJobPort):
             [_kaggle_bin(), "kernels", "output", run_id, "-p", str(dest)],
             check=True,
         )
-        # remote_worker writes to /kaggle/working/checkpoint/
+        # Eval jobs: remote worker writes eval_result.json — return it directly.
+        for result_file in sorted(dest.rglob("eval_result.json")):
+            if result_file.is_file():
+                return str(result_file)
+        # Train jobs: remote_worker writes to /kaggle/working/checkpoint/
         # kaggle kernels output preserves the path structure
         for checkpoint_dir in sorted(dest.rglob("checkpoint")):
             if checkpoint_dir.is_dir():
