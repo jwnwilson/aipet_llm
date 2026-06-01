@@ -579,19 +579,27 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
     )
 
     poll_hb = asyncio.ensure_future(_heartbeat_loop("eval_poll", interval=30))
+    poll_start = loop.time()
+    last_logs: str = ""
     try:
         while True:
             status = await loop.run_in_executor(None, lambda: adapter.status(eval_run_id))
             logs = await loop.run_in_executor(None, lambda: adapter.logs(eval_run_id))
-            activity.heartbeat({"status": status, "eval_run_id": eval_run_id})
-            if logs:
-                activity.logger.info("Remote eval output:\n%s", logs)
+            elapsed = loop.time() - poll_start
+            activity.heartbeat({"status": status, "eval_run_id": eval_run_id, "elapsed_s": int(elapsed)})
+            activity.logger.info(
+                "Remote eval poll: backend=%s eval_run_id=%s status=%s elapsed=%ds",
+                config.remote_backend, eval_run_id, status, int(elapsed),
+            )
+            if logs and logs != last_logs:
+                activity.logger.info("Remote eval output (eval_run_id=%s):\n%s", eval_run_id, logs)
+                last_logs = logs
             if status == "done":
                 break
             if status == "failed":
                 raise ApplicationError(
                     f"Remote eval failed (backend={config.remote_backend}, "
-                    f"eval_run_id={eval_run_id})\n{logs}"
+                    f"eval_run_id={eval_run_id}, elapsed={int(elapsed)}s)\n{logs}"
                 )
             await asyncio.sleep(30)
     finally:

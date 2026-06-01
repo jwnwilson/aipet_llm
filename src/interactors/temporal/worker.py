@@ -58,8 +58,8 @@ async def main() -> None:
     temporal_host = os.environ.get("TEMPORAL_HOST", "localhost:7233")
     client = await Client.connect(temporal_host)
 
-    worker = Worker(
-        client,
+    worker_count = int(os.environ.get("TEMPORAL_WORKER_COUNT", "2"))
+    worker_kwargs = dict(
         task_queue=TASK_QUEUE,
         workflows=[TrainingPipelineWorkflow, EvaluateWorkflow, ExportWorkflow],
         activities=[
@@ -75,8 +75,10 @@ async def main() -> None:
             create_inference_activity,
         ],
     )
+    workers = [Worker(client, **worker_kwargs) for _ in range(worker_count)]
 
-    logging.getLogger(__name__).info("Worker started — task_queue=%s  host=%s", TASK_QUEUE, temporal_host)
+    log = logging.getLogger(__name__)
+    log.info("Worker started — task_queue=%s  host=%s", TASK_QUEUE, temporal_host)
     await worker.run()
 
 

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000'
+import { getAuthToken } from '@/api/client'
 
 interface UseLogStreamResult {
   lines: string[]
@@ -13,18 +12,54 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
     if (!active) return
 
     setLines([])
-    const es = new EventSource(`${API_BASE}/api/runs/${runId}/logs/stream`)
+    const controller = new AbortController()
 
-    es.onmessage = (e: MessageEvent<string>) => {
-      setLines(prev => [...prev, e.data])
+    async function stream() {
+      const token = await getAuthToken()
+      const headers: Record<string, string> = {}
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      let res: Response
+      try {
+        res = await fetch(`/api/runs/${runId}/logs/stream`, {
+          headers,
+          signal: controller.signal,
+        })
+      } catch {
+        return
+      }
+      if (!res.ok || !res.body) return
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const parts = buffer.split('\n\n')
+          buffer = parts.pop() ?? ''
+          for (const part of parts) {
+            if (part.includes('event: done')) {
+              return
+            }
+            const match = part.match(/^data: (.*)$/m)
+            if (match) {
+              setLines(prev => [...prev, match[1]])
+            }
+          }
+        }
+      } finally {
+        reader.cancel()
+      }
     }
 
-    es.addEventListener('done', () => {
-      es.close()
-    })
+    stream().catch(() => {})
 
     return () => {
-      es.close()
+      controller.abort()
     }
   }, [runId, active])
 

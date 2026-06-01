@@ -36,7 +36,9 @@ describe('RunDetailsPanel — initial expanded state', () => {
     await waitFor(() =>
       expect(screen.getByText(/training logs — live/i)).toBeInTheDocument()
     )
-    expect(screen.getByText(/waiting for output/i)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByText(/test-log-line/i)).toBeInTheDocument()
+    )
   })
 })
 
