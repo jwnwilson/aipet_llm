@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from domain.models import ExportJobSpec, RemoteJobSpec, TrainJobSpec
+from domain.models import EvalJobSpec, ExportJobSpec, RemoteJobSpec, TrainJobSpec
 from domain.ports import PodLifecyclePort, RemoteJobPort, StoragePort
 
 # Import kubernetes at module level so tests can patch it cleanly.
@@ -23,6 +23,7 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 _JOB_ANNOTATION = "llm-api/run-id"
+_JOB_TYPE_ANNOTATION = "llm-api/job-type"
 
 
 def _aws_secret_env(region: str) -> list:
@@ -337,6 +338,8 @@ class K8sTrainingAdapter(RemoteJobPort):
             return self._submit_train(spec)
         if isinstance(spec, ExportJobSpec):
             return self._submit_export(spec)
+        if isinstance(spec, EvalJobSpec):
+            return self._submit_eval(spec)
         raise NotImplementedError(
             f"K8sTrainingAdapter does not support job_type={spec.job_type!r}"
         )
@@ -398,6 +401,7 @@ class K8sTrainingAdapter(RemoteJobPort):
         labels: dict,
         memory_request: str = "4Gi",
         memory_limit: str = "8Gi",
+        job_type: str = "train",
     ) -> None:
         """Create a namespaced batch/v1 Job with standard settings."""
         pull_secret = os.environ.get("K8S_IMAGE_PULL_SECRET", "ecr-credentials")
@@ -405,7 +409,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             metadata=k8s_client.V1ObjectMeta(
                 name=job_name,
                 namespace=self._namespace,
-                annotations={_JOB_ANNOTATION: run_id},
+                annotations={_JOB_ANNOTATION: run_id, _JOB_TYPE_ANNOTATION: job_type},
                 labels=labels,
             ),
             spec=k8s_client.V1JobSpec(
@@ -464,6 +468,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             command=["python", "-m", "interactors.cli.training.remote_worker"],
             env=env,
             labels={"app": "llm-training"},
+            job_type="train",
         )
         log.info("Created k8s training Job: %s (run_id=%s)", job_name, run_id)
         return job_name
@@ -506,9 +511,9 @@ class K8sTrainingAdapter(RemoteJobPort):
             command=["python", "-m", "interactors.cli.training.k8s_export"],
             env=env,
             labels={"app": "llm-export"},
-            # Export is CPU-bound (llama.cpp quantisation); 8 GB is sufficient.
             memory_request="4Gi",
             memory_limit="8Gi",
+            job_type="export",
         )
         log.info(
             "Created k8s export Job: %s (run_id=%s, gguf_key=%s)",
@@ -516,6 +521,32 @@ class K8sTrainingAdapter(RemoteJobPort):
             run_id,
             config.gguf_s3_key,
         )
+        return job_name
+
+    def _submit_eval(self, spec: EvalJobSpec) -> str:
+        job_name = f"eval-{uuid.uuid4().hex[:12]}"
+        run_id = spec.run_id
+        region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+
+        env = [
+            k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
+            k8s_client.V1EnvVar(name="TRAINING_ARTIFACT_REF", value=spec.training_artifact_ref),
+            k8s_client.V1EnvVar(name="EVAL_DATA_S3_KEY", value=spec.eval_data),
+            *_aws_secret_env(region),
+        ]
+
+        self._create_job(
+            job_name=job_name,
+            run_id=run_id,
+            image=self._training_image,
+            command=["python", "-m", "interactors.cli.training.k8s_eval"],
+            env=env,
+            labels={"app": "llm-eval"},
+            memory_request="4Gi",
+            memory_limit="8Gi",
+            job_type="eval",
+        )
+        log.info("Created k8s eval Job: %s (run_id=%s)", job_name, run_id)
         return job_name
 
     def status(self, run_id: str) -> Literal["pending", "running", "done", "failed"]:
@@ -551,9 +582,29 @@ class K8sTrainingAdapter(RemoteJobPort):
             return ""
 
     def download(self, run_id: str, dest: Path) -> str:
-        """Download checkpoint directory from S3 into dest via StoragePort."""
-        run_id = self._run_id(run_id)
-        prefix = f"workflow/{run_id}/checkpoint/"
+        """Download job artifacts from S3 into dest via StoragePort.
+
+        For eval jobs: downloads eval_results.json.
+        For train/export jobs: downloads the checkpoint directory.
+        """
+        job = self._batch.read_namespaced_job(name=run_id, namespace=self._namespace)
+        annotations = job.metadata.annotations or {}
+        db_run_id = annotations.get(_JOB_ANNOTATION)
+        if not db_run_id:
+            raise RuntimeError(
+                f"Job {run_id!r} is missing annotation {_JOB_ANNOTATION!r}. "
+                "It may not have been created by K8sTrainingAdapter."
+            )
+        job_type = annotations.get(_JOB_TYPE_ANNOTATION, "train")
+
+        if job_type == "eval":
+            dest.mkdir(parents=True, exist_ok=True)
+            result_dest = dest / "eval_results.json"
+            self._storage.download(f"workflow/{db_run_id}/eval_results.json", result_dest)
+            log.info("Eval results downloaded to %s", result_dest)
+            return str(result_dest)
+
+        prefix = f"workflow/{db_run_id}/checkpoint/"
         self._storage.download_directory(prefix, dest)
         log.info("Checkpoint downloaded to %s", dest)
         return str(dest)

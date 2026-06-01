@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from domain.models import RemoteTrainConfig
+from domain.models import EvalJobSpec, RemoteTrainConfig
 
 
 _CONFIG = RemoteTrainConfig(
@@ -120,6 +120,73 @@ def test_submit_passes_s3_key_prefix_matching_workflow_prefix(adapter):
     s3_prefix_calls = [c for c in env_var_calls if c.kwargs.get("name") == "S3_KEY_PREFIX"]
     assert s3_prefix_calls, "V1EnvVar(name='S3_KEY_PREFIX') must be passed to the container"
     assert s3_prefix_calls[0].kwargs["value"] == "workflow/db-run-id-123"
+
+
+_EVAL_SPEC = EvalJobSpec(
+    experiment_name="eval-run-123",
+    training_artifact_ref="workflow/train-run-abc",
+    eval_data="workflow/train-run-abc/data/eval.jsonl",
+    run_id="eval-run-123",
+)
+
+
+def test_submit_eval_creates_job(adapter):
+    with patch("adapters.compute.k8s.adapter.k8s_client") as mock_k8s:
+        mock_k8s.V1Job.return_value = MagicMock()
+        mock_k8s.V1ObjectMeta.return_value = MagicMock()
+        mock_k8s.V1EnvVar.side_effect = (
+            lambda name, value=None, value_from=None: MagicMock(env_name=name, env_value=value)
+        )
+        adapter._batch.create_namespaced_job.return_value = MagicMock()
+        job_name = adapter.submit(_EVAL_SPEC)
+
+    assert job_name.startswith("eval-")
+    adapter._batch.create_namespaced_job.assert_called_once()
+
+    meta_call = mock_k8s.V1ObjectMeta.call_args
+    assert meta_call.kwargs["annotations"]["llm-api/run-id"] == "eval-run-123"
+    assert meta_call.kwargs["annotations"]["llm-api/job-type"] == "eval"
+
+    container_call = mock_k8s.V1Container.call_args
+    assert container_call.kwargs["command"] == [
+        "python", "-m", "interactors.cli.training.k8s_eval"
+    ]
+
+    env_names = {c.kwargs.get("name") for c in mock_k8s.V1EnvVar.call_args_list}
+    assert "TRAINING_ARTIFACT_REF" in env_names
+    assert "EVAL_DATA_S3_KEY" in env_names
+
+
+def test_download_eval_fetches_results_json(adapter, tmp_path):
+    job_meta = MagicMock()
+    job_meta.metadata.annotations = {
+        "llm-api/run-id": "eval-run-123",
+        "llm-api/job-type": "eval",
+    }
+    adapter._batch.read_namespaced_job.return_value = job_meta
+
+    result = adapter.download("eval-abc123", tmp_path)
+
+    adapter._storage.download.assert_called_once_with(
+        "workflow/eval-run-123/eval_results.json",
+        tmp_path / "eval_results.json",
+    )
+    adapter._storage.download_directory.assert_not_called()
+    assert result == str(tmp_path / "eval_results.json")
+
+
+def test_download_train_job_defaults_to_checkpoint(adapter, tmp_path):
+    # Jobs without llm-api/job-type annotation default to "train" (backwards compat).
+    job_meta = MagicMock()
+    job_meta.metadata.annotations = {"llm-api/run-id": "db-run-id-123"}
+    adapter._batch.read_namespaced_job.return_value = job_meta
+
+    result = adapter.download("train-abc", tmp_path)
+
+    adapter._storage.download_directory.assert_called_once_with(
+        "workflow/db-run-id-123/checkpoint/", tmp_path
+    )
+    assert result == str(tmp_path)
 
 
 # ---------------------------------------------------------------------------
