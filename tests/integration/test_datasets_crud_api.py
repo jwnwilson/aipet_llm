@@ -101,8 +101,8 @@ class TestCreateDataset:
             files={"file": ("data.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
         )
         key = storage.upload.call_args[0][1]
-        assert key.startswith("datasets/")
-        assert key.endswith(".jsonl")
+        assert key.startswith("dataset/")
+        assert key.endswith("/train.jsonl")
 
     @pytest.mark.asyncio
     async def test_empty_file_returns_400(self, client):

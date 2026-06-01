@@ -68,10 +68,11 @@ async def test_generate_dataset_activity_raises_on_exception():
 
 @pytest.mark.asyncio
 async def test_generate_dataset_uploads_files_to_storage_when_flag_is_set(tmp_path, monkeypatch):
-    """When upload_to_storage=True, generated train and eval files are uploaded to the storage port.
+    """When upload_to_storage=True with a run_id, files are uploaded to the canonical
+    workflow/{run_id}/data/ S3 path so the Terraform lifecycle rule covers them.
 
-    Regression for: K8s pod 404 — dataset generated locally but never uploaded to S3 before
-    the training job is submitted (data/workflow/{run_id}/train.jsonl missing in S3).
+    Regression for: K8s pod 404 — dataset generated locally but uploaded to a non-canonical
+    path (data/workflow/{run_id}/…) that didn't match the Terraform lifecycle prefix.
     """
     import interactors.temporal.activities as acts
 
@@ -80,6 +81,7 @@ async def test_generate_dataset_uploads_files_to_storage_when_flag_is_set(tmp_pa
     monkeypatch.chdir(tmp_path)
 
     data_dir = "data/workflow/run-abc123"
+    run_id = "run-abc123"
     (tmp_path / data_dir).mkdir(parents=True)
     (tmp_path / data_dir / "train.jsonl").write_text('{"action": "IDLE"}\n')
     (tmp_path / data_dir / "eval.jsonl").write_text('{"action": "IDLE"}\n')
@@ -87,21 +89,21 @@ async def test_generate_dataset_uploads_files_to_storage_when_flag_is_set(tmp_pa
     with patch("domain.train.dataset.generate", return_value=True):
         result = await ENV.run(
             generate_dataset_activity,
-            DatasetConfig(data_dir=data_dir, upload_to_storage=True),
+            DatasetConfig(data_dir=data_dir, upload_to_storage=True, run_id=run_id),
         )
 
     # Both files must be uploaded so the remote K8s pod can download them from S3.
-    # Without this upload, the pod receives a 404 when calling storage.download().
     assert mock_storage.upload.call_count == 2, (
         "Expected two upload() calls (train + eval) — "
         "without this the K8s pod gets a 404 from S3"
     )
     uploaded_keys = [call.args[1] for call in mock_storage.upload.call_args_list]
-    assert f"{data_dir}/train.jsonl" in uploaded_keys
-    assert f"{data_dir}/eval.jsonl" in uploaded_keys
-    # Returned DatasetPaths are unchanged — same relative paths are used as S3 keys by the pod
-    assert result.train == f"{data_dir}/train.jsonl"
-    assert result.eval == f"{data_dir}/eval.jsonl"
+    # Canonical S3 keys — covered by the workflow/ Terraform lifecycle rule.
+    assert f"workflow/{run_id}/data/train.jsonl" in uploaded_keys
+    assert f"workflow/{run_id}/data/eval.jsonl" in uploaded_keys
+    # Returned DatasetPaths use the S3 keys so the remote pod can download them.
+    assert result.train == f"workflow/{run_id}/data/train.jsonl"
+    assert result.eval == f"workflow/{run_id}/data/eval.jsonl"
 
 
 @pytest.mark.asyncio
@@ -929,15 +931,15 @@ class TestResolveTrainingData:
         monkeypatch.setattr(acts, "_storage", mock_storage)
 
         config = TrainConfig(
-            train_data="datasets/abc123.jsonl",
-            eval_data="datasets/eval.jsonl",
+            train_data="dataset/abc123/train.jsonl",
+            eval_data="dataset/abc123/eval.jsonl",
             remote_backend="kaggle",
         )
         loop = asyncio.get_event_loop()
         train_out, eval_out = await acts._resolve_training_data(config, loop)
 
-        assert train_out == "datasets/abc123.jsonl"
-        assert eval_out == "datasets/eval.jsonl"
+        assert train_out == "dataset/abc123/train.jsonl"
+        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
@@ -953,7 +955,7 @@ class TestResolveTrainingData:
         monkeypatch.chdir(tmp_path)
 
         config = TrainConfig(
-            train_data="datasets/abc123.jsonl",
+            train_data="dataset/abc123/train.jsonl",
             eval_data="",
             remote_backend="kaggle",
         )
@@ -961,7 +963,7 @@ class TestResolveTrainingData:
         _, eval_out = await acts._resolve_training_data(config, loop)
 
         # Kaggle is S3-backed — keys are passed through; eval key is derived from train parent
-        assert eval_out == "datasets/eval.jsonl"
+        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1002,15 +1004,15 @@ class TestResolveTrainingData:
         monkeypatch.chdir(tmp_path)
 
         config = TrainConfig(
-            train_data="datasets/abc123.jsonl",
-            eval_data="datasets/eval.jsonl",
+            train_data="dataset/abc123/train.jsonl",
+            eval_data="dataset/abc123/eval.jsonl",
             remote_backend="k8s",
         )
         loop = asyncio.get_event_loop()
         train_out, eval_out = await acts._resolve_training_data(config, loop)
 
-        assert train_out == "datasets/abc123.jsonl"
-        assert eval_out == "datasets/eval.jsonl"
+        assert train_out == "dataset/abc123/train.jsonl"
+        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1024,15 +1026,15 @@ class TestResolveTrainingData:
         monkeypatch.chdir(tmp_path)
 
         config = TrainConfig(
-            train_data="datasets/abc123.jsonl",
-            eval_data="datasets/eval.jsonl",
+            train_data="dataset/abc123/train.jsonl",
+            eval_data="dataset/abc123/eval.jsonl",
             remote_backend="runpod",
         )
         loop = asyncio.get_event_loop()
         train_out, eval_out = await acts._resolve_training_data(config, loop)
 
-        assert train_out == "datasets/abc123.jsonl"
-        assert eval_out == "datasets/eval.jsonl"
+        assert train_out == "dataset/abc123/train.jsonl"
+        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
 

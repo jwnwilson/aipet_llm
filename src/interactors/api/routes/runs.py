@@ -424,7 +424,11 @@ async def trigger_run(
     # Remote backends cannot fall back to a local data dir — require an explicit
     # dataset when skip_generate=True and train_data is a local-only default path.
     if remote_backend and skip_generate and body.train_dataset_id is None:
-        is_s3_key = train_data.startswith("datasets/") or train_data.startswith("workflow/")
+        is_s3_key = (
+            train_data.startswith("dataset/")
+            or train_data.startswith("datasets/")
+            or train_data.startswith("workflow/")
+        )
         if not is_s3_key:
             raise HTTPException(
                 status_code=422,
