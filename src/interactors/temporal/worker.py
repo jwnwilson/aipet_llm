@@ -78,8 +78,8 @@ async def main() -> None:
     workers = [Worker(client, **worker_kwargs) for _ in range(worker_count)]
 
     log = logging.getLogger(__name__)
-    log.info("Starting %d worker(s) — task_queue=%s  host=%s", worker_count, TASK_QUEUE, temporal_host)
-    await asyncio.gather(*[w.run() for w in workers])
+    log.info("Worker started — task_queue=%s  host=%s", TASK_QUEUE, temporal_host)
+    await worker.run()
 
 
 if __name__ == "__main__":
