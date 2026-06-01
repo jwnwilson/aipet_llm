@@ -92,15 +92,13 @@ def delete_model(
     if existing is None or (existing.owner_id is not None and existing.owner_id != user.user_id):
         raise HTTPException(status_code=404, detail="Model not found")
 
-    # Best-effort pod teardown before removing DB records.
-    for instance in inference_store.list(model_id=model_id):
+    for instance in inference_store.delete_by_model(model_id):
         if instance.pod_name:
             try:
                 pod_adapter.delete_pod(instance.pod_name, instance.pod_namespace)
             except Exception:
                 log.warning("Could not delete pod %s for model %s — continuing", instance.pod_name, model_id)
 
-    inference_store.delete_by_model(model_id)
     store.delete(model_id)
 
 
