@@ -35,12 +35,17 @@ log = logging.getLogger(__name__)
 
 
 def _flush_logs_to_s3(storage, prefix: str) -> None:
-    """Upload buffered log output to S3 as ``{prefix}/logs.txt`` (best-effort)."""
+    """Append buffered log output to S3 as ``{prefix}/logs.txt`` (best-effort).
+
+    Reads existing content first so this job's logs accumulate after any
+    previous phase logs (e.g. training logs written by the Temporal activity).
+    """
     if not prefix or _log_stream is None:
         return
     try:
-        content = _log_stream.getvalue().encode()
-        storage.write_bytes(f"{prefix}/logs.txt", content)
+        new_content = _log_stream.getvalue().encode()
+        existing = storage.read_bytes_from(f"{prefix}/logs.txt", 0)
+        storage.write_bytes(f"{prefix}/logs.txt", existing + new_content)
     except Exception as exc:  # noqa: BLE001
         log.warning("failed to flush logs to S3: %s", exc)
 

@@ -7,6 +7,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from temporalio import activity
@@ -65,6 +66,23 @@ def _get_storage() -> StoragePort:
     if _storage is None:
         raise RuntimeError("StoragePort has not been configured in activities.")
     return _storage
+
+
+def _build_log_prefix(run_id: str, section_name: str) -> str:
+    """Read existing S3 log content once and return a cached prefix with a section separator.
+
+    Called once before each activity's polling loop. Every subsequent write in the loop
+    becomes write_bytes(key, (prefix + latest_cumulative_logs).encode()), so the file
+    grows monotonically and the streaming endpoint's byte-range offset tracking works.
+    """
+    log_key = f"workflow/{run_id}/logs.txt"
+    try:
+        existing = _get_storage().read_text(log_key)
+    except Exception:
+        existing = ""
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    sep = f"\n{'=' * 80}\n=== {section_name} — Started {ts} ===\n{'=' * 80}\n\n"
+    return existing + sep
 
 
 # ---------------------------------------------------------------------------
@@ -466,6 +484,9 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
     started_at = time.time()
 
+    # Read existing S3 log content once so subsequent writes append rather than overwrite.
+    train_log_prefix = _build_log_prefix(config.run_id, "TRAINING") if config.run_id else ""
+
     # Background heartbeat keeps the activity alive while executor calls block.
     # status() + logs() can take >2 min on slow VastAI/S3 paths; without this
     # the heartbeat_timeout fires before the inline heartbeat arrives.
@@ -495,7 +516,7 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
             if logs and config.run_id:
                 try:
-                    _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", logs.encode())
+                    _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", (train_log_prefix + logs).encode())
                 except Exception:
                     log.warning("Failed to persist training logs for run %s", config.run_id)
 
@@ -587,6 +608,9 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
         "Remote eval submitted: backend=%s eval_run_id=%s", config.remote_backend, eval_run_id
     )
 
+    # Read existing S3 log content once so eval logs append after training logs.
+    eval_log_prefix = _build_log_prefix(config.run_id, "EVALUATION") if config.run_id else ""
+
     poll_hb = asyncio.ensure_future(_heartbeat_loop("eval_poll", interval=30))
     poll_start = loop.time()
     last_logs: str = ""
@@ -604,7 +628,7 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
                 activity.logger.info("Remote eval output (eval_run_id=%s):\n%s", eval_run_id, logs)
                 if config.run_id:
                     try:
-                        _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", logs.encode())
+                        _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", (eval_log_prefix + logs).encode())
                     except Exception:
                         log.warning("Failed to persist eval logs for run %s", config.run_id)
                 last_logs = logs
@@ -614,7 +638,7 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
                 try:
                     final_logs = await loop.run_in_executor(None, lambda: adapter.logs(eval_run_id))
                     if final_logs and config.run_id:
-                        _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", final_logs.encode())
+                        _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", (eval_log_prefix + final_logs).encode())
                 except Exception:
                     log.warning("Failed to persist final eval logs for run %s", config.run_id)
                 break
