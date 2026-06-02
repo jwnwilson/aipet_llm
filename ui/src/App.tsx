@@ -9,6 +9,7 @@ import { RunsListPage } from './pages/RunsListPage'
 import { RunDetailPage } from './pages/RunDetailPage'
 import { DatasetsPage } from './pages/DatasetsPage'
 import { InferencePage } from './pages/InferencePage'
+import { InferenceDetailPage } from './pages/InferenceDetailPage'
 import { UsersPage } from './pages/UsersPage'
 import { TokenSync } from './components/TokenSync'
 import { AccessPending } from './components/AccessPending'
@@ -184,6 +185,7 @@ function AppContent() {
           <Route path="/runs/:runId" element={<RunDetailPage />} />
           <Route path="/datasets" element={<DatasetsPage />} />
           <Route path="/inferences" element={<InferencePage />} />
+          <Route path="/inferences/:id" element={<InferenceDetailPage />} />
           <Route path="/admin/users" element={<AdminRoute><UsersPage /></AdminRoute>} />
         </Routes>
       </main>
