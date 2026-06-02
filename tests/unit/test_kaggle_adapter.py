@@ -71,6 +71,17 @@ class TestRenderNotebook:
         assert "subprocess" in source
         assert "run_module" not in source
 
+    def test_notebook_passes_job_type_train(self, tmp_path, monkeypatch):
+        """remote_worker dispatcher requires JOB_TYPE; training notebooks must pass 'train'."""
+        adapter = _make_adapter(tmp_path, monkeypatch)
+        kernel_dir = tmp_path / "my-exp"
+        kernel_dir.mkdir()
+        adapter._render_notebook(_config(), kernel_dir, "my-exp-data")
+
+        nb = json.loads((kernel_dir / "notebook.ipynb").read_text())
+        source = "".join(nb["cells"][0]["source"])
+        assert "'JOB_TYPE': 'train'" in source
+
     def test_notebook_does_not_set_kaggle_data_dir(self, tmp_path, monkeypatch):
         """KAGGLE_DATA_DIR must not appear — training data comes from S3."""
         adapter = _make_adapter(tmp_path, monkeypatch)
