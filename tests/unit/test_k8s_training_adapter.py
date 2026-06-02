@@ -149,10 +149,12 @@ def test_submit_eval_creates_job(adapter):
 
     container_call = mock_k8s.V1Container.call_args
     assert container_call.kwargs["command"] == [
-        "python", "-m", "interactors.cli.training.k8s_eval"
+        "python", "-m", "interactors.cli.training.remote_worker"
     ]
 
     env_names = {c.kwargs.get("name") for c in mock_k8s.V1EnvVar.call_args_list}
+    assert "JOB_TYPE" in env_names
+    assert "S3_KEY_PREFIX" in env_names
     assert "TRAINING_ARTIFACT_REF" in env_names
     assert "EVAL_DATA_S3_KEY" in env_names
 

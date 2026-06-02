@@ -1,28 +1,29 @@
-"""Unit tests for k8s_export.py — checkpoint cleanup after GGUF upload."""
+"""Unit tests for the export job handler in remote_worker — checkpoint cleanup after GGUF upload."""
 from __future__ import annotations
 
-import importlib
 import shutil
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 def _run_export(monkeypatch, *, delete_raises: bool = False):
-    """Run k8s_export.run() with a mocked S3 adapter and export function.
+    """Run remote_worker.main() with JOB_TYPE=export and mocked storage/export.
 
-    Uses real /tmp paths so Path() calls in the module don't need patching.
+    Uses real /tmp paths so Path() calls in the handler don't need patching.
     Returns the mock storage object so callers can assert on it.
     """
     run_id = "unit-test-export-cleanup"
-    checkpoint_prefix = f"workflow/{run_id}/checkpoint/"
-    gguf_s3_key = f"workflow/{run_id}/model.gguf"
+    prefix = f"workflow/{run_id}"
+    checkpoint_prefix = f"{prefix}/checkpoint/"
+    gguf_s3_key = f"{prefix}/model.gguf"
     work_dir = Path(f"/tmp/export/{run_id}")
-    checkpoint_dir = work_dir / "checkpoint"
-    gguf_output = work_dir / "model.gguf"
 
     monkeypatch.setenv("RUN_ID", run_id)
+    monkeypatch.setenv("JOB_TYPE", "export")
+    monkeypatch.setenv("S3_KEY_PREFIX", prefix)
     monkeypatch.setenv("CHECKPOINT_S3_PREFIX", checkpoint_prefix)
     monkeypatch.setenv("GGUF_S3_KEY", gguf_s3_key)
     monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
@@ -42,13 +43,13 @@ def _run_export(monkeypatch, *, delete_raises: bool = False):
         output.write_bytes(b"gguf-weights")
 
     try:
+        sys.modules.pop("interactors.cli.training.remote_worker", None)
         with (
-            patch("adapters.storage.s3.S3StorageAdapter", return_value=mock_storage),
+            patch("interactors.cli.training.remote_worker._make_storage", return_value=mock_storage),
             patch("domain.train.export.export", side_effect=fake_export),
         ):
-            import interactors.cli.training.k8s_export as mod
-            importlib.reload(mod)
-            mod.run()
+            from interactors.cli.training import remote_worker
+            remote_worker.main()
     finally:
         if work_dir.exists():
             shutil.rmtree(work_dir)
@@ -65,11 +66,10 @@ class TestK8sExportCheckpointCleanup:
     def test_upload_called_before_cleanup(self, monkeypatch):
         """upload must complete before delete_directory is called."""
         call_order = []
-        mock_storage, checkpoint_prefix, gguf_s3_key = _run_export.__wrapped__ if hasattr(_run_export, "__wrapped__") else (None, None, None)
-
-        # Re-run with call tracking
         run_id = "unit-test-order"
         monkeypatch.setenv("RUN_ID", run_id)
+        monkeypatch.setenv("JOB_TYPE", "export")
+        monkeypatch.setenv("S3_KEY_PREFIX", f"workflow/{run_id}")
         monkeypatch.setenv("CHECKPOINT_S3_PREFIX", f"workflow/{run_id}/checkpoint/")
         monkeypatch.setenv("GGUF_S3_KEY", f"workflow/{run_id}/model.gguf")
         monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
@@ -90,13 +90,13 @@ class TestK8sExportCheckpointCleanup:
 
         work_dir = Path(f"/tmp/export/{run_id}")
         try:
+            sys.modules.pop("interactors.cli.training.remote_worker", None)
             with (
-                patch("adapters.storage.s3.S3StorageAdapter", return_value=mock_storage),
+                patch("interactors.cli.training.remote_worker._make_storage", return_value=mock_storage),
                 patch("domain.train.export.export", side_effect=fake_export),
             ):
-                import interactors.cli.training.k8s_export as mod
-                importlib.reload(mod)
-                mod.run()
+                from interactors.cli.training import remote_worker
+                remote_worker.main()
         finally:
             if work_dir.exists():
                 shutil.rmtree(work_dir)
@@ -107,6 +107,5 @@ class TestK8sExportCheckpointCleanup:
         """A delete_directory error must not propagate — the GGUF is already uploaded."""
         mock_storage, _, _ = _run_export(monkeypatch, delete_raises=True)
 
-        # upload was called and completed; cleanup failure did not abort
         mock_storage.upload.assert_called_once()
         mock_storage.delete_directory.assert_called_once()
