@@ -446,6 +446,7 @@ class K8sTrainingAdapter(RemoteJobPort):
         # training upload (workflow/{run_id}/checkpoint/) lands at the same
         # S3 path that export_activity uses when building checkpoint_s3_prefix.
         run_id = config.run_id or config.experiment_name
+        s3_prefix = f"workflow/{run_id}"
         region = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
 
         env = [
@@ -471,8 +472,14 @@ class K8sTrainingAdapter(RemoteJobPort):
             labels={"app": "llm-training"},
             job_type="train",
         )
-        log.info("Created k8s training Job: %s (run_id=%s)", job_name, run_id)
-        return job_name
+        # Store the K8s job name so status() / logs() can resolve it from the
+        # S3 prefix. RunPod / VastAI store pod_id.txt for the same reason.
+        self._storage.write_bytes(f"{s3_prefix}/job_name.txt", job_name.encode())
+        log.info("Created k8s training Job: %s (s3_prefix=%s)", job_name, s3_prefix)
+        # Return the S3 prefix so downstream callers (training_artifact_ref,
+        # export checkpoint_s3_prefix) point at the right location without
+        # needing to know the opaque K8s job name.
+        return s3_prefix
 
     def _submit_export(self, config: ExportJobSpec) -> str:
         """Create a GGUF-export Job using the export image (which has llama.cpp).
@@ -554,13 +561,32 @@ class K8sTrainingAdapter(RemoteJobPort):
         log.info("Created k8s eval Job: %s (run_id=%s)", job_name, run_id)
         return job_name
 
+    def _resolve_job_name(self, run_id: str) -> str:
+        """Map an S3-prefix run_id back to its K8s job name.
+
+        Training submit() now returns ``workflow/{db_run_id}`` (the S3 prefix)
+        so that training_artifact_ref resolves correctly for downstream eval/export.
+        The actual K8s job name is stored in ``{run_id}/job_name.txt`` at submit
+        time — this method reads it so status() and logs() can query the right Job.
+
+        Legacy run_ids (eval/export job names like ``eval-xxx``) don't start with
+        ``workflow/`` and are returned as-is for backwards compatibility.
+        """
+        if not run_id.startswith("workflow/"):
+            return run_id
+        try:
+            return self._storage.read_text(f"{run_id}/job_name.txt").strip()
+        except Exception:
+            return run_id
+
     def status(self, run_id: str) -> Literal["pending", "running", "done", "failed"]:
+        job_name = self._resolve_job_name(run_id)
         try:
             job = self._batch.read_namespaced_job_status(
-                name=run_id, namespace=self._namespace
+                name=job_name, namespace=self._namespace
             )
         except Exception as exc:
-            log.warning("Failed to read Job %s: %s", run_id, exc)
+            log.warning("Failed to read Job %s: %s", job_name, exc)
             return "pending"
         js = job.status
         if js.succeeded and js.succeeded > 0:
@@ -572,9 +598,10 @@ class K8sTrainingAdapter(RemoteJobPort):
         return "pending"
 
     def logs(self, run_id: str) -> str:
+        job_name = self._resolve_job_name(run_id)
         try:
             pods = self._core.list_namespaced_pod(
-                namespace=self._namespace, label_selector=f"job-name={run_id}"
+                namespace=self._namespace, label_selector=f"job-name={job_name}"
             )
             if not pods.items:
                 return ""
@@ -583,7 +610,7 @@ class K8sTrainingAdapter(RemoteJobPort):
                 name=pod_name, namespace=self._namespace, tail_lines=100
             )
         except Exception as exc:
-            log.debug("Could not fetch logs for Job %s: %s", run_id, exc)
+            log.debug("Could not fetch logs for Job %s: %s", job_name, exc)
             return ""
 
     def download(self, run_id: str, dest: Path) -> str:
