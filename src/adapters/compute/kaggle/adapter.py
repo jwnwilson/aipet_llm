@@ -422,6 +422,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "    check=True,\n",
                         "    env={\n",
                         "        **os.environ,\n",
+                        "        'JOB_TYPE': 'train',\n",
                         f"        'RUN_ID': {config.experiment_name!r},\n",
                         f"        'TRAIN_DATA_KEY': {config.train_s3_key!r},\n",
                         f"        'EVAL_DATA_KEY': {config.eval_s3_key!r},\n",
