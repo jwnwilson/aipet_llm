@@ -495,9 +495,7 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
             if logs and config.run_id:
                 try:
-                    log_path = Path(f"data/workflow/{config.run_id}/logs.txt")
-                    log_path.parent.mkdir(parents=True, exist_ok=True)
-                    log_path.write_text(logs)
+                    _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", logs.encode())
                 except Exception:
                     log.warning("Failed to persist training logs for run %s", config.run_id)
 
@@ -604,8 +602,21 @@ async def _evaluate_via_remote_job(config: EvalConfig, loop: asyncio.AbstractEve
             )
             if logs and logs != last_logs:
                 activity.logger.info("Remote eval output (eval_run_id=%s):\n%s", eval_run_id, logs)
+                if config.run_id:
+                    try:
+                        _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", logs.encode())
+                    except Exception:
+                        log.warning("Failed to persist eval logs for run %s", config.run_id)
                 last_logs = logs
             if status == "done":
+                # Final fetch: eval_script.py flushes logs.txt before writing status.txt="done",
+                # but re-fetch to capture any content that arrived in the same poll iteration.
+                try:
+                    final_logs = await loop.run_in_executor(None, lambda: adapter.logs(eval_run_id))
+                    if final_logs and config.run_id:
+                        _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", final_logs.encode())
+                except Exception:
+                    log.warning("Failed to persist final eval logs for run %s", config.run_id)
                 break
             if status == "failed":
                 raise ApplicationError(

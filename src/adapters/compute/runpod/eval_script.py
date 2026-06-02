@@ -117,9 +117,9 @@ def main() -> None:
         f"{run_id}/progress.json",
         json.dumps({"fraction": 1.0, "detail": f"done valid_pct={valid_pct:.3f}"}).encode(),
     )
-    storage.write_bytes(f"{run_id}/status.txt", b"done")
     log.info("eval run complete  run_id=%s", run_id)
     _flush_logs_to_s3(storage)
+    storage.write_bytes(f"{run_id}/status.txt", b"done")
 
 
 if __name__ == "__main__":

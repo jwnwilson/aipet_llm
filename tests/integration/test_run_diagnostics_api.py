@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,10 +9,11 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 from interactors.api.app import app
-from interactors.api.deps import get_model_store, get_run_store
+from interactors.api.deps import get_model_store, get_run_store, get_storage
 from domain.models import RunConfig, TrainingModelConfig
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.storage.local import LocalStorageAdapter
 
 
 _VALID_MODEL_CONFIG = TrainingModelConfig(
@@ -30,12 +30,18 @@ _VALID_MODEL_CONFIG = TrainingModelConfig(
 )
 
 
+@pytest.fixture
+def storage(tmp_path):
+    return LocalStorageAdapter(base_dir=tmp_path)
+
+
 @pytest_asyncio.fixture
-async def client(db_engine):
+async def client(db_engine, storage):
     model_store = SQLAlchemyModelStore(db_engine)
     run_store = SQLAlchemyRunStore(db_engine)
     app.dependency_overrides[get_model_store] = lambda: model_store
     app.dependency_overrides[get_run_store] = lambda: run_store
+    app.dependency_overrides[get_storage] = lambda: storage
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
@@ -120,8 +126,7 @@ class TestGetRunTemporal:
 
 class TestGetRunLogs:
     @pytest.mark.asyncio
-    async def test_returns_null_logs_when_no_file_exists(self, client_with_run, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+    async def test_returns_null_logs_when_no_file_exists(self, client_with_run):
         c, run = client_with_run
         resp = await c.get(f"/api/runs/{run.id}/logs")
         assert resp.status_code == 200
@@ -130,22 +135,20 @@ class TestGetRunLogs:
         assert body["source"] is None
 
     @pytest.mark.asyncio
-    async def test_returns_log_content_when_file_exists(self, client_with_run, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+    async def test_returns_log_content_when_file_exists(self, client_with_run, storage):
         c, run = client_with_run
-        log_dir = tmp_path / "data" / "workflow" / run.id
-        log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / "logs.txt").write_text("epoch 1/3  loss=0.42\nepoch 2/3  loss=0.38\n")
-
+        storage.write_bytes(
+            f"workflow/{run.id}/logs.txt",
+            b"epoch 1/3  loss=0.42\nepoch 2/3  loss=0.38\n",
+        )
         resp = await c.get(f"/api/runs/{run.id}/logs")
         assert resp.status_code == 200
         body = resp.json()
         assert "epoch 1/3" in body["logs"]
-        assert body["source"] == "local"
+        assert body["source"] == "s3"
 
     @pytest.mark.asyncio
-    async def test_returns_404_for_unknown_run(self, client, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)
+    async def test_returns_404_for_unknown_run(self, client):
         c, _, _ = client
         resp = await c.get("/api/runs/no-such-run/logs")
         assert resp.status_code == 404

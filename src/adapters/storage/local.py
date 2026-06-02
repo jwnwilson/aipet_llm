@@ -52,6 +52,15 @@ class LocalStorageAdapter(StoragePort):
             return ""
         return path.read_text(encoding=encoding)
 
+    def read_bytes_from(self, key: str, offset: int = 0) -> bytes:
+        """Read bytes from the file at ``key`` starting at ``offset``; return b"" if absent."""
+        path = self._resolve(key)
+        if not path.exists():
+            return b""
+        with open(path, "rb") as f:
+            f.seek(offset)
+            return f.read()
+
     def download_directory(self, prefix: str, dest) -> None:
         """Copy all files under base/prefix into dest, preserving relative paths."""
         import shutil

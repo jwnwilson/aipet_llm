@@ -70,6 +70,23 @@ class S3StorageAdapter(StoragePort):
             log.debug("s3 read_text not found  bucket=%s  key=%s  error=%s", self._bucket, key, exc)
             return ""
 
+    def read_bytes_from(self, key: str, offset: int = 0) -> bytes:
+        """Read bytes from ``key`` starting at ``offset`` using an S3 Range request.
+
+        Returns b"" when the key is absent, offset equals the object size
+        (InvalidRange / 416), or any other transient error occurs.
+        """
+        try:
+            kwargs: dict = {"Bucket": self._bucket, "Key": key}
+            if offset > 0:
+                kwargs["Range"] = f"bytes={offset}-"
+            data = self._s3.get_object(**kwargs)["Body"].read()
+            log.debug("s3 read_bytes_from ok  bucket=%s  key=%s  offset=%d  size=%d", self._bucket, key, offset, len(data))
+            return data
+        except Exception as exc:
+            log.debug("s3 read_bytes_from empty  bucket=%s  key=%s  offset=%d  error=%s", self._bucket, key, offset, exc)
+            return b""
+
     def download_directory(self, prefix: str, dest: Path) -> None:
         """Download all S3 objects under ``prefix`` into ``dest``, preserving relative paths.
 

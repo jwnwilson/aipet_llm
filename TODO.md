@@ -7,6 +7,7 @@
 - Improve worker performance
 - improve run details design
 - Fix E2E tests to avoid breaking the platform
+- Setup uow pattern to contain all store instead of importing each individually
 
 ## UI improvements
 - Need better logging visibility and progress visualisation on ui.

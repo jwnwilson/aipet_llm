@@ -71,6 +71,15 @@ class StoragePort(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not implement read_text")
 
+    def read_bytes_from(self, key: str, offset: int = 0) -> bytes:
+        """Read bytes from ``key`` starting at ``offset``; return b\"\" if absent or offset >= size.
+
+        Used for incremental log streaming — callers track ``offset`` themselves.
+        Override in adapters that support range reads.
+        Raises ``NotImplementedError`` on adapters that do not.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement read_bytes_from")
+
     def download_directory(self, prefix: str, dest) -> None:
         """Download all objects whose key starts with ``prefix`` into ``dest``.
 

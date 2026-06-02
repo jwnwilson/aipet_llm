@@ -1,8 +1,6 @@
 """Integration tests for run log endpoints."""
 from __future__ import annotations
 
-import pathlib
-
 import httpx
 import pytest
 import pytest_asyncio
@@ -13,9 +11,10 @@ from sqlalchemy.pool import StaticPool
 from adapters.database import Base, init_db
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.storage.local import LocalStorageAdapter
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
 from interactors.api.app import app
-from interactors.api.deps import get_model_store, get_run_store
+from interactors.api.deps import get_model_store, get_run_store, get_storage
 
 _VALID_MODEL_CONFIG = TrainingModelConfig(
     name="test-model",
@@ -31,8 +30,13 @@ _VALID_MODEL_CONFIG = TrainingModelConfig(
 )
 
 
+@pytest.fixture
+def storage(tmp_path):
+    return LocalStorageAdapter(base_dir=tmp_path)
+
+
 @pytest_asyncio.fixture
-async def client():
+async def client(storage):
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -44,6 +48,7 @@ async def client():
 
     app.dependency_overrides[get_model_store] = lambda: model_store
     app.dependency_overrides[get_run_store] = lambda: run_store
+    app.dependency_overrides[get_storage] = lambda: storage
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -52,6 +57,7 @@ async def client():
 
     app.dependency_overrides.pop(get_model_store, None)
     app.dependency_overrides.pop(get_run_store, None)
+    app.dependency_overrides.pop(get_storage, None)
 
 
 @pytest_asyncio.fixture
@@ -88,21 +94,15 @@ async def test_get_run_logs_returns_null_when_no_log_file(client, created_run_id
 
 
 @pytest.mark.asyncio
-async def test_log_stream_returns_text_event_stream(client, created_run_id) -> None:
+async def test_log_stream_returns_text_event_stream(client, created_run_id, storage) -> None:
     c, run_store = client
     # Mark run as terminal so stream closes immediately
     run_store.update_status(created_run_id, RunStatus.COMPLETED)
+    storage.write_bytes(f"workflow/{created_run_id}/logs.txt", b"hello\nworld\n")
 
-    log_file = pathlib.Path(f"data/workflow/{created_run_id}/logs.txt")
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    log_file.write_text("hello\nworld\n")
-
-    try:
-        resp = await c.get(
-            f"/api/runs/{created_run_id}/logs/stream",
-            headers={"Accept": "text/event-stream"},
-        )
-        assert resp.status_code == 200
-        assert "text/event-stream" in resp.headers["content-type"]
-    finally:
-        log_file.unlink(missing_ok=True)
+    resp = await c.get(
+        f"/api/runs/{created_run_id}/logs/stream",
+        headers={"Accept": "text/event-stream"},
+    )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
