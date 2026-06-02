@@ -452,7 +452,7 @@ class K8sTrainingAdapter(RemoteJobPort):
         env = [
             k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
             k8s_client.V1EnvVar(name="JOB_TYPE", value="train"),
-            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=s3_prefix),
+            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{run_id}"),
             k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
             k8s_client.V1EnvVar(name="TRAIN_DATA_KEY", value=config.train_data),
             k8s_client.V1EnvVar(name="EVAL_DATA_KEY", value=config.eval_data),
