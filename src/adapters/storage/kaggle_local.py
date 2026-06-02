@@ -61,6 +61,12 @@ class KaggleLocalStorageAdapter(StoragePort):
             return ""
         return path.read_text(encoding=encoding)
 
+    def read_bytes_from(self, key: str, offset: int = 0) -> bytes:
+        path = self._work_dir / key
+        if not path.exists():
+            return b""
+        return path.read_bytes()[offset:]
+
     def exists(self, key: str) -> bool:
         return (self._work_dir / key).exists()
 
