@@ -1,18 +1,17 @@
 # TODO
 
 ## Fixes
-- Fix runpod eval
-    - Test run pod eval locally
-- Fix log streaming
-- Improve worker performance
-- improve run details design
+- Improve log streaming to see everything we see in temporal
+- Add run id to inference listing and details 
+- Redirect to run after starting one from model page
+- Add link to inference from run.
 - Fix E2E tests to avoid breaking the platform
 - Setup uow pattern to contain all store instead of importing each individually
 
 ## UI improvements
 - Need better logging visibility and progress visualisation on ui.
     - Logs need to stream to UI.
-- After triggering a model run re-direct to run in the UI.
+
 
 ## AI productivity gains
 

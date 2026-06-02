@@ -9,8 +9,9 @@
 #   This image pre-builds both at image-build time so the Job container
 #   starts instantly with no build step at runtime.
 #
-# Environment variables expected at runtime (set by K8sTrainingAdapter):
-#   RUN_ID, CHECKPOINT_S3_PREFIX, GGUF_S3_KEY, QUANTIZE,
+# Environment variables expected at runtime:
+#   JOB_TYPE=export, RUN_ID, CHECKPOINT_S3_PREFIX, GGUF_S3_KEY,
+#   QUANTIZE (optional, default Q4_K_M),
 #   AWS_S3_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION
 
 # ── Stage 1: build llama.cpp binaries ──────────────────────────────────────
@@ -68,4 +69,4 @@ ENV PYTHONPATH=/app/src
 # Tells domain.train.export where to find llama.cpp tools at runtime.
 ENV LLAMA_CPP_DIR=/llama.cpp
 
-CMD ["python", "-m", "interactors.cli.training.k8s_export"]
+CMD ["python", "-m", "interactors.cli.training.remote_worker"]
