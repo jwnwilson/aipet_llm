@@ -25,7 +25,6 @@ Export optional:  QUANTIZE (default Q4_K_M), LLAMA_CPP_DIR (default /llama.cpp)
 from __future__ import annotations
 
 import io
-import json
 import logging
 import os
 import sys
@@ -84,130 +83,29 @@ def _run_train(storage, run_id: str, prefix: str) -> None:
 
 
 def _run_eval(storage, run_id: str, prefix: str) -> None:
-    """Eval handler: download checkpoint + data → evaluate() → upload results."""
-    artifact_ref = _require("TRAINING_ARTIFACT_REF")
-    eval_data_key = _require("EVAL_DATA_S3_KEY")
-
-    storage.write_bytes(f"{prefix}/status.txt", b"running")
-    storage.write_bytes(
-        f"{prefix}/progress.json",
-        json.dumps({"fraction": 0.0, "detail": "starting eval"}).encode(),
+    """Eval handler: read env vars, build config, delegate to domain.train.eval_job."""
+    from domain.train.eval_job import EvalJobConfig, run_eval
+    config = EvalJobConfig(
+        run_id=run_id,
+        storage_prefix=prefix,
+        training_artifact_ref=_require("TRAINING_ARTIFACT_REF"),
+        eval_data_key=_require("EVAL_DATA_S3_KEY"),
     )
-    log.info("eval  run_id=%s  artifact_ref=%s", run_id, artifact_ref)
-
-    # ── 1. Download checkpoint ─────────────────────────────────────────────
-    checkpoint_dir = Path(f"/tmp/eval/{run_id.replace('/', '_')}/checkpoint")
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_prefix = f"{artifact_ref}/checkpoint/"
-    log.info("downloading checkpoint  prefix=%s", checkpoint_prefix)
-    storage.download_directory(checkpoint_prefix, checkpoint_dir)
-
-    config_json = checkpoint_dir / "config.json"
-    if not config_json.exists():
-        files = list(checkpoint_dir.rglob("*"))
-        raise RuntimeError(
-            f"Checkpoint download incomplete: config.json not found in {checkpoint_dir}. "
-            f"S3 prefix used: {checkpoint_prefix!r}. "
-            f"Files present: {[str(f.relative_to(checkpoint_dir)) for f in files] or '(none)'}. "
-            "Verify TRAINING_ARTIFACT_REF matches the training run S3_KEY_PREFIX (workflow/{run_id})."
-        )
-
-    storage.write_bytes(
-        f"{prefix}/progress.json",
-        json.dumps({"fraction": 0.3, "detail": "checkpoint downloaded"}).encode(),
-    )
-
-    # ── 2. Download eval data ──────────────────────────────────────────────
-    eval_data = Path(f"/tmp/eval/{run_id.replace('/', '_')}/eval.jsonl")
-    log.info("downloading eval data  key=%s", eval_data_key)
-    storage.download(eval_data_key, eval_data)
-
-    storage.write_bytes(
-        f"{prefix}/progress.json",
-        json.dumps({"fraction": 0.5, "detail": "running eval"}).encode(),
-    )
-
-    # ── 3. Run evaluate() ─────────────────────────────────────────────────
-    from domain.train.evaluate import evaluate, infer_hf, load_hf_pipeline
-    log.info("loading HF pipeline  checkpoint=%s", checkpoint_dir)
-    pipe = load_hf_pipeline(str(checkpoint_dir))
-    try:
-        exit_code, valid_pct = evaluate(eval_data, lambda p: infer_hf(pipe, p))
-    except Exception as exc:
-        storage.write_bytes(
-            f"{prefix}/progress.json",
-            json.dumps({"fraction": 0.5, "detail": f"eval failed: {exc}"}).encode(),
-        )
-        raise
-
-    passed = exit_code == 0
-    log.info("eval complete  valid_pct=%.3f  passed=%s", valid_pct, passed)
-
-    # ── 4. Upload results ──────────────────────────────────────────────────
-    results_path = Path(f"/tmp/eval/{run_id.replace('/', '_')}/eval_results.json")
-    results_path.write_text(json.dumps({"valid_pct": valid_pct, "passed": passed}))
-    storage.upload(results_path, f"{prefix}/eval_results.json")
-
-    storage.write_bytes(
-        f"{prefix}/progress.json",
-        json.dumps({"fraction": 1.0, "detail": f"done valid_pct={valid_pct:.3f}"}).encode(),
-    )
-    storage.write_bytes(f"{prefix}/status.txt", b"done")
+    run_eval(storage, config, Path(f"/tmp/eval/{run_id.replace('/', '_')}"))
 
 
 def _run_export(storage, run_id: str, prefix: str) -> None:
-    """Export handler: download checkpoint → convert to GGUF → upload."""
-    checkpoint_s3_prefix = _require("CHECKPOINT_S3_PREFIX")
-    gguf_s3_key = _require("GGUF_S3_KEY")
-    quantize = os.environ.get("QUANTIZE", "Q4_K_M")
-    llama_cpp_dir = Path(os.environ.get("LLAMA_CPP_DIR", "/llama.cpp"))
-
-    work_dir = Path(f"/tmp/export/{run_id.replace('/', '_')}")
-    checkpoint_dir = work_dir / "checkpoint"
-    gguf_output = work_dir / "model.gguf"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
-    storage.write_bytes(f"{prefix}/status.txt", b"running")
-    log.info("export  run_id=%s  quantize=%s", run_id, quantize)
-
-    # ── 1. Download checkpoint ─────────────────────────────────────────────
-    log.info("downloading checkpoint  prefix=%s", checkpoint_s3_prefix)
-    storage.download_directory(checkpoint_s3_prefix, checkpoint_dir)
-
-    config_json = checkpoint_dir / "config.json"
-    if not config_json.exists():
-        files = list(checkpoint_dir.rglob("*"))
-        raise RuntimeError(
-            f"Checkpoint download incomplete: config.json not found in {checkpoint_dir}. "
-            f"S3 prefix used: {checkpoint_s3_prefix!r}. "
-            f"Files present: {[str(f.relative_to(checkpoint_dir)) for f in files] or '(none)'}. "
-            "Verify CHECKPOINT_S3_PREFIX matches the training job S3_KEY_PREFIX + '/checkpoint/'."
-        )
-
-    # ── 2. Export → GGUF ──────────────────────────────────────────────────
-    from domain.train.export import export as export_gguf
-    log.info("exporting  quantize=%s  llama_cpp_dir=%s", quantize, llama_cpp_dir)
-    export_gguf(
-        checkpoint=checkpoint_dir,
-        output=gguf_output,
-        quantize=quantize,
-        llama_cpp_dir=llama_cpp_dir,
+    """Export handler: read env vars, build config, delegate to domain.train.export_job."""
+    from domain.train.export_job import ExportJobConfig, run_export
+    config = ExportJobConfig(
+        run_id=run_id,
+        storage_prefix=prefix,
+        checkpoint_s3_prefix=_require("CHECKPOINT_S3_PREFIX"),
+        gguf_s3_key=_require("GGUF_S3_KEY"),
+        quantize=os.environ.get("QUANTIZE", "Q4_K_M"),
+        llama_cpp_dir=Path(os.environ.get("LLAMA_CPP_DIR", "/llama.cpp")),
     )
-    log.info("GGUF written  size=%.1f MB", gguf_output.stat().st_size / 1024 ** 2)
-
-    # ── 3. Upload GGUF ─────────────────────────────────────────────────────
-    log.info("uploading GGUF  key=%s", gguf_s3_key)
-    storage.upload(gguf_output, gguf_s3_key)
-
-    # ── 4. Cleanup checkpoint from S3 (best-effort) ────────────────────────
-    try:
-        storage.delete_directory(checkpoint_s3_prefix)
-        log.info("checkpoint deleted  prefix=%s", checkpoint_s3_prefix)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("checkpoint cleanup failed  prefix=%s  error=%s", checkpoint_s3_prefix, exc)
-
-    log.info("export complete  key=%s", gguf_s3_key)
-    storage.write_bytes(f"{prefix}/status.txt", b"done")
+    run_export(storage, config, Path(f"/tmp/export/{run_id.replace('/', '_')}"))
 
 
 _HANDLERS = {
