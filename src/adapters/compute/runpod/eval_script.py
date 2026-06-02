@@ -45,11 +45,17 @@ def _flush_logs_to_s3(storage) -> None:
 def main() -> None:
     global _log_stream
 
-    # Attach an in-memory log handler so we can ship logs to S3.
+    # Attach handlers: stderr for RunPod console visibility, StringIO for S3 upload.
     _log_stream = io.StringIO()
+    _fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s  %(message)s")
     _mem_handler = logging.StreamHandler(_log_stream)
-    _mem_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s  %(message)s"))
-    logging.getLogger().addHandler(_mem_handler)
+    _mem_handler.setFormatter(_fmt)
+    _stderr_handler = logging.StreamHandler(sys.stderr)
+    _stderr_handler.setFormatter(_fmt)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(_mem_handler)
+    root.addHandler(_stderr_handler)
 
     bucket = os.environ["AWS_S3_BUCKET"]
     run_id = os.environ["RUN_ID"]
