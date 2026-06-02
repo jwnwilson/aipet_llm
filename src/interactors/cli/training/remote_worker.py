@@ -27,16 +27,27 @@ Optional env vars:
 """
 from __future__ import annotations
 
+import io
 import logging
 import os
 import sys
 from pathlib import Path
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s  %(message)s",
-)
+# Module-level log buffer: set up in main() so _flush_logs_to_s3 can read it.
+_log_stream: io.StringIO | None = None
+
 log = logging.getLogger(__name__)
+
+
+def _flush_logs_to_s3(storage, prefix: str) -> None:
+    """Upload buffered log output to S3 as ``{prefix}/logs.txt`` (best-effort)."""
+    if not prefix or _log_stream is None:
+        return
+    try:
+        content = _log_stream.getvalue().encode()
+        storage.write_bytes(f"{prefix}/logs.txt", content)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("failed to flush logs to S3: %s", exc)
 
 
 def _require(name: str) -> str:
@@ -62,7 +73,20 @@ def main(
     progress_poll_interval: float = 30.0,
 ) -> None:
     """Read env vars, build storage adapter, delegate to domain.train.run."""
+    global _log_stream
     from domain.train.run import TrainRunConfig, run
+
+    # Attach handlers: stderr for RunPod console visibility, StringIO for S3 upload.
+    _log_stream = io.StringIO()
+    _fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s  %(message)s")
+    _mem_handler = logging.StreamHandler(_log_stream)
+    _mem_handler.setFormatter(_fmt)
+    _stderr_handler = logging.StreamHandler(sys.stderr)
+    _stderr_handler.setFormatter(_fmt)
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(_mem_handler)
+    root.addHandler(_stderr_handler)
 
     run_id = _require("RUN_ID")
     train_key = _require("TRAIN_DATA_KEY")
@@ -94,7 +118,14 @@ def main(
     try:
         run(storage, config, resolved_work_dir, progress_poll_interval=progress_poll_interval)
     except Exception as exc:
-        log.error("run failed: %s", exc)
+        log.error("run failed: %s", exc, exc_info=True)
+        _flush_logs_to_s3(storage, storage_prefix)
+        # domain/train/run.py already writes status=failed for training errors;
+        # write it here too as a safety net for failures outside domain code.
+        try:
+            storage.write_bytes(f"{storage_prefix}/status.txt", b"failed")
+        except Exception:  # noqa: BLE001
+            pass
         sys.exit(str(exc))
 
 
