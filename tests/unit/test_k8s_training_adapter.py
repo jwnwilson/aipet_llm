@@ -49,11 +49,80 @@ def test_submit_creates_job(adapter):
         mock_k8s.V1ObjectMeta.return_value = MagicMock()
         adapter._batch.create_namespaced_job.return_value = MagicMock()
         run_id = adapter.submit(_CONFIG)
-    assert run_id.startswith("train-")
+    # submit() returns the S3 prefix so training_artifact_ref resolves correctly
+    assert run_id == "workflow/db-run-id-123"
     adapter._batch.create_namespaced_job.assert_called_once()
     # verify annotation was passed to V1ObjectMeta
     meta_call = mock_k8s.V1ObjectMeta.call_args
     assert meta_call.kwargs["annotations"]["llm-api/run-id"] == "db-run-id-123"
+
+
+def test_submit_stores_job_name_in_s3(adapter):
+    """submit() must write job_name.txt so status/logs can resolve the K8s job name."""
+    with patch("adapters.compute.k8s.adapter.k8s_client"):
+        adapter._batch.create_namespaced_job.return_value = MagicMock()
+        adapter.submit(_CONFIG)
+
+    write_calls = adapter._storage.write_bytes.call_args_list
+    job_name_calls = [c for c in write_calls if "job_name.txt" in str(c.args[0])]
+    assert job_name_calls, "write_bytes(…/job_name.txt, …) must be called"
+    key, value = job_name_calls[0].args
+    assert key == "workflow/db-run-id-123/job_name.txt"
+    assert value.startswith(b"train-")
+
+
+def test_status_resolves_s3_prefix_run_id(adapter):
+    """status('workflow/…') must look up the K8s job name via job_name.txt."""
+    adapter._storage.read_text.return_value = "train-abc123456789"
+    job = MagicMock()
+    job.status.active = 1
+    job.status.succeeded = 0
+    job.status.failed = 0
+    adapter._batch.read_namespaced_job_status.return_value = job
+
+    result = adapter.status("workflow/db-run-id-123")
+
+    adapter._storage.read_text.assert_called_once_with(
+        "workflow/db-run-id-123/job_name.txt"
+    )
+    adapter._batch.read_namespaced_job_status.assert_called_once_with(
+        name="train-abc123456789", namespace=adapter._namespace
+    )
+    assert result == "running"
+
+
+def test_status_legacy_job_name_passes_through(adapter):
+    """status('eval-xxx') must not attempt storage lookup (backwards compat)."""
+    job = MagicMock()
+    job.status.active = 0
+    job.status.succeeded = 1
+    job.status.failed = 0
+    adapter._batch.read_namespaced_job_status.return_value = job
+
+    result = adapter.status("eval-abc")
+
+    adapter._storage.read_text.assert_not_called()
+    adapter._batch.read_namespaced_job_status.assert_called_once_with(
+        name="eval-abc", namespace=adapter._namespace
+    )
+    assert result == "done"
+
+
+def test_logs_resolves_s3_prefix_run_id(adapter):
+    """logs('workflow/…') must resolve the job name then use it as the pod label selector."""
+    adapter._storage.read_text.return_value = "train-abc123456789"
+    mock_pod = MagicMock()
+    mock_pod.metadata.name = "train-abc123456789-xyz"
+    adapter._core.list_namespaced_pod.return_value = MagicMock(items=[mock_pod])
+    adapter._core.read_namespaced_pod_log.return_value = "log output"
+
+    result = adapter.logs("workflow/db-run-id-123")
+
+    adapter._core.list_namespaced_pod.assert_called_once_with(
+        namespace=adapter._namespace,
+        label_selector="job-name=train-abc123456789",
+    )
+    assert result == "log output"
 
 
 def test_status_running(adapter):
