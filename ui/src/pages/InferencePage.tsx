@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Play, Plus, Square, Trash2 } from 'lucide-react'
 import { createInference, deleteInference, listInferences, startInference, stopInference } from '@/api/inferences'
 import { listModels } from '@/api/models'
@@ -66,17 +67,17 @@ function ModelGroup({
         {instances.map((instance, i) => (
           <div key={instance.id} className={i < instances.length - 1 ? 'border-b border-[#e5e3d8]' : ''}>
             <div className="flex items-center justify-between gap-4 px-5 py-4 flex-wrap">
-              <div className="flex items-center gap-6 min-w-0">
+              <Link to={`/inferences/${instance.id}`} className="flex items-center gap-6 min-w-0 hover:opacity-80 transition-opacity">
                 <InferenceStatusBadge status={instance.status} />
                 <div>
                   <p className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a]">
                     {instance.pod_name || '—'}
                   </p>
-                  <p className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888] mt-0.5">
-                    Last used: {formatDate(instance.last_used_at)}
+                  <p className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#888888] mt-0.5">
+                    {instance.id.slice(0, 8)} · Last used: {formatDate(instance.last_used_at)}
                   </p>
                 </div>
-              </div>
+              </Link>
 
               <div className="flex gap-2 items-center shrink-0">
                 {instance.status === 'available' && (

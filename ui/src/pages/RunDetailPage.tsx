@@ -4,6 +4,8 @@ import { useNavigate, useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { cancelRun, deleteRun, getRunEvaluation, getRun, getRunLogs, isRunActive, isRunCancellable } from '@/api/runs'
 import { listDatasets } from '@/api/datasets'
+import { listInferences } from '@/api/inferences'
+import { InferenceStatusBadge } from '@/components/InferenceStatusBadge'
 import { RunStatusBadge } from '@/components/RunStatusBadge'
 import { PipelineStages } from '@/components/PipelineStages'
 import { RunDetailsPanel } from '@/components/RunDetailsPanel'
@@ -83,6 +85,13 @@ export function RunDetailPage() {
     queryFn: () => getRunEvaluation(runId!),
     enabled: showEval,
   })
+
+  const { data: instancesData } = useQuery({
+    queryKey: ['inferences', { modelId: run?.model_id }],
+    queryFn: () => listInferences(1, 50, run!.model_id),
+    enabled: run != null,
+  })
+  const instances = instancesData?.items ?? []
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteRun(runId!),
@@ -234,6 +243,35 @@ export function RunDetailPage() {
           Workflow logs
         </h2>
         <RunLogViewer logs={logContent} isLive={runIsActive} />
+      </section>
+
+      <hr className="ed-rule" />
+      <section className="mb-10">
+        <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">Inference instances</h2>
+        {instances.length === 0 ? (
+          <p className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#888888] italic">
+            No inference instances for this model.
+          </p>
+        ) : (
+          <ol className="flex flex-col">
+            {instances.map(inst => (
+              <li key={inst.id}>
+                <Link
+                  to={`/inferences/${inst.id}`}
+                  className="flex items-center gap-4 px-4 py-3 border-t border-[#d0d0c8] last:border-b hover:bg-[#f3f2ec] transition-colors"
+                >
+                  <InferenceStatusBadge status={inst.status} />
+                  <span className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a]">
+                    {inst.pod_name || inst.id.slice(0, 8)}
+                  </span>
+                  <span className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#888888] ml-auto">
+                    {inst.id.slice(0, 8)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       {run.training_config && Object.keys(run.training_config).length > 0 && (
