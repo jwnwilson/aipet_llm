@@ -105,7 +105,7 @@ def poll_run_to_completion(
     api_url: str,
     headers: dict[str, str],
     run_id: str,
-    timeout_seconds: int = 900,
+    timeout_seconds: int = 1200,
     poll_interval: int = 10,
 ) -> dict:
     """Poll GET /api/runs/{run_id} until status reaches a terminal state.
@@ -187,10 +187,20 @@ def find_pipeline_inference_instance(
         sys.exit(1)
 
     instance_id = instance["id"]
-    start_resp = client.post(
-        f"{api_url}/api/inferences/{instance_id}/start",
-        headers=headers,
-    )
+    try:
+        start_resp = client.post(
+            f"{api_url}/api/inferences/{instance_id}/start",
+            headers=headers,
+        )
+    except httpx.TimeoutException as exc:
+        print(
+            f"ERROR: POST /api/inferences/{instance_id}/start timed out ({exc}).\n"
+            "  The server accepted the connection but did not respond within the timeout.\n"
+            "  This usually means the inference pod is taking too long to start.\n"
+            "  Check pod status: kubectl get pods -l inference_id={instance_id}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     return check(f"POST /api/inferences/{instance_id}/start", start_resp)
 
 
@@ -268,7 +278,7 @@ def main() -> None:
     auth0_audience = require_env("AUTH0_AUDIENCE")
     remote_backend = os.environ.get("REMOTE_BACKEND", "k8s")
 
-    client = httpx.Client(timeout=30)
+    client = httpx.Client(timeout=60)
 
     # 1. Authenticate via Auth0 M2M client credentials
     token_url = f"https://{auth0_domain}/oauth/token"
