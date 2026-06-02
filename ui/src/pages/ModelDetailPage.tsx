@@ -125,7 +125,7 @@ export function ModelDetailPage() {
 
   const triggerMutation = useMutation({
     mutationFn: () => triggerRun({ model_id: id! }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['runs'] }),
+    onSuccess: (data) => navigate(`/runs/${data.run_id}`),
   })
 
   const deleteMutation = useMutation({
