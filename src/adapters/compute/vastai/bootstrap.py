@@ -54,13 +54,7 @@ def main() -> None:
     print(f"[bootstrap] wheel installed with [training] extras — starting job_type={job_type}", flush=True)
 
     import runpy
-    if job_type == "train":
-        runpy.run_module("interactors.cli.training.remote_worker", run_name="__main__")
-    elif job_type == "eval":
-        runpy.run_module("adapters.compute.vastai.eval_script", run_name="__main__")
-    else:
-        s3.put_object(Bucket=BUCKET, Key=f"{RUN_ID}/status.txt", Body=b"failed")
-        sys.exit(f"ERROR: Unknown JOB_TYPE={job_type!r}. Expected 'train' or 'eval'.")
+    runpy.run_module("interactors.cli.training.remote_worker", run_name="__main__")
 
 
 if __name__ == "__main__":

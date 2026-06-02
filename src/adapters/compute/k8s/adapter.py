@@ -450,6 +450,7 @@ class K8sTrainingAdapter(RemoteJobPort):
 
         env = [
             k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
+            k8s_client.V1EnvVar(name="JOB_TYPE", value="train"),
             k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{run_id}"),
             k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
             k8s_client.V1EnvVar(name="TRAIN_DATA_KEY", value=config.train_data),
@@ -495,6 +496,8 @@ class K8sTrainingAdapter(RemoteJobPort):
 
         env = [
             k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
+            k8s_client.V1EnvVar(name="JOB_TYPE", value="export"),
+            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{run_id}"),
             k8s_client.V1EnvVar(name="STORAGE_BACKEND", value="s3"),
             k8s_client.V1EnvVar(
                 name="CHECKPOINT_S3_PREFIX", value=config.checkpoint_s3_prefix
@@ -508,7 +511,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             job_name=job_name,
             run_id=run_id,
             image=self._export_image,
-            command=["python", "-m", "interactors.cli.training.k8s_export"],
+            command=["python", "-m", "interactors.cli.training.remote_worker"],
             env=env,
             labels={"app": "llm-export"},
             memory_request="4Gi",
@@ -530,6 +533,8 @@ class K8sTrainingAdapter(RemoteJobPort):
 
         env = [
             k8s_client.V1EnvVar(name="RUN_ID", value=run_id),
+            k8s_client.V1EnvVar(name="JOB_TYPE", value="eval"),
+            k8s_client.V1EnvVar(name="S3_KEY_PREFIX", value=f"workflow/{run_id}"),
             k8s_client.V1EnvVar(name="TRAINING_ARTIFACT_REF", value=spec.training_artifact_ref),
             k8s_client.V1EnvVar(name="EVAL_DATA_S3_KEY", value=spec.eval_data),
             *_aws_secret_env(region),
@@ -539,7 +544,7 @@ class K8sTrainingAdapter(RemoteJobPort):
             job_name=job_name,
             run_id=run_id,
             image=self._training_image,
-            command=["python", "-m", "interactors.cli.training.k8s_eval"],
+            command=["python", "-m", "interactors.cli.training.remote_worker"],
             env=env,
             labels={"app": "llm-eval"},
             memory_request="4Gi",

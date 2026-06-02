@@ -22,6 +22,7 @@ import pytest
 def _setup_env(monkeypatch, run_id: str = "runpod/test-exp-abc123") -> None:
     monkeypatch.setenv("AWS_S3_BUCKET", "test-bucket")
     monkeypatch.setenv("RUN_ID", run_id)
+    monkeypatch.setenv("JOB_TYPE", "train")
     monkeypatch.setenv("TRAIN_DATA_KEY", f"{run_id}/data/train.jsonl")
     monkeypatch.setenv("EVAL_DATA_KEY", f"{run_id}/data/eval.jsonl")
     monkeypatch.setenv("MODEL", "HuggingFaceTB/SmolLM2-360M")
@@ -30,18 +31,30 @@ def _setup_env(monkeypatch, run_id: str = "runpod/test-exp-abc123") -> None:
     monkeypatch.setenv("WARMUP_RATIO", "0.05")
 
 
+def _checkpoint_train(provided_mock=None, side_effect=None):
+    """Return a trainer.train mock that also creates a minimal checkpoint dir."""
+    def _train(**kwargs):
+        if side_effect:
+            side_effect(**kwargs)
+            return
+        out = Path(kwargs.get("output_dir", ""))
+        if out:
+            out.mkdir(parents=True, exist_ok=True)
+            (out / "config.json").write_text('{"model_type": "test"}')
+        if provided_mock is not None:
+            provided_mock(**kwargs)
+    return MagicMock(side_effect=_train)
+
+
 def _run_worker(monkeypatch, tmp_path, *, storage=None, mock_train=None,
                 mock_load_pipe=None, mock_eval=None, mock_infer_hf=None,
                 side_effect_train=None):
     """Run remote_worker.main() with all external dependencies mocked."""
     storage = storage or MagicMock()
-    mock_train = mock_train or MagicMock(side_effect=side_effect_train)
-
-    # Pre-create a dummy checkpoint so remote_worker's empty-dir check passes
-    # regardless of what mock_train does (or doesn't) write.
-    ckpt = tmp_path / "checkpoint"
-    ckpt.mkdir(exist_ok=True)
-    (ckpt / "config.json").write_text('{"model_type": "test"}')
+    # Wrap mock_train so it also creates the checkpoint dir that domain.train.run
+    # validates after training. provided mock_train is still called and can be
+    # asserted on directly by callers.
+    patched_train = _checkpoint_train(provided_mock=mock_train, side_effect=side_effect_train)
 
     mock_load_pipe = mock_load_pipe or MagicMock()
     mock_eval = mock_eval or MagicMock(return_value=(0, 0.97))
@@ -51,15 +64,15 @@ def _run_worker(monkeypatch, tmp_path, *, storage=None, mock_train=None,
     sys.modules.pop("domain.train.run", None)
     with (
         patch("interactors.cli.training.remote_worker._make_storage", return_value=storage),
-        patch("domain.train.trainer.train", mock_train),
+        patch("domain.train.trainer.train", patched_train),
         patch("domain.train.evaluate.load_hf_pipeline", mock_load_pipe),
         patch("domain.train.evaluate.evaluate", mock_eval),
         patch("domain.train.evaluate.infer_hf", mock_infer_hf),
     ):
         from interactors.cli.training import remote_worker
-        remote_worker.main(work_dir=tmp_path, progress_poll_interval=0.01)
+        remote_worker.main()
 
-    return storage, mock_train
+    return storage, mock_train or patched_train
 
 
 # ---------------------------------------------------------------------------
@@ -158,27 +171,22 @@ class TestRemoteWorkerHappyPath:
 
     def test_uses_kaggle_storage_when_storage_backend_is_kaggle(self, monkeypatch, tmp_path):
         """STORAGE_BACKEND=kaggle must select KaggleLocalStorageAdapter."""
-        _setup_env(monkeypatch)
+        _setup_env(monkeypatch)  # sets JOB_TYPE=train
         monkeypatch.setenv("STORAGE_BACKEND", "kaggle")
         monkeypatch.setenv("KAGGLE_DATA_DIR", str(tmp_path / "input"))
         monkeypatch.delenv("AWS_S3_BUCKET", raising=False)
-
-        # Pre-create dummy checkpoint so remote_worker's empty-dir check passes
-        ckpt = tmp_path / "checkpoint"
-        ckpt.mkdir(exist_ok=True)
-        (ckpt / "config.json").write_text('{"model_type": "test"}')
 
         kaggle_storage = MagicMock()
         sys.modules.pop("interactors.cli.training.remote_worker", None)
         with (
             patch("adapters.storage.kaggle_local.KaggleLocalStorageAdapter", return_value=kaggle_storage),
-            patch("domain.train.trainer.train"),
+            patch("domain.train.trainer.train", _checkpoint_train()),
             patch("domain.train.evaluate.load_hf_pipeline"),
             patch("domain.train.evaluate.evaluate", return_value=(0, 0.97)),
             patch("domain.train.evaluate.infer_hf"),
         ):
             from interactors.cli.training import remote_worker
-            remote_worker.main(work_dir=tmp_path, progress_poll_interval=0.01)
+            remote_worker.main()
 
         assert kaggle_storage.write_bytes.called, "KaggleLocalStorageAdapter must be used when STORAGE_BACKEND=kaggle"
 
@@ -200,7 +208,7 @@ class TestRemoteWorkerFailurePaths:
         ):
             from interactors.cli.training import remote_worker
             with pytest.raises(SystemExit):
-                remote_worker.main(work_dir=tmp_path, progress_poll_interval=0.01)
+                remote_worker.main()
 
         status_values = [
             c.args[1]
@@ -213,21 +221,17 @@ class TestRemoteWorkerFailurePaths:
         """Eval failure is non-fatal: still completes the run with passed=False."""
         _setup_env(monkeypatch)
         storage = MagicMock()
-        # Provide a dummy checkpoint so remote_worker's empty-dir check passes
-        ckpt = tmp_path / "checkpoint"
-        ckpt.mkdir()
-        (ckpt / "config.json").write_text('{"model_type": "test"}')
 
         sys.modules.pop("interactors.cli.training.remote_worker", None)
         with (
             patch("interactors.cli.training.remote_worker._make_storage", return_value=storage),
-            patch("domain.train.trainer.train"),
+            patch("domain.train.trainer.train", _checkpoint_train()),
             patch("domain.train.evaluate.load_hf_pipeline", side_effect=RuntimeError("no model")),
             patch("domain.train.evaluate.evaluate"),
             patch("domain.train.evaluate.infer_hf"),
         ):
             from interactors.cli.training import remote_worker
-            remote_worker.main(work_dir=tmp_path, progress_poll_interval=0.01)
+            remote_worker.main()
 
         eval_calls = [
             c for c in storage.write_bytes.call_args_list
@@ -274,7 +278,7 @@ class TestRemoteWorkerProgressPolling:
             patch("domain.train.evaluate.infer_hf"),
         ):
             from interactors.cli.training import remote_worker
-            remote_worker.main(work_dir=tmp_path, progress_poll_interval=0.01)
+            remote_worker.main()
 
         progress_writes = [
             c for c in storage.write_bytes.call_args_list
@@ -297,4 +301,4 @@ class TestRemoteWorkerModule:
         sys.modules.pop("interactors.cli.training.remote_worker", None)
         from interactors.cli.training import remote_worker
         with pytest.raises(SystemExit):
-            remote_worker.main(work_dir=tmp_path)
+            remote_worker.main()

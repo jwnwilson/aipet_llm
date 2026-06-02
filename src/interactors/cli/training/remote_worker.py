@@ -1,29 +1,26 @@
-"""Platform-agnostic remote training worker entry point.
+"""Platform-agnostic remote worker — single entry point for all job types.
 
 Run as: python -m interactors.cli.training.remote_worker
 
-Responsibility (interactor only):
-  1. Read env vars and validate required ones.
-  2. Construct the correct StoragePort for this platform.
-  3. Build a TrainRunConfig from env vars.
-  4. Delegate entirely to domain.train.run.run().
+Dispatches to the correct job handler based on JOB_TYPE, then handles
+logging, error reporting, and S3 log flushing consistently for all jobs.
 
-All orchestration logic lives in domain.train.run — this file contains
-no business logic.
+Required env vars (all jobs):
+    RUN_ID      — artifact namespace, e.g. workflow/{uuid}
+    JOB_TYPE    — train | eval | export
 
-Required env vars:
-    RUN_ID           — identifier, e.g. runpod/exp-abc123
-    TRAIN_DATA_KEY   — storage key for the training JSONL
-    EVAL_DATA_KEY    — storage key for the eval JSONL
-    MODEL            — HuggingFace model ID
-    EPOCHS           — int
-    PATIENCE         — int
-    WARMUP_RATIO     — float
+Optional env vars (all jobs):
+    S3_KEY_PREFIX   — override artifact write prefix (K8s sets workflow/{run_id})
+    STORAGE_BACKEND — "s3" (default) or "kaggle"
+    KAGGLE_DATA_DIR — required when STORAGE_BACKEND=kaggle
 
-Optional env vars:
-    S3_KEY_PREFIX    — override artifact write prefix (K8s sets workflow/{run_id})
-    STORAGE_BACKEND  — "s3" (default) or "kaggle"
-    KAGGLE_DATA_DIR  — required when STORAGE_BACKEND=kaggle
+Train required:   TRAIN_DATA_KEY, EVAL_DATA_KEY, MODEL
+Train optional:   EPOCHS (default 1), PATIENCE (default 3), WARMUP_RATIO (default 0.05)
+
+Eval required:    TRAINING_ARTIFACT_REF, EVAL_DATA_S3_KEY
+
+Export required:  CHECKPOINT_S3_PREFIX, GGUF_S3_KEY
+Export optional:  QUANTIZE (default Q4_K_M), LLAMA_CPP_DIR (default /llama.cpp)
 """
 from __future__ import annotations
 
@@ -33,9 +30,7 @@ import os
 import sys
 from pathlib import Path
 
-# Module-level log buffer: set up in main() so _flush_logs_to_s3 can read it.
 _log_stream: io.StringIO | None = None
-
 log = logging.getLogger(__name__)
 
 
@@ -68,15 +63,62 @@ def _make_storage():
     return S3StorageAdapter()
 
 
-def main(
-    work_dir: Path | None = None,
-    progress_poll_interval: float = 30.0,
-) -> None:
-    """Read env vars, build storage adapter, delegate to domain.train.run."""
-    global _log_stream
+def _run_train(storage, run_id: str, prefix: str) -> None:
+    """Train handler: download data → train → upload checkpoint."""
     from domain.train.run import TrainRunConfig, run
 
-    # Attach handlers: stderr for RunPod console visibility, StringIO for S3 upload.
+    config = TrainRunConfig(
+        run_id=run_id,
+        storage_prefix=prefix,
+        train_key=_require("TRAIN_DATA_KEY"),
+        eval_key=_require("EVAL_DATA_KEY"),
+        model=_require("MODEL"),
+        epochs=int(os.environ.get("EPOCHS", "1")),
+        patience=int(os.environ.get("PATIENCE", "3")),
+        warmup_ratio=float(os.environ.get("WARMUP_RATIO", "0.05")),
+    )
+    work_dir = Path(f"/tmp/run/{run_id.replace('/', '_')}")
+    log.info("train  run_id=%s  model=%s", run_id, config.model)
+    run(storage, config, work_dir)
+
+
+def _run_eval(storage, run_id: str, prefix: str) -> None:
+    """Eval handler: read env vars, build config, delegate to domain.train.eval_job."""
+    from domain.train.eval_job import EvalJobConfig, run_eval
+    config = EvalJobConfig(
+        run_id=run_id,
+        storage_prefix=prefix,
+        training_artifact_ref=_require("TRAINING_ARTIFACT_REF"),
+        eval_data_key=_require("EVAL_DATA_S3_KEY"),
+    )
+    run_eval(storage, config, Path(f"/tmp/eval/{run_id.replace('/', '_')}"))
+
+
+def _run_export(storage, run_id: str, prefix: str) -> None:
+    """Export handler: read env vars, build config, delegate to domain.train.export_job."""
+    from domain.train.export_job import ExportJobConfig, run_export
+    config = ExportJobConfig(
+        run_id=run_id,
+        storage_prefix=prefix,
+        checkpoint_s3_prefix=_require("CHECKPOINT_S3_PREFIX"),
+        gguf_s3_key=_require("GGUF_S3_KEY"),
+        quantize=os.environ.get("QUANTIZE", "Q4_K_M"),
+        llama_cpp_dir=Path(os.environ.get("LLAMA_CPP_DIR", "/llama.cpp")),
+    )
+    run_export(storage, config, Path(f"/tmp/export/{run_id.replace('/', '_')}"))
+
+
+_HANDLERS = {
+    "train": _run_train,
+    "eval": _run_eval,
+    "export": _run_export,
+}
+
+
+def main() -> None:
+    """Set up logging, read env vars, dispatch to job handler."""
+    global _log_stream
+
     _log_stream = io.StringIO()
     _fmt = logging.Formatter("%(asctime)s %(levelname)-8s %(name)s  %(message)s")
     _mem_handler = logging.StreamHandler(_log_stream)
@@ -89,44 +131,30 @@ def main(
     root.addHandler(_stderr_handler)
 
     run_id = _require("RUN_ID")
-    train_key = _require("TRAIN_DATA_KEY")
-    eval_key = _require("EVAL_DATA_KEY")
-    model = _require("MODEL")
-    epochs = int(os.environ.get("EPOCHS", "1"))
-    patience = int(os.environ.get("PATIENCE", "3"))
-    warmup_ratio = float(os.environ.get("WARMUP_RATIO", "0.05"))
-    storage_prefix = os.environ.get("S3_KEY_PREFIX", run_id).rstrip("/")
+    job_type = _require("JOB_TYPE")
+    prefix = os.environ.get("S3_KEY_PREFIX", run_id).rstrip("/")
+
+    if job_type not in _HANDLERS:
+        sys.exit(f"ERROR: unknown JOB_TYPE {job_type!r}. Valid: {sorted(_HANDLERS)}")
 
     storage = _make_storage()
-    config = TrainRunConfig(
-        run_id=run_id,
-        storage_prefix=storage_prefix,
-        train_key=train_key,
-        eval_key=eval_key,
-        model=model,
-        epochs=epochs,
-        patience=patience,
-        warmup_ratio=warmup_ratio,
-    )
-
-    resolved_work_dir = work_dir or Path(f"/tmp/run/{run_id.replace('/', '_')}")
     log.info(
-        "remote_worker  run_id=%s  backend=%s  model=%s",
-        run_id, os.environ.get("STORAGE_BACKEND", "s3"), model,
+        "remote_worker  run_id=%s  job_type=%s  backend=%s  prefix=%s",
+        run_id, job_type, os.environ.get("STORAGE_BACKEND", "s3"), prefix,
     )
 
     try:
-        run(storage, config, resolved_work_dir, progress_poll_interval=progress_poll_interval)
+        _HANDLERS[job_type](storage, run_id, prefix)
     except Exception as exc:
-        log.error("run failed: %s", exc, exc_info=True)
-        _flush_logs_to_s3(storage, storage_prefix)
-        # domain/train/run.py already writes status=failed for training errors;
-        # write it here too as a safety net for failures outside domain code.
+        log.error("job failed: %s", exc, exc_info=True)
+        _flush_logs_to_s3(storage, prefix)
         try:
-            storage.write_bytes(f"{storage_prefix}/status.txt", b"failed")
+            storage.write_bytes(f"{prefix}/status.txt", b"failed")
         except Exception:  # noqa: BLE001
             pass
         sys.exit(str(exc))
+
+    _flush_logs_to_s3(storage, prefix)
 
 
 if __name__ == "__main__":
