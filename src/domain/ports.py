@@ -400,3 +400,23 @@ class PodLifecyclePort(ABC):
     @abstractmethod
     def pod_service_url(self, pod_name: str, namespace: str = "default") -> str:
         """Return the ClusterIP HTTP URL for routing inference requests to this pod."""
+
+
+class UnitOfWorkPort(ABC):
+    """Single entry point for all DB stores within one shared transaction."""
+
+    @property
+    @abstractmethod
+    def model_store(self) -> "ModelStorePort": ...
+
+    @property
+    @abstractmethod
+    def run_store(self) -> "RunStorePort": ...
+
+    @property
+    @abstractmethod
+    def dataset_store(self) -> "DatasetStorePort": ...
+
+    @property
+    @abstractmethod
+    def inference_store(self) -> "InferenceStorePort": ...
