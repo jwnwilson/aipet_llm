@@ -19,9 +19,10 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
       const headers: Record<string, string> = {}
       if (token) headers['Authorization'] = `Bearer ${token}`
 
+      const baseUrl = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
       let res: Response
       try {
-        res = await fetch(`/api/runs/${runId}/logs/stream`, {
+        res = await fetch(`${baseUrl}/api/runs/${runId}/logs/stream`, {
           headers,
           signal: controller.signal,
         })
