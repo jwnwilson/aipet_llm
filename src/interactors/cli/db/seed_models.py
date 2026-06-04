@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from adapters.database.engine import make_engine, run_migrations
-from adapters.database.model_store import SQLAlchemyModelStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
 from domain.models import TrainingModelConfig
 
 _DEFAULT_MODELS: list[TrainingModelConfig] = [
@@ -52,17 +52,17 @@ def main() -> None:
     url = os.environ.get("DATABASE_URL", "sqlite:///data/llm-api.db")
     engine = make_engine(url)
     run_migrations(engine)
-    store = SQLAlchemyModelStore(engine)
 
-    existing = {m.name for m in store.list()}
     created = 0
-    for config in _DEFAULT_MODELS:
-        if config.name in existing:
-            print(f"  skip  {config.name} (already exists)")
-            continue
-        store.create(config)
-        print(f"  added {config.name}")
-        created += 1
+    with SQLAlchemyUnitOfWork(engine).transaction() as uow:
+        existing = {m.name for m in uow.model_store.list()}
+        for config in _DEFAULT_MODELS:
+            if config.name in existing:
+                print(f"  skip  {config.name} (already exists)")
+                continue
+            uow.model_store.create(config)
+            print(f"  added {config.name}")
+            created += 1
 
     print(f"\nDone: {created} created, {len(existing)} already existed.")
 

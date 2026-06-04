@@ -6,22 +6,29 @@ import time
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from domain.models import RunConfig, RunStatus
-from adapters.database import Base, init_db
+from adapters.database import init_db
 from adapters.database.run_store import SQLAlchemyRunStore
 
 
 @pytest.fixture()
-def store() -> SQLAlchemyRunStore:
+def db_session():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     init_db(engine)
-    return SQLAlchemyRunStore(engine)
+    with Session(engine) as session:
+        yield session
+
+
+@pytest.fixture()
+def store(db_session) -> SQLAlchemyRunStore:
+    return SQLAlchemyRunStore(db_session)
 
 
 def _config(model_id: str = "model-1", workflow_id: str = "wf-1") -> RunConfig:

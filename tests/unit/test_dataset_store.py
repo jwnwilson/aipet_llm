@@ -4,22 +4,29 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from domain.models import DatasetConfig, DatasetType
-from adapters.database import Base, init_db
+from adapters.database import init_db
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
 
 
 @pytest.fixture()
-def store() -> SQLAlchemyDatasetStore:
+def db_session():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     init_db(engine)
-    return SQLAlchemyDatasetStore(engine)
+    with Session(engine) as session:
+        yield session
+
+
+@pytest.fixture()
+def store(db_session) -> SQLAlchemyDatasetStore:
+    return SQLAlchemyDatasetStore(db_session)
 
 
 def _train_config(name: str = "my-train", key: str = "datasets/abc.jsonl") -> DatasetConfig:

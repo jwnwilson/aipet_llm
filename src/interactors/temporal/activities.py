@@ -514,7 +514,8 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
                 try:
                     frac, detail = await loop.run_in_executor(None, lambda: adapter.progress(run_id))
                     if frac > 0:
-                        _get_run_store().update_progress(config.run_id, frac, detail)
+                        with _create_uow().transaction() as _uow:
+                            _uow.run_store.update_progress(config.run_id, frac, detail)
                 except Exception:
                     pass
 

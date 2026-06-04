@@ -11,11 +11,9 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 from interactors.api.app import app
-from interactors.api.deps import get_dataset_store, get_model_store, get_run_store
+from adapters.database.uow import SQLAlchemyUnitOfWork
+from interactors.api.deps import get_uow
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
-from adapters.database.dataset_store import SQLAlchemyDatasetStore
-from adapters.database.model_store import SQLAlchemyModelStore
-from adapters.database.run_store import SQLAlchemyRunStore
 
 _VALID_MODEL_CONFIG = TrainingModelConfig(
     name="test-model",
@@ -33,37 +31,50 @@ _VALID_MODEL_CONFIG = TrainingModelConfig(
 
 @pytest_asyncio.fixture
 async def client(db_engine):
-    engine = db_engine
-    model_store = SQLAlchemyModelStore(engine)
-    run_store = SQLAlchemyRunStore(engine)
-    dataset_store = SQLAlchemyDatasetStore(engine)
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(db_engine)
+        with uow.transaction():
+            yield uow
 
-    app.dependency_overrides[get_model_store] = lambda: model_store
-    app.dependency_overrides[get_run_store] = lambda: run_store
-    app.dependency_overrides[get_dataset_store] = lambda: dataset_store
+    app.dependency_overrides[get_uow] = override_get_uow
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
-        yield c, model_store, run_store
+        yield c, db_engine
 
     app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
 async def client_with_model(client):
-    c, model_store, run_store = client
-    model = model_store.create(_VALID_MODEL_CONFIG)
+    from sqlalchemy.orm import Session
+    from adapters.database.model_store import SQLAlchemyModelStore
+    from adapters.database.run_store import SQLAlchemyRunStore
+    c, db_engine = client
+    session = Session(db_engine)
+    model = SQLAlchemyModelStore(session).create(_VALID_MODEL_CONFIG)
+    session.commit()
+    run_store = SQLAlchemyRunStore(session)
     yield c, model, run_store
+    session.close()
 
 
 @pytest_asyncio.fixture
 async def client_with_model_and_dataset(client):
     """Like client_with_model but also exposes the dataset_store."""
-    c, model_store, run_store = client
-    model = model_store.create(_VALID_MODEL_CONFIG)
-    dataset_store = app.dependency_overrides[get_dataset_store]()
+    from sqlalchemy.orm import Session
+    from adapters.database.model_store import SQLAlchemyModelStore
+    from adapters.database.run_store import SQLAlchemyRunStore
+    from adapters.database.dataset_store import SQLAlchemyDatasetStore
+    c, db_engine = client
+    session = Session(db_engine)
+    model = SQLAlchemyModelStore(session).create(_VALID_MODEL_CONFIG)
+    session.commit()
+    run_store = SQLAlchemyRunStore(session)
+    dataset_store = SQLAlchemyDatasetStore(session)
     yield c, model, run_store, dataset_store
+    session.close()
 
 
 class TestTriggerRun:
@@ -108,7 +119,7 @@ class TestTriggerRun:
 
     @pytest.mark.asyncio
     async def test_trigger_unknown_model_returns_404(self, client):
-        c, _, _ = client
+        c, _ = client
         resp = await c.post("/api/runs/trigger", json={"model_id": "no-such-model"})
         assert resp.status_code == 404
 
@@ -182,7 +193,7 @@ class TestTriggerRun:
 class TestListRuns:
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_runs(self, client):
-        c, _, _ = client
+        c, _ = client
         resp = await c.get("/api/runs")
         assert resp.status_code == 200
         body = resp.json()
@@ -218,7 +229,7 @@ class TestGetRun:
 
     @pytest.mark.asyncio
     async def test_returns_404_for_unknown_run(self, client):
-        c, _, _ = client
+        c, _ = client
         resp = await c.get("/api/runs/no-such-run")
         assert resp.status_code == 404
 
@@ -266,7 +277,7 @@ class TestActivateRun:
 
     @pytest.mark.asyncio
     async def test_returns_404_for_unknown_run(self, client):
-        c, _, _ = client
+        c, _ = client
         resp = await c.post("/api/runs/no-such-run/activate")
         assert resp.status_code == 404
 
@@ -274,7 +285,7 @@ class TestActivateRun:
 class TestGetRunEvaluation:
     @pytest.mark.asyncio
     async def test_returns_404_for_unknown_run(self, client):
-        c, _, _ = client
+        c, _ = client
         resp = await c.get("/api/runs/does-not-exist/evaluation")
         assert resp.status_code == 404
 
@@ -379,7 +390,7 @@ class TestCancelRun:
 
     @pytest.mark.asyncio
     async def test_cancel_unknown_run_returns_404(self, client):
-        c, _, _ = client
+        c, _ = client
         resp = await c.post("/api/runs/no-such-run/cancel")
         assert resp.status_code == 404
 

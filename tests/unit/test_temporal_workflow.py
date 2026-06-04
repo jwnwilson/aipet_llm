@@ -15,7 +15,6 @@ from temporalio.worker import Worker
 
 from interactors.temporal.activities import (
     EvalConfig,
-    configure_run_store,
     configure_storage,
     evaluate_activity,
     export_activity,
@@ -74,8 +73,18 @@ def _configure_mock_storage() -> MagicMock:
 
 def _configure_mock_run_store() -> MagicMock:
     """Wire a mock RunStorePort into the activities module and return it."""
+    import interactors.temporal.activities as _acts
+    from contextlib import contextmanager
     run_store = MagicMock()
-    configure_run_store(run_store)
+    mock_uow = MagicMock()
+    mock_uow.run_store = run_store
+
+    @contextmanager
+    def _fake_tx():
+        yield mock_uow
+
+    mock_uow.transaction = _fake_tx
+    _acts._create_uow = lambda: mock_uow
     return run_store
 
 
@@ -313,9 +322,18 @@ async def test_evaluate_workflow_passes_run_id():
     storage.write = capture_write
 
     # Configure a mock RunStore for finalise_run_activity
+    import interactors.temporal.activities as _acts
+    from contextlib import contextmanager
     run_store = MagicMock()
-    from interactors.temporal.activities import configure_run_store
-    configure_run_store(run_store)
+    _mock_uow = MagicMock()
+    _mock_uow.run_store = run_store
+
+    @contextmanager
+    def _fake_tx():
+        yield _mock_uow
+
+    _mock_uow.transaction = _fake_tx
+    _acts._create_uow = lambda: _mock_uow
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
@@ -367,8 +385,18 @@ async def test_training_pipeline_workflow_activity_failure_marks_run_failed():
     from domain.models import RunStatus
 
     _configure_mock_storage()
+    import interactors.temporal.activities as _acts
+    from contextlib import contextmanager
     mock_store = MagicMock()
-    configure_run_store(mock_store)
+    _mock_uow2 = MagicMock()
+    _mock_uow2.run_store = mock_store
+
+    @contextmanager
+    def _fake_tx2():
+        yield _mock_uow2
+
+    _mock_uow2.transaction = _fake_tx2
+    _acts._create_uow = lambda: _mock_uow2
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
@@ -419,8 +447,18 @@ async def test_training_pipeline_workflow_cancelled_marks_run_cancelled():
     from domain.models import RunStatus
 
     _configure_mock_storage()
+    import interactors.temporal.activities as _acts
+    from contextlib import contextmanager
     mock_store = MagicMock()
-    configure_run_store(mock_store)
+    _mock_uow2 = MagicMock()
+    _mock_uow2.run_store = mock_store
+
+    @contextmanager
+    def _fake_tx2():
+        yield _mock_uow2
+
+    _mock_uow2.transaction = _fake_tx2
+    _acts._create_uow = lambda: _mock_uow2
 
     # generate() runs in an executor thread — block there until Temporal cancels the
     # run_in_executor future (asyncio.CancelledError), which happens when the workflow

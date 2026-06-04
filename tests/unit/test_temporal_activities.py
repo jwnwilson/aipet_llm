@@ -21,8 +21,6 @@ from interactors.temporal.activities import (
     ExportConfig,
     GGUFPath,
     TrainConfig,
-    configure_model_store,
-    configure_run_store,
     configure_storage,
     evaluate_activity,
     export_activity,
@@ -36,6 +34,26 @@ from interactors.temporal.activities import (
 
 
 ENV = ActivityEnvironment()
+
+def _mock_uow(run_store=None, model_store=None, inference_store=None):
+    """Mock UoW whose transaction() context manager yields itself."""
+    from contextlib import contextmanager
+    mock = MagicMock()
+    if run_store is not None:
+        mock.run_store = run_store
+    if model_store is not None:
+        mock.model_store = model_store
+    if inference_store is not None:
+        mock.inference_store = inference_store
+
+    @contextmanager
+    def fake_transaction():
+        yield mock
+
+    mock.transaction = fake_transaction
+    return mock
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -472,7 +490,7 @@ class TestTrainRemoteProgress:
     async def test_calls_adapter_progress_and_persists_when_run_id_set(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0  loss=0.4312"))
         config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
@@ -486,7 +504,7 @@ class TestTrainRemoteProgress:
     async def test_skips_update_when_fraction_is_zero(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.0, ""))
         config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
@@ -500,7 +518,7 @@ class TestTrainRemoteProgress:
     async def test_skips_progress_entirely_when_no_run_id(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.75, "epoch=2.0"))
         config = TrainConfig(run_id="", experiment_name="test", output_dir="/tmp/out")
@@ -515,7 +533,7 @@ class TestTrainRemoteProgress:
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
         mock_store.update_progress.side_effect = RuntimeError("DB gone")
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0"))
         config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
@@ -539,7 +557,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         (tmp_path / "progress.json").write_text(
@@ -558,7 +576,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         (tmp_path / "progress.json").write_text(
@@ -578,7 +596,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         (tmp_path / "progress.json").write_text('{"step": 50, "max_steps": 100, "epoch": 1.0}')
@@ -595,7 +613,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         with patch("interactors.temporal.activities.asyncio.sleep", side_effect=asyncio.CancelledError):
@@ -622,7 +640,7 @@ class TestFinaliseRunActivity:
         import interactors.temporal.activities as acts
 
         mock_store = self._make_run_store()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(finalise_run_activity, "run-1", True, 0.97)
 
@@ -634,7 +652,7 @@ class TestFinaliseRunActivity:
         import interactors.temporal.activities as acts
 
         mock_store = self._make_run_store()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(finalise_run_activity, "run-2", False, 0.75)
 
@@ -646,7 +664,7 @@ class TestFinaliseRunActivity:
         import interactors.temporal.activities as acts
 
         mock_store = self._make_run_store()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(finalise_run_activity, "run-3", True, 0.95)
 
@@ -667,7 +685,7 @@ class TestUpdateRunStatusActivity:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(update_run_status_activity, "run-42", "training")
 
@@ -679,7 +697,7 @@ class TestUpdateRunStatusActivity:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(update_run_status_activity, "run-42", "evaluating")
 
@@ -691,7 +709,7 @@ class TestUpdateRunStatusActivity:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(update_run_status_activity, "run-42", "completed")
 
@@ -713,7 +731,7 @@ class TestFailRunActivity:
         from interactors.temporal.activities import fail_run_activity
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(fail_run_activity, "run-99", "train failed: OOM")
 
@@ -726,7 +744,7 @@ class TestFailRunActivity:
         from interactors.temporal.activities import fail_run_activity
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(fail_run_activity, "run-99", "cancelled by user", "cancelled")
 
@@ -739,7 +757,7 @@ class TestFailRunActivity:
         from interactors.temporal.activities import fail_run_activity
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(fail_run_activity, "run-55", "evaluate failed: timeout", "failed")
 
@@ -754,7 +772,7 @@ class TestFailRunActivity:
 
         mock_store = MagicMock()
         mock_store.fail_run.return_value = None  # store returns None for unknown id
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         # should complete without raising
         await ENV.run(fail_run_activity, "unknown-run", "some error")
@@ -864,7 +882,7 @@ class TestSaveGgufPathActivity:
         model = self._make_model()
         mock_store = MagicMock()
         mock_store.get.return_value = model
-        monkeypatch.setattr(acts, "_model_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(model_store=mock_store))
 
         await ENV.run(save_gguf_path_activity, "model-uuid", "gguf/my-model.gguf")
 
@@ -881,7 +899,7 @@ class TestSaveGgufPathActivity:
 
         mock_store = MagicMock()
         mock_store.get.return_value = None
-        monkeypatch.setattr(acts, "_model_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(model_store=mock_store))
 
         # Must not raise
         await ENV.run(save_gguf_path_activity, "nonexistent-model", "gguf/x.gguf")

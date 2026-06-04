@@ -12,12 +12,7 @@ from httpx import ASGITransport
 
 from domain.models import Action, InferenceInstance, InferenceInstanceConfig, InferenceStatus
 from interactors.api.app import app
-from interactors.api.deps import (
-    clear_inference_store,
-    clear_pod_adapter,
-    configure_inference_store,
-    configure_pod_adapter,
-)
+from interactors.api.deps import get_inference_store, get_pod_adapter
 
 _INFER_PAYLOAD = {
     "scene": {"objects": [{"id": "bowl-1", "type": "bowl", "distance": 1.0}], "tick": 1},
@@ -118,16 +113,16 @@ def _make_pod_adapter():
 async def client():
     store, instances = _make_store()
     pod = _make_pod_adapter()
-    configure_inference_store(store)
-    configure_pod_adapter(pod)
+    app.dependency_overrides[get_inference_store] = lambda: store
+    app.dependency_overrides[get_pod_adapter] = lambda: pod
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c, store, pod, instances
 
-    clear_inference_store()
-    clear_pod_adapter()
+    app.dependency_overrides.pop(get_inference_store, None)
+    app.dependency_overrides.pop(get_pod_adapter, None)
 
 
 class TestListInferences:
@@ -327,8 +322,8 @@ class TestInferEndpoint:
         """Client with one AVAILABLE instance pre-created."""
         store, instances = _make_store()
         pod = _make_pod_adapter()
-        configure_inference_store(store)
-        configure_pod_adapter(pod)
+        app.dependency_overrides[get_inference_store] = lambda: store
+        app.dependency_overrides[get_pod_adapter] = lambda: pod
 
         async with httpx.AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
@@ -340,8 +335,8 @@ class TestInferEndpoint:
             )
             yield c, store, pod, instances, inst_id
 
-        clear_inference_store()
-        clear_pod_adapter()
+        app.dependency_overrides.pop(get_inference_store, None)
+        app.dependency_overrides.pop(get_pod_adapter, None)
 
     @pytest.mark.asyncio
     async def test_infer_returns_404_for_missing_instance(self, client):
