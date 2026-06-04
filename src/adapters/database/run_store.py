@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import Float, String, Text, func, select, update
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from domain.models import EvalOutcome, RunConfig, RunRecord, RunStatus
@@ -56,8 +55,8 @@ def _row_to_domain(row: _RunRow) -> RunRecord:
 class SQLAlchemyRunStore(RunStorePort):
     """RunStorePort backed by a SQLAlchemy-managed relational database."""
 
-    def __init__(self, engine: Engine) -> None:
-        self._engine = engine
+    def __init__(self, session: Session) -> None:
+        self._session = session
 
     def create(self, config: RunConfig) -> RunRecord:
         now = datetime.now(timezone.utc)
@@ -74,91 +73,82 @@ class SQLAlchemyRunStore(RunStorePort):
             created_at=now,
             updated_at=now,
         )
-        with Session(self._engine) as db:
-            db.add(row)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        self._session.add(row)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def get(self, id: str) -> RunRecord | None:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, id)
-            return _row_to_domain(row) if row else None
+        row = self._session.get(_RunRow, id)
+        return _row_to_domain(row) if row else None
 
     def list(self, model_id: str | None = None, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[RunRecord]:  # type: ignore[override]
-        with Session(self._engine) as db:
-            stmt = select(_RunRow)
-            if model_id is not None:
-                stmt = stmt.where(_RunRow.model_id == model_id)
-            if owner_id is not None:
-                stmt = stmt.where(_RunRow.owner_id == owner_id)
-            stmt = stmt.order_by(_RunRow.created_at.desc()).offset(offset).limit(limit)
-            rows = db.scalars(stmt).all()
-            return [_row_to_domain(r) for r in rows]
+        stmt = select(_RunRow)
+        if model_id is not None:
+            stmt = stmt.where(_RunRow.model_id == model_id)
+        if owner_id is not None:
+            stmt = stmt.where(_RunRow.owner_id == owner_id)
+        stmt = stmt.order_by(_RunRow.created_at.desc()).offset(offset).limit(limit)
+        rows = self._session.scalars(stmt).all()
+        return [_row_to_domain(r) for r in rows]
 
     def count(self, model_id: str | None = None, owner_id: str | None = None) -> int:
-        with Session(self._engine) as db:
-            stmt = select(func.count()).select_from(_RunRow)
-            if model_id is not None:
-                stmt = stmt.where(_RunRow.model_id == model_id)
-            if owner_id is not None:
-                stmt = stmt.where(_RunRow.owner_id == owner_id)
-            return db.scalar(stmt) or 0
+        stmt = select(func.count()).select_from(_RunRow)
+        if model_id is not None:
+            stmt = stmt.where(_RunRow.model_id == model_id)
+        if owner_id is not None:
+            stmt = stmt.where(_RunRow.owner_id == owner_id)
+        return self._session.scalar(stmt) or 0
 
     def update(self, id: str, config: RunConfig) -> RunRecord | None:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, id)
-            if row is None:
-                return None
-            row.model_id = config.model_id
-            row.workflow_id = config.workflow_id
-            row.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_RunRow, id)
+        if row is None:
+            return None
+        row.model_id = config.model_id
+        row.workflow_id = config.workflow_id
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def delete(self, id: str) -> bool:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, id)
-            if row is None:
-                return False
-            db.delete(row)
-            db.commit()
-            return True
+        row = self._session.get(_RunRow, id)
+        if row is None:
+            return False
+        self._session.delete(row)
+        self._session.flush()
+        return True
 
     def update_status(self, run_id: str, status: RunStatus) -> RunRecord | None:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, run_id)
-            if row is None:
-                return None
-            row.status = status.value
-            row.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_RunRow, run_id)
+        if row is None:
+            return None
+        row.status = status.value
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def update_eval(self, run_id: str, valid_pct: float) -> RunRecord | None:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, run_id)
-            if row is None:
-                return None
-            row.eval_valid_pct = valid_pct
-            row.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_RunRow, run_id)
+        if row is None:
+            return None
+        row.eval_valid_pct = valid_pct
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def update_progress(self, run_id: str, progress: float, detail: str = "") -> RunRecord | None:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, run_id)
-            if row is None:
-                return None
-            row.progress = progress
-            row.progress_detail = detail
-            row.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_RunRow, run_id)
+        if row is None:
+            return None
+        row.progress = progress
+        row.progress_detail = detail
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def fail_run(
         self,
@@ -166,28 +156,25 @@ class SQLAlchemyRunStore(RunStorePort):
         reason: str,
         status: RunStatus = RunStatus.FAILED,
     ) -> RunRecord | None:
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, run_id)
-            if row is None:
-                return None
-            row.status = status.value
-            row.progress_detail = reason
-            row.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_RunRow, run_id)
+        if row is None:
+            return None
+        row.status = status.value
+        row.progress_detail = reason
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def update_eval_result(
         self, run_id: str, valid_pct: float, outcome: EvalOutcome
     ) -> RunRecord | None:
-        """Persist eval score and pass/fail outcome atomically."""
-        with Session(self._engine) as db:
-            row = db.get(_RunRow, run_id)
-            if row is None:
-                return None
-            row.eval_valid_pct = valid_pct
-            row.eval_result = outcome.value
-            row.updated_at = datetime.now(timezone.utc)
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_RunRow, run_id)
+        if row is None:
+            return None
+        row.eval_valid_pct = valid_pct
+        row.eval_result = outcome.value
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
