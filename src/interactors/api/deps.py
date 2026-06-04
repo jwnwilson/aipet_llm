@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from domain.ports import AuthPort, DatasetStorePort, InferencePort, InferenceStorePort, ModelStorePort, PodLifecyclePort, RunStorePort, StoragePort
+from collections.abc import Generator
+
+from fastapi import Depends
+from sqlalchemy.engine import Engine
+
+from domain.ports import AuthPort, DatasetStorePort, InferencePort, InferenceStorePort, ModelStorePort, PodLifecyclePort, RunStorePort, StoragePort, UnitOfWorkPort
 
 # ---------------------------------------------------------------------------
 # Inference adapter
@@ -28,39 +33,49 @@ def clear_adapter() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Model store
+# Unit of Work — single entry point for all DB stores
 # ---------------------------------------------------------------------------
 
-_model_store: ModelStorePort | None = None
+_uow_engine: Engine | None = None
 
 
-def get_model_store() -> ModelStorePort:
-    if _model_store is None:
-        raise RuntimeError("ModelStorePort has not been configured.")
-    return _model_store
+def configure_uow(engine: Engine) -> None:
+    global _uow_engine
+    _uow_engine = engine
 
 
-def configure_model_store(store: ModelStorePort) -> None:
-    global _model_store
-    _model_store = store
+def clear_uow() -> None:
+    global _uow_engine
+    _uow_engine = None
+
+
+def get_uow() -> Generator[UnitOfWorkPort, None, None]:
+    from adapters.database.uow import SQLAlchemyUnitOfWork
+    if _uow_engine is None:
+        raise RuntimeError("UnitOfWork has not been configured.")
+    uow = SQLAlchemyUnitOfWork(_uow_engine)
+    with uow.transaction():
+        yield uow
 
 
 # ---------------------------------------------------------------------------
-# Run store
+# Derived store dependencies — route handlers keep their existing signatures
 # ---------------------------------------------------------------------------
 
-_run_store: RunStorePort | None = None
+def get_model_store(uow: UnitOfWorkPort = Depends(get_uow)) -> ModelStorePort:
+    return uow.model_store
 
 
-def get_run_store() -> RunStorePort:
-    if _run_store is None:
-        raise RuntimeError("RunStorePort has not been configured.")
-    return _run_store
+def get_run_store(uow: UnitOfWorkPort = Depends(get_uow)) -> RunStorePort:
+    return uow.run_store
 
 
-def configure_run_store(store: RunStorePort) -> None:
-    global _run_store
-    _run_store = store
+def get_dataset_store(uow: UnitOfWorkPort = Depends(get_uow)) -> DatasetStorePort:
+    return uow.dataset_store
+
+
+def get_inference_store(uow: UnitOfWorkPort = Depends(get_uow)) -> InferenceStorePort:
+    return uow.inference_store
 
 
 # ---------------------------------------------------------------------------
@@ -87,29 +102,6 @@ def clear_auth() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Dataset store
-# ---------------------------------------------------------------------------
-
-_dataset_store: DatasetStorePort | None = None
-
-
-def get_dataset_store() -> DatasetStorePort:
-    if _dataset_store is None:
-        raise RuntimeError("DatasetStorePort has not been configured.")
-    return _dataset_store
-
-
-def configure_dataset_store(store: DatasetStorePort) -> None:
-    global _dataset_store
-    _dataset_store = store
-
-
-def clear_dataset_store() -> None:
-    global _dataset_store
-    _dataset_store = None
-
-
-# ---------------------------------------------------------------------------
 # Storage port
 # ---------------------------------------------------------------------------
 
@@ -130,29 +122,6 @@ def configure_storage(port: StoragePort) -> None:
 def clear_storage() -> None:
     global _storage
     _storage = None
-
-
-# ---------------------------------------------------------------------------
-# Inference store
-# ---------------------------------------------------------------------------
-
-_inference_store: InferenceStorePort | None = None
-
-
-def get_inference_store() -> InferenceStorePort:
-    if _inference_store is None:
-        raise RuntimeError("InferenceStorePort has not been configured.")
-    return _inference_store
-
-
-def configure_inference_store(store: InferenceStorePort) -> None:
-    global _inference_store
-    _inference_store = store
-
-
-def clear_inference_store() -> None:
-    global _inference_store
-    _inference_store = None
 
 
 # ---------------------------------------------------------------------------
