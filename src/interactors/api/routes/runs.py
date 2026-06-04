@@ -164,26 +164,37 @@ async def stream_run_logs(
         raise HTTPException(status_code=404, detail="Run not found")
 
     log_key = f"workflow/{run_id}/logs.txt"
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     async def _event_generator():
         sent_bytes = 0
+        consecutive_empty = 0
         while True:
-            current_run = run_store.get(run_id)
+            current_run = await loop.run_in_executor(None, lambda: run_store.get(run_id))
             is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
 
+            offset = sent_bytes
             try:
                 chunk = await loop.run_in_executor(
-                    None, lambda: storage.read_bytes_from(log_key, sent_bytes)
+                    None, lambda: storage.read_bytes_from(log_key, offset)
                 )
             except Exception:
+                log.warning("stream_run_logs: S3 read failed  run_id=%s  offset=%d", run_id, offset, exc_info=True)
                 chunk = b""
 
             if chunk:
+                consecutive_empty = 0
                 sent_bytes += len(chunk)
                 new_text = chunk.decode("utf-8", errors="replace")
                 for line in new_text.splitlines():
                     yield f"data: {line}\n\n"
+            else:
+                consecutive_empty += 1
+                if consecutive_empty == 1:
+                    log.info(
+                        "stream_run_logs: S3 returned empty  run_id=%s  key=%s  offset=%d  is_terminal=%s",
+                        run_id, log_key, offset, is_terminal,
+                    )
 
             if is_terminal:
                 yield "event: done\ndata: stream closed\n\n"

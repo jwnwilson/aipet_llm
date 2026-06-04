@@ -2,19 +2,11 @@
 
 ## Fixes
 - Improve log streaming to see everything we see in temporal
-- Add run id to inference listing and details 
-- Redirect to run after starting one from model page
-- Add link to inference from run.
 - Fix E2E tests to avoid breaking the platform
 - Setup uow pattern to contain all store instead of importing each individually
 
-## UI improvements
-- Need better logging visibility and progress visualisation on ui.
-    - Logs need to stream to UI.
-
 
 ## AI productivity gains
-
 - Create skill to consolidate learnings from session and update memory of claude.md then compact context.
 - Setup linear and try to trigger fully AI run of bug fix / feature.
 
