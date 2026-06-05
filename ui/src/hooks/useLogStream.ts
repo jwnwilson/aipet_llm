@@ -24,6 +24,7 @@ export function useLogStream(runId: string, active: boolean): UseLogStreamResult
       try {
         res = await fetch(`${baseUrl}/api/runs/${runId}/logs/stream`, {
           headers,
+          cache: 'no-store',
           signal: controller.signal,
         })
       } catch {

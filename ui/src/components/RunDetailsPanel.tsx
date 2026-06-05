@@ -185,6 +185,7 @@ export function RunDetailsPanel({ runId, run, datasetById = {} }: RunDetailsPane
     queryKey: ['runs', runId, 'logs'],
     queryFn: () => getRunLogs(runId),
     enabled: expanded && !isActive,
+    staleTime: 0,
     refetchInterval: false,
   })
 

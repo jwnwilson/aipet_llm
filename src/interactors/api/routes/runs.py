@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from domain.models import EvaluationData, PaginatedResponse, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
@@ -131,13 +131,16 @@ def get_run_evaluation(
     )
 
 
-@router.get("/{run_id}/logs", response_model=RunLogsResponse)
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+
+
+@router.get("/{run_id}/logs")
 def get_run_logs(
     run_id: str,
     run_store: RunStorePort = Depends(get_run_store),
     storage: StoragePort = Depends(get_storage),
     user: UserContext = Depends(require_approved),
-) -> RunLogsResponse:
+) -> JSONResponse:
     run = run_store.get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -145,9 +148,8 @@ def get_run_logs(
         raise HTTPException(status_code=404, detail="Run not found")
 
     logs = storage.read_text(f"workflow/{run_id}/logs.txt")
-    if not logs:
-        return RunLogsResponse(logs=None, source=None)
-    return RunLogsResponse(logs=logs, source="s3")
+    payload = RunLogsResponse(logs=logs or None, source="s3" if logs else None)
+    return JSONResponse(content=payload.model_dump(), headers=_NO_CACHE_HEADERS)
 
 
 @router.get("/{run_id}/logs/stream")
