@@ -64,7 +64,6 @@ async def main() -> None:
         workflows=[TrainingPipelineWorkflow, EvaluateWorkflow, ExportWorkflow],
         activities=[
             generate_dataset_activity,
-            stage_dataset_for_remote_activity,
             train_activity,
             evaluate_activity,
             export_activity,
