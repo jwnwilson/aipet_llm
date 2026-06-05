@@ -107,9 +107,6 @@ class TrainingPipelineWorkflow:
 
         try:
             if config.skip_generate:
-                # Use explicit S3 keys when provided (e.g. uploaded via train_dataset_id).
-                # Fall back to data_dir-derived paths for local runs or re-runs that
-                # already have data at the standard location.
                 result.dataset_paths = DatasetPaths(
                     train=config.train_data or f"{config.data_dir}/train.jsonl",
                     eval=config.eval_data or f"{config.data_dir}/eval.jsonl",
