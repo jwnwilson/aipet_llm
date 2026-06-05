@@ -182,6 +182,7 @@ export interface InferenceInstanceConfig {
 export interface InferenceInstance {
   id: string
   model_id: string
+  run_id: string | null
   pod_name: string
   pod_namespace: string
   idle_timeout_minutes: number
