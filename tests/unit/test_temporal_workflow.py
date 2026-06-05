@@ -217,7 +217,7 @@ async def test_workflow_skip_generate_uses_explicit_train_data_s3_key():
     the workflow uses those values (the actual S3 keys) as the dataset paths.
 
     Regression for: smoke-test K8s 404 — trigger_run provides train_dataset_id whose S3
-    key (datasets/{uuid}.jsonl) was never forwarded to ExperimentConfig, so the workflow
+    key (dataset/{uuid}.jsonl) was never forwarded to ExperimentConfig, so the workflow
     fell back to data/workflow/{run_id}/train.jsonl which does not exist in S3.
     """
     _configure_mock_storage()
@@ -237,8 +237,8 @@ async def test_workflow_skip_generate_uses_explicit_train_data_s3_key():
                     experiment_name="dry-run-s3-key",
                     run_id="test-run-s3-key",
                     skip_generate=True,
-                    train_data="datasets/abc123.jsonl",
-                    eval_data="datasets/eval456.jsonl",
+                    train_data="dataset/abc123.jsonl",
+                    eval_data="dataset/eval456.jsonl",
                     data_dir="data/workflow/run-xyz",  # must NOT be used when train_data is set
                     epochs=1,
                 )
@@ -252,11 +252,11 @@ async def test_workflow_skip_generate_uses_explicit_train_data_s3_key():
                 for p in reversed(patches):
                     p.stop()
 
-    assert result.dataset_paths.train == "datasets/abc123.jsonl", (
+    assert result.dataset_paths.train == "dataset/abc123.jsonl", (
         "Workflow must propagate ExperimentConfig.train_data as the dataset path "
         "so the K8s pod downloads the correct S3 key"
     )
-    assert result.dataset_paths.eval == "datasets/eval456.jsonl"
+    assert result.dataset_paths.eval == "dataset/eval456.jsonl"
 
 
 @pytest.mark.asyncio

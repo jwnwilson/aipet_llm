@@ -60,7 +60,7 @@ class ExperimentConfig:
     force_qlora: bool | None = None
     # Explicit S3 keys for train/eval data.  When non-empty and skip_generate=True these
     # are used directly instead of deriving paths from data_dir, so that a dataset
-    # uploaded via POST /api/datasets (stored at datasets/{uuid}.jsonl) is correctly
+    # uploaded via POST /api/datasets (stored at dataset/{uuid}/train.jsonl) is correctly
     # forwarded to the remote training job rather than a non-existent local path.
     train_data: str = ""
     eval_data: str = ""

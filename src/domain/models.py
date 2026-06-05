@@ -250,7 +250,7 @@ class DatasetConfig(BaseModel):
     name: str
     description: str = ""
     dataset_type: DatasetType
-    key: str  # storage key, e.g. "datasets/{id}.jsonl"
+    key: str  # storage key, e.g. "dataset/{id}.jsonl"
     owner_id: str | None = None
 
 

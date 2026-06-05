@@ -92,7 +92,7 @@ async def upload_train_dataset(
     user: UserContext = Depends(require_approved),
 ) -> DatasetUploadResult:
     """Legacy fixed-key train upload (backwards compat)."""
-    key = "datasets/train.jsonl"
+    key = "dataset/train.jsonl"
     await _upload_to_storage(file, storage, key)
     return DatasetUploadResult(key=key)
 
@@ -104,7 +104,7 @@ async def upload_eval_dataset(
     user: UserContext = Depends(require_approved),
 ) -> DatasetUploadResult:
     """Legacy fixed-key eval upload (backwards compat)."""
-    key = "datasets/eval.jsonl"
+    key = "dataset/eval.jsonl"
     await _upload_to_storage(file, storage, key)
     return DatasetUploadResult(key=key)
 

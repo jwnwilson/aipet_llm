@@ -361,7 +361,6 @@ async def trigger_run(
     if remote_backend and skip_generate and body.train_dataset_id is None:
         is_s3_key = (
             train_data.startswith("dataset/")
-            or train_data.startswith("datasets/")
             or train_data.startswith("workflow/")
         )
         if not is_s3_key:

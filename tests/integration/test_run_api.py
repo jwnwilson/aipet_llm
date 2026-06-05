@@ -150,7 +150,7 @@ class TestTriggerRun:
             DatasetConfig(
                 name="smoke-ds",
                 dataset_type=DatasetType.TRAIN,
-                key="datasets/abc123.jsonl",
+                key="dataset/abc123.jsonl",
                 owner_id="integration-test-user",
             )
         )
@@ -172,8 +172,8 @@ class TestTriggerRun:
 
         assert resp.status_code == 202
         config = mock_wf_client.start_workflow.call_args[0][1]
-        assert config.train_data == "datasets/abc123.jsonl"
-        assert config.eval_data == "datasets/abc123.jsonl", (
+        assert config.train_data == "dataset/abc123.jsonl"
+        assert config.eval_data == "dataset/abc123.jsonl", (
             "eval_data must fall back to the train dataset S3 key when "
             "eval_dataset_id is omitted — not the model's local 'data/eval.jsonl'"
         )

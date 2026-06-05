@@ -383,7 +383,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "import subprocess, sys, os, glob, pathlib\n",
                         "\n",
                         "# Locate the project wheel — handle both old (/kaggle/input/<slug>/) and\n",
-                        "# new (/kaggle/input/datasets/<owner>/<slug>/) Kaggle mount paths.\n",
+                        "# new (/kaggle/input/dataset/<owner>/<slug>/) Kaggle mount paths.\n",
                         f"_whl_list = (\n",
                         f"    glob.glob('/kaggle/input/{dataset_slug}/*.whl') or\n",
                         f"    glob.glob('/kaggle/input/**/{dataset_slug}/*.whl', recursive=True)\n",

@@ -112,7 +112,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "ml_artifacts" {
   rule {
     id     = "expire-datasets"
     status = "Enabled"
-    filter { prefix = "datasets/" }
+    filter { prefix = "dataset/" }
     expiration { days = 90 }
   }
 

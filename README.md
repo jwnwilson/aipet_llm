@@ -41,7 +41,7 @@ Three-layer hexagonal design:
 |--------|----------|
 | `workflow/{run_id}/` | Per-run artefacts: status, logs, checkpoint, data, GGUF |
 | `model/{model_id}/model_name.gguf` | Named GGUF exports |
-| `datasets/{dataset_id}/` | Shared datasets (`train.jsonl`, `eval.jsonl`) |
+| `dataset/{dataset_id}/` | Shared datasets (`train.jsonl`, `eval.jsonl`) |
 
 `run_id` is always a UUID hex string. Adapters must not prefix it with backend name.
 

@@ -1,8 +1,8 @@
 # TODO
 
-## Fixes
-- Fix bad contrast on the UI
+## Quick wins
 - Plug bunny app into an inference instance
+- Add progress % tracker for training or eval / remote compute jobs
 - Setup uow pattern to contain all store instead of importing each individually
 
 ## AI productivity gains

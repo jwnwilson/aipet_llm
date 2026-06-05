@@ -22,11 +22,11 @@ def store() -> SQLAlchemyDatasetStore:
     return SQLAlchemyDatasetStore(engine)
 
 
-def _train_config(name: str = "my-train", key: str = "datasets/abc.jsonl") -> DatasetConfig:
+def _train_config(name: str = "my-train", key: str = "dataset/abc.jsonl") -> DatasetConfig:
     return DatasetConfig(name=name, dataset_type=DatasetType.TRAIN, key=key)
 
 
-def _eval_config(name: str = "my-eval", key: str = "datasets/def.jsonl") -> DatasetConfig:
+def _eval_config(name: str = "my-eval", key: str = "dataset/def.jsonl") -> DatasetConfig:
     return DatasetConfig(name=name, dataset_type=DatasetType.EVAL, key=key)
 
 
@@ -38,8 +38,8 @@ class TestCreate:
         assert record.dataset_type == DatasetType.TRAIN
 
     def test_stores_key(self, store):
-        record = store.create(_train_config(key="datasets/custom.jsonl"))
-        assert record.key == "datasets/custom.jsonl"
+        record = store.create(_train_config(key="dataset/custom.jsonl"))
+        assert record.key == "dataset/custom.jsonl"
 
     def test_stores_description(self, store):
         config = DatasetConfig(name="ds", dataset_type=DatasetType.EVAL, key="k", description="useful data")

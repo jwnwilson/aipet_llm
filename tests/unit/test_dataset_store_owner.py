@@ -30,7 +30,7 @@ def _config(
     return DatasetConfig(
         name=name,
         dataset_type=dataset_type,
-        key=f"datasets/{name}.jsonl",
+        key=f"dataset/{name}.jsonl",
         owner_id=owner_id,
     )
 

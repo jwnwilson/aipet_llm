@@ -387,7 +387,7 @@ async def _resolve_training_data(
 
     For **file-based backends** (Kaggle, Colab, SSH) the adapter stages data
     from the local filesystem.  When ``skip_generate=True`` the workflow
-    forwards an S3 storage key (e.g. ``datasets/<uuid>.jsonl``) as
+    forwards an S3 storage key (e.g. ``dataset/<uuid>/train.jsonl``) as
     ``train_data`` — the file does not exist locally.  This function downloads
     it to ``data/train.jsonl`` / ``data/eval.jsonl`` and returns the local paths.
 

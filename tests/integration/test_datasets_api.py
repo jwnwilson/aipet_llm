@@ -39,7 +39,7 @@ class TestUploadTrainDataset:
             files={"file": ("train.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
         )
         assert resp.status_code == 201
-        assert resp.json()["key"] == "datasets/train.jsonl"
+        assert resp.json()["key"] == "dataset/train.jsonl"
 
     @pytest.mark.asyncio
     async def test_upload_calls_storage_upload(self, client):
@@ -50,7 +50,7 @@ class TestUploadTrainDataset:
         )
         assert storage.upload.called
         call_args = storage.upload.call_args
-        assert call_args[0][1] == "datasets/train.jsonl"
+        assert call_args[0][1] == "dataset/train.jsonl"
 
     @pytest.mark.asyncio
     async def test_upload_empty_file_returns_400(self, client):
@@ -83,7 +83,7 @@ class TestUploadEvalDataset:
             files={"file": ("eval.jsonl", io.BytesIO(VALID_JSONL), "application/octet-stream")},
         )
         assert resp.status_code == 201
-        assert resp.json()["key"] == "datasets/eval.jsonl"
+        assert resp.json()["key"] == "dataset/eval.jsonl"
 
     @pytest.mark.asyncio
     async def test_upload_calls_storage_upload(self, client):
@@ -94,7 +94,7 @@ class TestUploadEvalDataset:
         )
         assert storage.upload.called
         call_args = storage.upload.call_args
-        assert call_args[0][1] == "datasets/eval.jsonl"
+        assert call_args[0][1] == "dataset/eval.jsonl"
 
     @pytest.mark.asyncio
     async def test_upload_empty_file_returns_400(self, client):
