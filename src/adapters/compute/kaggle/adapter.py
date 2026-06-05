@@ -112,6 +112,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
         # Check both stdout and stderr — Kaggle CLI sometimes puts status in stderr
         # or exits non-zero for terminal states (e.g. "error").
         output = (result.stdout + " " + result.stderr).lower()
+
         for keyword, canonical in _STATUS_MAP.items():
             if keyword in output:
                 log.info("kaggle kernels status %s → mapped %r → %r", run_id, keyword, canonical)

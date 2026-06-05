@@ -482,6 +482,11 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
         activity.logger.info("Remote job submitted: adapter=%s run_id=%s", type(adapter).__name__, run_id)
 
+        # Give the remote backend time to register the job before the first status
+        # poll.  Kaggle's GetKernelSessionStatus returns 500 if the session does not
+        # exist yet (race condition between kernel push and session initialisation).
+        await asyncio.sleep(10)
+
     started_at = time.time()
 
     # Read existing S3 log content once so subsequent writes append rather than overwrite.
