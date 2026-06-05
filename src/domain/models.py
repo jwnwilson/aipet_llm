@@ -271,6 +271,7 @@ class InferenceStatus(str, Enum):
 
 class InferenceInstanceConfig(BaseModel):
     model_id: str
+    run_id: str | None = None
     model_path: str = ""
     pod_name: str = ""
     pod_namespace: str = "default"

@@ -261,7 +261,7 @@ class TrainingPipelineWorkflow:
             if should_create_inference:
                 await workflow.execute_activity(
                     create_inference_activity,
-                    args=[config.model_id, result.gguf_path.path],
+                    args=[config.model_id, result.gguf_path.path, config.run_id],
                     start_to_close_timeout=timedelta(minutes=5),
                     retry_policy=_RETRY,
                 )

@@ -911,12 +911,12 @@ async def save_gguf_path_activity(model_id: str, gguf_path: str) -> None:
 
 
 @activity.defn
-async def create_inference_activity(model_id: str, model_path: str = "") -> str:
+async def create_inference_activity(model_id: str, model_path: str = "", run_id: str = "") -> str:
     """Create an InferenceInstance record for an exported model.
     Returns the new instance id."""
     from domain.models import InferenceInstanceConfig
     if _inference_store is None:
         raise RuntimeError("InferenceStorePort has not been configured.")
-    config = InferenceInstanceConfig(model_id=model_id, model_path=model_path)
+    config = InferenceInstanceConfig(model_id=model_id, model_path=model_path, run_id=run_id or None)
     instance = _inference_store.create(config)
     return instance.id
