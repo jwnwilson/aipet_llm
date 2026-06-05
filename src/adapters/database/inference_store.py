@@ -19,6 +19,7 @@ class _InferenceInstanceRow(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     model_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     model_path: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     pod_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
@@ -33,6 +34,7 @@ def _row_to_domain(row: _InferenceInstanceRow) -> InferenceInstance:
     return InferenceInstance(
         id=row.id,
         model_id=row.model_id,
+        run_id=row.run_id,
         model_path=row.model_path,
         status=InferenceStatus(row.status),
         pod_name=row.pod_name,
@@ -51,20 +53,24 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
     def _session(self) -> Session:
         return Session(self._engine)
 
-    def list(self, model_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
+    def list(self, model_id: str | None = None, run_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
         with self._session() as s:
             stmt = sa_select(_InferenceInstanceRow)
             if model_id is not None:
                 stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
+            if run_id is not None:
+                stmt = stmt.where(_InferenceInstanceRow.run_id == run_id)
             stmt = stmt.order_by(_InferenceInstanceRow.created_at.desc()).offset(offset).limit(limit)
             rows = s.scalars(stmt).all()
             return [_row_to_domain(r) for r in rows]
 
-    def count(self, model_id: str | None = None) -> int:
+    def count(self, model_id: str | None = None, run_id: str | None = None) -> int:
         with self._session() as s:
             stmt = sa_select(func.count()).select_from(_InferenceInstanceRow)
             if model_id is not None:
                 stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
+            if run_id is not None:
+                stmt = stmt.where(_InferenceInstanceRow.run_id == run_id)
             return s.scalar(stmt) or 0
 
     def list_active(self) -> list[InferenceInstance]:
@@ -86,6 +92,7 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
         row = _InferenceInstanceRow(
             id=str(uuid.uuid4()),
             model_id=config.model_id,
+            run_id=config.run_id,
             model_path=config.model_path,
             status="pending",
             pod_name=config.pod_name,

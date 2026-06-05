@@ -71,8 +71,8 @@ export function RunDetailPage() {
   })
 
   const { data: instancesData } = useQuery({
-    queryKey: ['inferences', { modelId: run?.model_id }],
-    queryFn: () => listInferences(1, 50, run!.model_id),
+    queryKey: ['inferences', { modelId: run?.model_id, runId }],
+    queryFn: () => listInferences(1, 50, run!.model_id, runId),
     enabled: run != null,
   })
   const instances = instancesData?.items ?? []

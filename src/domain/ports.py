@@ -366,12 +366,12 @@ class InferenceStorePort(StorePort["InferenceInstance", "InferenceInstanceConfig
         """Set last_used_at to now; return updated record or None if not found."""
 
     @abstractmethod
-    def list(self, model_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
-        """Return inference instances with optional model filter and pagination."""
+    def list(self, model_id: str | None = None, run_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
+        """Return inference instances with optional model/run filter and pagination."""
 
     @abstractmethod
-    def count(self, model_id: str | None = None) -> int:  # type: ignore[override]
-        """Return total inference instance count, optionally filtered by model."""
+    def count(self, model_id: str | None = None, run_id: str | None = None) -> int:  # type: ignore[override]
+        """Return total inference instance count, optionally filtered by model or run."""
 
     @abstractmethod
     def list_active(self) -> list[InferenceInstance]:

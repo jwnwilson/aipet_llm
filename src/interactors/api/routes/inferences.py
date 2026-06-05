@@ -31,11 +31,12 @@ def list_instances(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=200),
     model_id: str | None = Query(None),
+    run_id: str | None = Query(None),
     store: InferenceStorePort = Depends(get_inference_store),
 ) -> PaginatedResponse[InferenceInstance]:
     offset = (page - 1) * limit
-    items = store.list(model_id=model_id, offset=offset, limit=limit)
-    total = store.count(model_id=model_id)
+    items = store.list(model_id=model_id, run_id=run_id, offset=offset, limit=limit)
+    total = store.count(model_id=model_id, run_id=run_id)
     return PaginatedResponse(items=items, total=total, page=page, limit=limit)
 
 

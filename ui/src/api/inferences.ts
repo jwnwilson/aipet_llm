@@ -8,9 +8,9 @@ export interface InferenceInstanceConfig {
   idle_timeout_minutes?: number
 }
 
-export async function listInferences(page = 1, limit = 50, modelId?: string): Promise<PaginatedResponse<InferenceInstance>> {
+export async function listInferences(page = 1, limit = 50, modelId?: string, runId?: string): Promise<PaginatedResponse<InferenceInstance>> {
   const { data } = await apiClient.get<PaginatedResponse<InferenceInstance>>('/api/inferences', {
-    params: { page, limit, ...(modelId ? { model_id: modelId } : {}) },
+    params: { page, limit, ...(modelId ? { model_id: modelId } : {}), ...(runId ? { run_id: runId } : {}) },
   })
   return data
 }
