@@ -130,9 +130,8 @@ jobs:
           if [ "${{ needs.changes.outputs.proxy }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
-              --image-ids imageTag=latest \
-              --query 'imageDetails[0].imageDigest' --output text)
+            DIGEST=$(docker buildx imagetools inspect "${REGISTRY}/${REPO}:latest" \
+              --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"')
             echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -159,9 +158,8 @@ jobs:
           if [ "${{ needs.changes.outputs.inference }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
-              --image-ids imageTag=latest \
-              --query 'imageDetails[0].imageDigest' --output text)
+            DIGEST=$(docker buildx imagetools inspect "${REGISTRY}/${REPO}:latest" \
+              --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"')
             echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -188,9 +186,8 @@ jobs:
           if [ "${{ needs.changes.outputs.training }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
-              --image-ids imageTag=latest \
-              --query 'imageDetails[0].imageDigest' --output text)
+            DIGEST=$(docker buildx imagetools inspect "${REGISTRY}/${REPO}:latest" \
+              --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"')
             echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -217,9 +214,8 @@ jobs:
           if [ "${{ needs.changes.outputs.export }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
-              --image-ids imageTag=latest \
-              --query 'imageDetails[0].imageDigest' --output text)
+            DIGEST=$(docker buildx imagetools inspect "${REGISTRY}/${REPO}:latest" \
+              --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"')
             echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
