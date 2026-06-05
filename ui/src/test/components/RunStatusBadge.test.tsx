@@ -20,18 +20,24 @@ describe('RunStatusBadge', () => {
     expect(screen.getByText(label)).toBeInTheDocument()
   })
 
-  it('applies green class for completed', () => {
+  it('applies success styling for completed', () => {
     render(<RunStatusBadge status="completed" />)
-    expect(screen.getByTestId('run-status-badge')).toHaveClass('bg-green-100')
+    const badge = screen.getByTestId('run-status-badge')
+    expect(badge.className).toContain('bg-[#e8efe9]')
+    expect(badge.className).toContain('text-[#2d6a4f]')
   })
 
-  it('applies red class for failed', () => {
+  it('applies danger styling for failed', () => {
     render(<RunStatusBadge status="failed" />)
-    expect(screen.getByTestId('run-status-badge')).toHaveClass('bg-red-100')
+    const badge = screen.getByTestId('run-status-badge')
+    expect(badge.className).toContain('bg-[#f1e2e0]')
+    expect(badge.className).toContain('text-[#7f1d1d]')
   })
 
-  it('applies blue class for running', () => {
+  it('applies active styling for running', () => {
     render(<RunStatusBadge status="running" />)
-    expect(screen.getByTestId('run-status-badge')).toHaveClass('bg-blue-100')
+    const badge = screen.getByTestId('run-status-badge')
+    expect(badge.className).toContain('bg-[#1a1a1a]')
+    expect(badge.className).toContain('text-[#fafaf7]')
   })
 })
