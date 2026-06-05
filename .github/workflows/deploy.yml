@@ -125,10 +125,15 @@ jobs:
       - name: Export proxy image ref
         id: proxy-image
         run: |
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          REPO=${{ env.ECR_PROXY_REPOSITORY }}
           if [ "${{ needs.changes.outputs.proxy }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_PROXY_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
+              --image-ids imageTag=latest \
+              --query 'imageDetails[0].imageDigest' --output text)
+            echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
       # ── Inference worker image (heavy — llama-cpp-python cached at layer) ──
@@ -149,10 +154,15 @@ jobs:
       - name: Export inference worker image ref
         id: inference-image
         run: |
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          REPO=${{ env.ECR_INFERENCE_REPOSITORY }}
           if [ "${{ needs.changes.outputs.inference }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_INFERENCE_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
+              --image-ids imageTag=latest \
+              --query 'imageDetails[0].imageDigest' --output text)
+            echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
       # ── Training image (torch/transformers — k8s training Jobs) ──────────────
@@ -173,10 +183,15 @@ jobs:
       - name: Export training image ref
         id: training-image
         run: |
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          REPO=${{ env.ECR_TRAINING_REPOSITORY }}
           if [ "${{ needs.changes.outputs.training }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_TRAINING_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
+              --image-ids imageTag=latest \
+              --query 'imageDetails[0].imageDigest' --output text)
+            echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
       # ── Export image (llama.cpp pre-built — k8s GGUF-export Jobs) ────────
@@ -197,10 +212,15 @@ jobs:
       - name: Export export image ref
         id: export-image
         run: |
+          REGISTRY=${{ steps.login-ecr.outputs.registry }}
+          REPO=${{ env.ECR_EXPORT_REPOSITORY }}
           if [ "${{ needs.changes.outputs.export }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image=${REGISTRY}/${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_EXPORT_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+            DIGEST=$(aws ecr describe-images --repository-name "${REPO}" \
+              --image-ids imageTag=latest \
+              --query 'imageDetails[0].imageDigest' --output text)
+            echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
       # ── RunPod training image (AMD64 + CUDA — public ECR, no auth required) ──
@@ -221,10 +241,13 @@ jobs:
       - name: Export RunPod image ref
         id: runpod-image
         run: |
+          REPO=${{ env.ECR_RUNPOD_REPOSITORY }}
           if [ "${{ needs.changes.outputs.runpod }}" = "true" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "image=${{ env.ECR_RUNPOD_REPOSITORY }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "image=${REPO}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           else
-            echo "image=${{ env.ECR_RUNPOD_REPOSITORY }}:latest" >> "$GITHUB_OUTPUT"
+            DIGEST=$(docker buildx imagetools inspect "${REPO}:latest" \
+              --format '{{json .Manifest.Digest}}' 2>/dev/null | tr -d '"')
+            echo "image=${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
   # ── Deploy: apply manifests via kubeconfig secret ─────────────────────────
