@@ -19,7 +19,7 @@ function DatasetMeta({ dataset, kind }: { dataset: Dataset | undefined; kind: 't
   if (!dataset) {
     return (
       <div className="flex items-center gap-2 py-2 border-l-[3px] border-[#d0d0c8] pl-3 bg-[#f6f5ef]">
-        <span className="font-['DM_Serif_Display'] italic text-[0.95rem] text-[#888888]">
+        <span className="font-['DM_Serif_Display'] italic text-[0.95rem] text-[#6b6b6b]">
           Not linked
         </span>
       </div>
@@ -31,7 +31,7 @@ function DatasetMeta({ dataset, kind }: { dataset: Dataset | undefined; kind: 't
       <span className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a] truncate">
         {dataset.name}
       </span>
-      <span className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.14em] text-[#888888] ml-auto">
+      <span className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.14em] text-[#6b6b6b] ml-auto">
         {kind}
       </span>
     </div>
@@ -78,7 +78,7 @@ export function LinkedDatasetsCard({ model }: Props) {
   return (
     <Card>
       <CardHeader>
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
           Section IV
         </div>
         <CardTitle>Linked datasets</CardTitle>

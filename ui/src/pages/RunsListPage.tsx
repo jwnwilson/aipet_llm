@@ -19,7 +19,7 @@ function RunModelGroup({ model, runs }: RunModelGroupProps) {
         <h2 className="font-['DM_Serif_Display'] text-[1.3rem] text-[#1a1a1a]">
           {model?.name ?? 'Unknown model'}
         </h2>
-        <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
           {runs.length} run{runs.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -33,14 +33,14 @@ function RunModelGroup({ model, runs }: RunModelGroupProps) {
               className="flex items-center justify-between gap-5 px-6 py-4 border-b border-[#e5e3d8] last:border-b-0 hover:bg-[#f3f2ec] transition-colors"
             >
               <div className="flex items-baseline gap-4 min-w-0">
-                <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888] shrink-0">
+                <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b] shrink-0">
                   {String(runs.length - i).padStart(3, '0')}
                 </span>
                 <div className="min-w-0">
                   <p className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a] truncate">
                     {run.workflow_id}
                   </p>
-                  <p className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5">
+                  <p className="font-['Outfit'] text-[0.78rem] text-[#6b6b6b] mt-0.5">
                     {new Date(run.created_at).toLocaleString()}
                   </p>
                 </div>
@@ -80,7 +80,7 @@ export function RunsListPage() {
   if (isLoading) {
     return (
       <div className="ed-page">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading runs
         </span>
       </div>
@@ -102,7 +102,7 @@ export function RunsListPage() {
   return (
     <div className="ed-page">
       <header className="mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-3">
           Vol. 2 · History
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-2">
@@ -120,7 +120,7 @@ export function RunsListPage() {
           <p className="font-['DM_Serif_Display'] italic text-[1.4rem] text-[#3a3a36] mb-1">
             No runs yet.
           </p>
-          <p className="font-['Outfit'] text-[0.9rem] text-[#888888]">
+          <p className="font-['Outfit'] text-[0.9rem] text-[#6b6b6b]">
             Trigger a run from a model's detail page.
           </p>
         </div>

@@ -31,7 +31,7 @@ function buildPipeline(model: TrainingModel, hasRuns: boolean, hasCompletedRun: 
 function PipelineHeader({ steps }: { steps: PipelineStep[] }) {
   return (
     <div className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] px-8 py-6">
-      <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-4">
+      <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-4">
         Pipeline
       </div>
       <div className="flex items-center w-full">
@@ -42,9 +42,9 @@ function PipelineHeader({ steps }: { steps: PipelineStep[] }) {
               ? 'bg-[#1a1a1a] text-[#fafaf7] border-[#1a1a1a]'
               : step.state === 'done'
               ? 'bg-[#1a1a1a] text-[#fafaf7] border-[#1a1a1a]'
-              : 'bg-white text-[#b3b1a6] border-[#d0d0c8]'
+              : 'bg-white text-[#767676] border-[#d0d0c8]'
           const labelClasses =
-            step.state === 'pending' ? 'text-[#b3b1a6]' : 'text-[#1a1a1a]'
+            step.state === 'pending' ? 'text-[#767676]' : 'text-[#1a1a1a]'
           return (
             <div key={step.label} className={`flex items-center ${isLast ? 'flex-none' : 'flex-1'}`}>
               <div className="flex items-center gap-3 min-w-fit">
@@ -97,7 +97,7 @@ function ConfigTable({ model }: { model: TrainingModel }) {
           key={String(key)}
           className={`flex flex-col gap-1 py-3 ${i >= 2 ? 'border-t border-[#e5e3d8]' : ''}`}
         >
-          <dt className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+          <dt className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
             {key}
           </dt>
           <dd className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a] break-all">
@@ -136,7 +136,7 @@ export function ModelDetailPage() {
   if (isLoading || !model) {
     return (
       <div className="ed-page">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading model
         </span>
       </div>
@@ -150,7 +150,7 @@ export function ModelDetailPage() {
       {/* Breadcrumb */}
       <Link
         to="/models"
-        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-5"
+        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] hover:text-[#1a1a1a] mb-5"
       >
         <ArrowLeft className="h-3 w-3" />
         Back to models
@@ -160,7 +160,7 @@ export function ModelDetailPage() {
       <header className="mb-8">
         <div className="flex items-start justify-between gap-6 flex-wrap">
           <div>
-            <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+            <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-2">
               Model · {model.id.slice(0, 8)}
             </div>
             <h1 className="font-['DM_Serif_Display'] text-[2.6rem] leading-[1.05] text-[#1a1a1a] mb-2">
@@ -205,7 +205,7 @@ export function ModelDetailPage() {
         <div className="flex flex-col gap-8">
           <Card>
             <CardHeader>
-              <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+              <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
                 Section I
               </div>
               <CardTitle>Configuration</CardTitle>
@@ -224,20 +224,20 @@ export function ModelDetailPage() {
           <section>
             <div className="flex items-baseline justify-between mb-4">
               <div>
-                <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+                <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
                   Section III
                 </div>
                 <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a]">
                   Run history
                 </h2>
               </div>
-              <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
+              <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b]">
                 {runs.length} {runs.length === 1 ? 'run' : 'runs'}
               </span>
             </div>
             {runs.length === 0 ? (
               <div className="border border-dashed border-[#d0d0c8] bg-white/40 rounded-[4px] py-10 text-center">
-                <p className="font-['DM_Serif_Display'] italic text-[1.05rem] text-[#888888]">
+                <p className="font-['DM_Serif_Display'] italic text-[1.05rem] text-[#6b6b6b]">
                   No runs recorded.
                 </p>
               </div>
@@ -250,7 +250,7 @@ export function ModelDetailPage() {
                       className="flex items-center justify-between gap-4 px-4 py-3 border-t border-[#d0d0c8] last:border-b hover:bg-[#f3f2ec] transition-colors"
                     >
                       <div className="flex items-baseline gap-3 min-w-0">
-                        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] text-[#888888]">
+                        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] text-[#6b6b6b]">
                           {String(runs.length - i).padStart(2, '0')}
                         </span>
                         <span className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a] truncate">

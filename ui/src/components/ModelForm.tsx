@@ -61,7 +61,7 @@ function Field({ label, error, children, hint }: { label: string; error?: string
       <Label>{label}</Label>
       {children}
       {hint && !error && (
-        <p className="font-['Outfit'] text-[0.78rem] text-[#888888]">{hint}</p>
+        <p className="font-['Outfit'] text-[0.78rem] text-[#6b6b6b]">{hint}</p>
       )}
       {error && (
         <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.12em] text-[#7f1d1d]">
@@ -182,7 +182,7 @@ export function ModelForm({ defaultValues, onSubmit, isSubmitting = false }: Mod
           <span className="font-['Outfit'] text-[0.92rem] text-[#1a1a1a]">
             Skip dataset generation
           </span>
-          <span className="font-['Outfit'] text-[0.82rem] text-[#888888]">
+          <span className="font-['Outfit'] text-[0.82rem] text-[#6b6b6b]">
             — reuse existing data referenced above
           </span>
         </label>
@@ -192,7 +192,7 @@ export function ModelForm({ defaultValues, onSubmit, isSubmitting = false }: Mod
         <Button type="submit" disabled={isSubmitting} size="lg">
           {isSubmitting ? 'Saving' : 'Save model'}
         </Button>
-        <span className="font-['Outfit'] text-[0.82rem] text-[#888888]">
+        <span className="font-['Outfit'] text-[0.82rem] text-[#6b6b6b]">
           Saved as a draft until you trigger your first run.
         </span>
       </div>

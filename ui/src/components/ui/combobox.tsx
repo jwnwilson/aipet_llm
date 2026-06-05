@@ -88,13 +88,13 @@ export function Combobox({ value, onChange, options, placeholder, disabled, clas
           "flex h-10 w-full bg-white px-3 py-2 pr-9 text-[0.92rem] text-[#1a1a1a]",
           "font-['Outfit'] rounded-[3px] border-[1.5px] border-[#d0d0c8]",
           'transition-colors duration-150',
-          'placeholder:text-[#b3b1a6]',
+          'placeholder:text-[#767676]',
           'focus-visible:outline-none focus-visible:border-[#1a1a1a]',
           'disabled:cursor-not-allowed disabled:opacity-50',
         )}
       />
       <ChevronDown
-        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#888888]"
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6b6b6b]"
         aria-hidden
       />
       {open && filtered.length > 0 && (

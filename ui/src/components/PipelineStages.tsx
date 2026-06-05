@@ -26,7 +26,7 @@ function StageNumber({ status, label }: { status: StageStatus; label: string }) 
   }
   if (status === 'completed') {
     return (
-      <span className={cn(base, 'bg-[#f3f2ec] text-[#888888] border-[1.5px] border-[#b3b1a6]')}>
+      <span className={cn(base, 'bg-[#f3f2ec] text-[#6b6b6b] border-[1.5px] border-[#b3b1a6]')}>
         <Check className="h-4 w-4" aria-label="completed" />
       </span>
     )
@@ -40,7 +40,7 @@ function StageNumber({ status, label }: { status: StageStatus; label: string }) 
   }
   // pending — show outlined number
   return (
-    <span className={cn(base, "bg-white text-[#b3b1a6] border-[1.5px] border-[#d0d0c8] font-['IBM_Plex_Mono']")}>
+    <span className={cn(base, "bg-white text-[#767676] border-[1.5px] border-[#d0d0c8] font-['IBM_Plex_Mono']")}>
       {label}
     </span>
   )
@@ -71,8 +71,8 @@ export function PipelineStages({ stages, numbers }: PipelineStagesProps) {
                 className={cn(
                   "font-['Outfit'] text-[0.72rem] uppercase tracking-[0.12em] font-medium",
                   stage.status === 'active' && 'text-[#1a1a1a]',
-                  stage.status === 'completed' && 'text-[#888888]',
-                  stage.status === 'pending' && 'text-[#b3b1a6]',
+                  stage.status === 'completed' && 'text-[#6b6b6b]',
+                  stage.status === 'pending' && 'text-[#767676]',
                   stage.status === 'failed' && 'text-[#7f1d1d]',
                 )}
               >
@@ -107,8 +107,8 @@ export function PipelineStages({ stages, numbers }: PipelineStagesProps) {
                 className={cn(
                   "font-['Outfit'] text-[0.72rem] uppercase tracking-[0.12em] font-medium",
                   stage.status === 'active' && 'text-[#1a1a1a]',
-                  stage.status === 'completed' && 'text-[#888888]',
-                  stage.status === 'pending' && 'text-[#b3b1a6]',
+                  stage.status === 'completed' && 'text-[#6b6b6b]',
+                  stage.status === 'pending' && 'text-[#767676]',
                   stage.status === 'failed' && 'text-[#7f1d1d]',
                 )}
               >

@@ -28,12 +28,12 @@ function AuthCluster() {
   const { logout, user } = useAuth0()
   return (
     <div className="flex items-center gap-4 ml-auto">
-      <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888] tracking-[0.04em] hidden sm:inline">
+      <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b] tracking-[0.04em] hidden sm:inline">
         {user?.email}
       </span>
       <button
         onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-        className="font-['Outfit'] text-[0.72rem] font-medium uppercase tracking-[0.12em] text-[#888888] hover:text-[#1a1a1a] transition-colors"
+        className="font-['Outfit'] text-[0.72rem] font-medium uppercase tracking-[0.12em] text-[#6b6b6b] hover:text-[#1a1a1a] transition-colors"
       >
         Logout
       </button>
@@ -68,7 +68,7 @@ function Nav() {
           <span className="font-['DM_Serif_Display'] text-[1.55rem] leading-none text-[#1a1a1a]">
             LLM
           </span>
-          <span className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#888888]">.api</span>
+          <span className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#6b6b6b]">.api</span>
         </Link>
         <nav className="hidden md:flex items-center gap-7" aria-label="Main navigation">
           <NavLink to="/models" className={linkClass}>Models</NavLink>
@@ -126,7 +126,7 @@ function LoadingScreen() {
   return (
     <div className="flex items-center justify-center h-screen">
       <div className="flex flex-col items-center gap-3">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading
         </span>
         <div className="h-px w-24 bg-[#1a1a1a] animate-pulse" />
@@ -158,7 +158,7 @@ function AppContent() {
           <h2 className="font-['DM_Serif_Display'] text-2xl text-[#7f1d1d] mb-2">
             Authentication Error
           </h2>
-          <p className="font-['IBM_Plex_Mono'] text-sm text-[#888888]">{error.message}</p>
+          <p className="font-['IBM_Plex_Mono'] text-sm text-[#6b6b6b]">{error.message}</p>
         </div>
       </div>
     )

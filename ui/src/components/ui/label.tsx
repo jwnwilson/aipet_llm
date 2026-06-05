@@ -14,7 +14,7 @@ const Label = React.forwardRef<
     ref={ref}
     className={cn(
       "font-['IBM_Plex_Mono'] text-[0.7rem] font-medium uppercase",
-      'tracking-[0.12em] text-[#888888] leading-none',
+      'tracking-[0.12em] text-[#6b6b6b] leading-none',
       'peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
       className,
     )}

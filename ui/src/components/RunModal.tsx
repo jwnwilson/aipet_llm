@@ -113,7 +113,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
       >
         <header className="px-6 py-5 border-b border-[#d0d0c8] flex items-start justify-between">
           <div>
-            <div className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.18em] text-[#888888] mb-1">
+            <div className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-1">
               New training run
             </div>
             <h2 id="run-modal-title" className="font-['DM_Serif_Display'] text-[1.5rem] leading-tight text-[#1a1a1a]">
@@ -123,7 +123,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-[#888888] hover:text-[#1a1a1a] transition-colors p-1 -m-1"
+            className="text-[#6b6b6b] hover:text-[#1a1a1a] transition-colors p-1 -m-1"
           >
             <X className="h-4 w-4" />
           </button>

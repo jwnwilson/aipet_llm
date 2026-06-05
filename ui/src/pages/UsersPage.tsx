@@ -25,7 +25,7 @@ function UserTable({ kind, users, action }: UserTableProps) {
           {users.length === 0 ? (
             <tr>
               <td colSpan={3} className="text-center py-8">
-                <span className="font-['DM_Serif_Display'] italic text-[#888888]">
+                <span className="font-['DM_Serif_Display'] italic text-[#6b6b6b]">
                   {kind === 'pending' ? 'No users awaiting approval' : 'No approved users'}
                 </span>
               </td>
@@ -36,7 +36,7 @@ function UserTable({ kind, users, action }: UserTableProps) {
                 <td className="font-['Outfit'] text-[0.9rem] text-[#1a1a1a]">
                   {user.email ?? '—'}
                 </td>
-                <td className="font-['IBM_Plex_Mono'] text-[0.74rem] text-[#888888]">
+                <td className="font-['IBM_Plex_Mono'] text-[0.74rem] text-[#6b6b6b]">
                   {user.user_id}
                 </td>
                 <td className="text-right">{action(user)}</td>
@@ -81,7 +81,7 @@ export function UsersPage() {
   return (
     <div className="ed-page">
       <header className="mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-3">
           Admin · Membership
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-3">
@@ -99,12 +99,12 @@ export function UsersPage() {
           <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a]">
             Awaiting approval
           </h2>
-          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] ml-auto">
+          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] ml-auto">
             {pending.length} {pending.length === 1 ? 'request' : 'requests'}
           </span>
         </div>
         {loadingPending ? (
-          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
             Loading
           </span>
         ) : (
@@ -131,12 +131,12 @@ export function UsersPage() {
           <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a]">
             Approved users
           </h2>
-          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] ml-auto">
+          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] ml-auto">
             {approved.length} {approved.length === 1 ? 'member' : 'members'}
           </span>
         </div>
         {loadingApproved ? (
-          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+          <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
             Loading
           </span>
         ) : (

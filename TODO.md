@@ -1,14 +1,21 @@
 # TODO
 
 ## Fixes
-- Improve log streaming to see everything we see in temporal
-- Fix E2E tests to avoid breaking the platform
+- Fix bad contrast on the UI
+- Plug bunny app into an inference instance
 - Setup uow pattern to contain all store instead of importing each individually
-
 
 ## AI productivity gains
 - Create skill to consolidate learnings from session and update memory of claude.md then compact context.
 - Setup linear and try to trigger fully AI run of bug fix / feature.
+- Look at subagent harness with multiple agents
+    - architect
+    - fe
+    - be
+    - qa
+
+## Data generator
+- Workflow to take sample inputs and then use claude to create training data to finetune a small model.
 
 ## LLM API
 - Setup llm adapter to either 

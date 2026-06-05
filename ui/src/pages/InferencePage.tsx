@@ -43,7 +43,7 @@ function ModelGroup({
         <h2 className="font-['DM_Serif_Display'] text-[1.3rem] text-[#1a1a1a]">
           {model?.name ?? 'Unknown model'}
         </h2>
-        <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
           {instances.length} instance{instances.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -58,7 +58,7 @@ function ModelGroup({
                   <p className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a]">
                     {instance.pod_name || '—'}
                   </p>
-                  <p className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#888888] mt-0.5">
+                  <p className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#6b6b6b] mt-0.5">
                     {instance.id.slice(0, 8)} · Last used: {formatDate(instance.last_used_at)}
                   </p>
                 </div>
@@ -161,7 +161,7 @@ export function InferencePage() {
   if (isLoading) {
     return (
       <div className="ed-page">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading instances
         </span>
       </div>
@@ -182,7 +182,7 @@ export function InferencePage() {
   return (
     <div className="ed-page">
       <header className="mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-3">
           Vol. 4 · Runtime
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-3">
@@ -200,7 +200,7 @@ export function InferencePage() {
           <p className="font-['DM_Serif_Display'] italic text-[1.4rem] text-[#3a3a36] mb-1">
             No inference instances.
           </p>
-          <p className="font-['Outfit'] text-[0.9rem] text-[#888888]">
+          <p className="font-['Outfit'] text-[0.9rem] text-[#6b6b6b]">
             Train a model to provision a serving instance.
           </p>
         </div>

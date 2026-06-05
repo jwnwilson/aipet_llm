@@ -53,7 +53,7 @@ const CardDescription = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HT
     <div
       ref={ref}
       className={cn(
-        "font-['Outfit'] text-[0.85rem] text-[#888888]",
+        "font-['Outfit'] text-[0.85rem] text-[#6b6b6b]",
         className,
       )}
       {...props}

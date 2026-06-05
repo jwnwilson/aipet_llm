@@ -40,7 +40,7 @@ function ProgressBar({ value }: { value: number }) {
 function MetricCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="bg-white px-3 py-2 min-w-0">
-      <dt className="font-['IBM_Plex_Mono'] text-[0.57rem] uppercase tracking-[0.14em] text-[#888888] mb-0.5 truncate">
+      <dt className="font-['IBM_Plex_Mono'] text-[0.57rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-0.5 truncate">
         {label}
       </dt>
       <dd className="font-['IBM_Plex_Mono'] text-[0.79rem] text-[#1a1a1a] break-all leading-snug">
@@ -72,7 +72,7 @@ function GridGroup({ children, cols = 4 }: { children: React.ReactNode; cols?: 1
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="font-['IBM_Plex_Mono'] text-[0.57rem] uppercase tracking-[0.18em] text-[#b3b1a6] mt-3 mb-1.5">
+    <div className="font-['IBM_Plex_Mono'] text-[0.57rem] uppercase tracking-[0.18em] text-[#767676] mt-3 mb-1.5">
       {children}
     </div>
   )
@@ -93,14 +93,14 @@ function MetricsSection({ run, datasetById }: { run: RunRecord; datasetById: Rec
           label="Progress"
           value={run.progress != null
             ? <ProgressBar value={run.progress} />
-            : <span className="text-[#b3b1a6]">—</span>
+            : <span className="text-[#767676]">—</span>
           }
         />
         <MetricCell
           label="Eval valid"
           value={run.eval_valid_pct != null
             ? `${Math.round(run.eval_valid_pct * 100)}%`
-            : <span className="text-[#b3b1a6]">—</span>
+            : <span className="text-[#767676]">—</span>
           }
         />
       </GridGroup>
@@ -111,14 +111,14 @@ function MetricsSection({ run, datasetById }: { run: RunRecord; datasetById: Rec
             label="Train dataset"
             value={run.train_dataset_id != null
               ? (datasetById[run.train_dataset_id] ?? run.train_dataset_id)
-              : <span className="text-[#b3b1a6]">—</span>
+              : <span className="text-[#767676]">—</span>
             }
           />
           <MetricCell
             label="Eval dataset"
             value={run.eval_dataset_id != null
               ? (datasetById[run.eval_dataset_id] ?? run.eval_dataset_id)
-              : <span className="text-[#b3b1a6]">—</span>
+              : <span className="text-[#767676]">—</span>
             }
           />
         </GridGroup>
@@ -161,7 +161,7 @@ function LogsSection({ logsData }: { logsData: RunLogsResponse }) {
           {logsData.logs}
         </pre>
       ) : (
-        <p className="font-['IBM_Plex_Mono'] text-[0.75rem] text-[#888888] italic">
+        <p className="font-['IBM_Plex_Mono'] text-[0.75rem] text-[#6b6b6b] italic">
           No logs captured
         </p>
       )}
@@ -196,7 +196,7 @@ export function RunDetailsPanel({ runId, run, datasetById = {} }: RunDetailsPane
       <button
         type="button"
         onClick={() => setExpanded(prev => !prev)}
-        className="flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] py-0.5"
+        className="flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#6b6b6b] hover:text-[#1a1a1a] py-0.5"
         aria-expanded={expanded}
       >
         {expanded
@@ -237,7 +237,7 @@ export function RunDetailsPanel({ runId, run, datasetById = {} }: RunDetailsPane
               <SectionLabel>Training logs — live</SectionLabel>
               <pre className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#1a1a1a] bg-[#f6f5f0] border border-[#d0d0c8] rounded-[2px] p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-56">
                 {streamedLines.length > 0 ? streamedLines.join('\n') : (
-                  <span className="text-[#888888] italic font-['DM_Serif_Display']">Waiting for output…</span>
+                  <span className="text-[#6b6b6b] italic font-['DM_Serif_Display']">Waiting for output…</span>
                 )}
               </pre>
             </div>

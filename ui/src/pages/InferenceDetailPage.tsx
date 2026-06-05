@@ -22,7 +22,7 @@ function formatDate(iso: string | null): string {
 function MetricBlock({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1 py-3 border-b border-[#e5e3d8]">
-      <dt className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+      <dt className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
         {label}
       </dt>
       <dd className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a] break-all">
@@ -73,7 +73,7 @@ export function InferenceDetailPage() {
   if (isLoading) {
     return (
       <div className="ed-page">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading instance
         </span>
       </div>
@@ -93,14 +93,14 @@ export function InferenceDetailPage() {
     <div className="ed-page max-w-4xl">
       <Link
         to="/inferences"
-        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-5"
+        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] hover:text-[#1a1a1a] mb-5"
       >
         <ArrowLeft className="h-3 w-3" />
         Back to instances
       </Link>
 
       <header className="mb-8">
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-2">
           Inference · {instance.id.slice(0, 8)}
         </div>
         <div className="flex items-start justify-between gap-4 flex-wrap">

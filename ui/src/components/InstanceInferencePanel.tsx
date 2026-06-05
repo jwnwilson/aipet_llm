@@ -48,7 +48,7 @@ export function InstanceInferencePanel({ instanceId }: InstanceInferencePanelPro
 
   return (
     <div className="mt-3 pt-3 border-t border-[#e5e3d8]">
-      <div className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.14em] text-[#888888] mb-2">
+      <div className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-2">
         Test inference
       </div>
 
@@ -89,20 +89,20 @@ export function InstanceInferencePanel({ instanceId }: InstanceInferencePanelPro
 function InferenceResult({ result }: { result: InferenceResponse }) {
   return (
     <div className="mt-2 bg-[#f6f5ef] border-l-[3px] border-[#1a1a1a] px-4 py-3">
-      <div className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#888888] mb-2">
+      <div className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-2">
         Response
       </div>
       <dl className="grid grid-cols-3 gap-x-4 gap-y-1">
         <div>
-          <dt className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.12em] text-[#888888]">Action</dt>
+          <dt className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.12em] text-[#6b6b6b]">Action</dt>
           <dd className="font-['DM_Serif_Display'] text-[1rem] text-[#1a1a1a]">{result.action}</dd>
         </div>
         <div>
-          <dt className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.12em] text-[#888888]">Target</dt>
+          <dt className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.12em] text-[#6b6b6b]">Target</dt>
           <dd className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a]">{result.target_object_id ?? '—'}</dd>
         </div>
         <div>
-          <dt className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.12em] text-[#888888]">Confidence</dt>
+          <dt className="font-['IBM_Plex_Mono'] text-[0.6rem] uppercase tracking-[0.12em] text-[#6b6b6b]">Confidence</dt>
           <dd className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a]">
             {result.confidence != null ? `${(result.confidence * 100).toFixed(0)}%` : '—'}
           </dd>

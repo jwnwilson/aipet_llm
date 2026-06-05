@@ -61,7 +61,7 @@ export function DatasetUpload() {
         <p className="font-['DM_Serif_Display'] text-[1.2rem] text-[#1a1a1a] mb-1">
           Drop your dataset here
         </p>
-        <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888]">
+        <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
           Accepted format · .jsonl
         </p>
       </div>
