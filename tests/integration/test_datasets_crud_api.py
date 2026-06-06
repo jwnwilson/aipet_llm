@@ -9,14 +9,11 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
+from sqlalchemy.orm import Session
 from adapters.database.dataset_store import SQLAlchemyDatasetStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
 from interactors.api.app import app
-from interactors.api.deps import (
-    clear_dataset_store,
-    clear_storage,
-    configure_dataset_store,
-    configure_storage,
-)
+from interactors.api.deps import clear_storage, configure_storage, get_uow
 
 VALID_JSONL = b'{"prompt": "hello", "completion": "world"}\n'
 
@@ -28,16 +25,24 @@ async def client(db_engine):
     storage.delete = MagicMock()
     configure_storage(storage)
 
-    dataset_store = SQLAlchemyDatasetStore(db_engine)
-    configure_dataset_store(dataset_store)
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(db_engine)
+        with uow.transaction():
+            yield uow
+
+    app.dependency_overrides[get_uow] = override_get_uow
+
+    session = Session(db_engine)
+    dataset_store = SQLAlchemyDatasetStore(session)
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c, storage, dataset_store
 
+    session.close()
+    app.dependency_overrides.pop(get_uow, None)
     clear_storage()
-    clear_dataset_store()
 
 
 class TestListDatasets:

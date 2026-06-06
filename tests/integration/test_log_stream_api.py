@@ -8,13 +8,15 @@ from httpx import ASGITransport
 from sqlalchemy import create_engine
 from sqlalchemy.pool import StaticPool
 
-from adapters.database import Base, init_db
+from sqlalchemy.orm import Session
+from adapters.database import init_db
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
 from adapters.storage.local import LocalStorageAdapter
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
 from interactors.api.app import app
-from interactors.api.deps import get_model_store, get_run_store, get_storage
+from interactors.api.deps import get_storage, get_uow
 
 _VALID_MODEL_CONFIG = TrainingModelConfig(
     name="test-model",
@@ -43,29 +45,36 @@ async def client(storage):
         poolclass=StaticPool,
     )
     init_db(engine)
-    model_store = SQLAlchemyModelStore(engine)
-    run_store = SQLAlchemyRunStore(engine)
 
-    app.dependency_overrides[get_model_store] = lambda: model_store
-    app.dependency_overrides[get_run_store] = lambda: run_store
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(engine)
+        with uow.transaction():
+            yield uow
+
+    app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_storage] = lambda: storage
+
+    session = Session(engine)
+    run_store = SQLAlchemyRunStore(session)
 
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c, run_store
 
-    app.dependency_overrides.pop(get_model_store, None)
-    app.dependency_overrides.pop(get_run_store, None)
+    session.close()
+    app.dependency_overrides.pop(get_uow, None)
     app.dependency_overrides.pop(get_storage, None)
 
 
 @pytest_asyncio.fixture
 async def created_run_id(client):
     c, run_store = client
-    model_store = app.dependency_overrides[get_model_store]()
-    model = model_store.create(_VALID_MODEL_CONFIG)
+    # run_store shares its session; create model in same session then commit
+    session = run_store._session
+    model = SQLAlchemyModelStore(session).create(_VALID_MODEL_CONFIG)
     run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-test-001"))
+    session.commit()
     yield run.id
 
 

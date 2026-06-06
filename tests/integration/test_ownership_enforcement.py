@@ -15,14 +15,11 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from adapters.database.dataset_store import SQLAlchemyDatasetStore
-from adapters.database.inference_store import SQLAlchemyInferenceStore
-from adapters.database.model_store import SQLAlchemyModelStore
-from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
 from domain.models import DatasetConfig, DatasetType, RunConfig, RunStatus, TrainingModelConfig, UserContext
 from interactors.api.app import app
 from interactors.api.auth import require_approved
-from interactors.api.deps import get_dataset_store, get_inference_store, get_model_store, get_pod_adapter, get_run_store, get_storage
+from interactors.api.deps import get_pod_adapter, get_storage, get_uow
 
 _USER_A = UserContext(user_id="user-a", email="a@test.com", roles=["user"])
 _USER_B = UserContext(user_id="user-b", email="b@test.com", roles=["user"])
@@ -45,26 +42,30 @@ VALID_JSONL = b'{"prompt": "hello", "completion": "world"}\n'
 
 @pytest_asyncio.fixture
 async def stores(db_engine):
-    """Shared in-memory SQLite with all three stores wired into the app."""
-    engine = db_engine
-    model_store = SQLAlchemyModelStore(engine)
-    run_store = SQLAlchemyRunStore(engine)
-    dataset_store = SQLAlchemyDatasetStore(engine)
-    inference_store = SQLAlchemyInferenceStore(engine)
-    pod_adapter = MagicMock()
+    """Shared in-memory SQLite with all stores wired into the app."""
+    from sqlalchemy.orm import Session
+    from adapters.database.model_store import SQLAlchemyModelStore
+    from adapters.database.run_store import SQLAlchemyRunStore
+    from adapters.database.dataset_store import SQLAlchemyDatasetStore
 
-    app.dependency_overrides[get_model_store] = lambda: model_store
-    app.dependency_overrides[get_run_store] = lambda: run_store
-    app.dependency_overrides[get_dataset_store] = lambda: dataset_store
-    app.dependency_overrides[get_inference_store] = lambda: inference_store
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(db_engine)
+        with uow.transaction():
+            yield uow
+
+    pod_adapter = MagicMock()
+    app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_pod_adapter] = lambda: pod_adapter
+
+    session = Session(db_engine)
+    model_store = SQLAlchemyModelStore(session)
+    run_store = SQLAlchemyRunStore(session)
+    dataset_store = SQLAlchemyDatasetStore(session)
 
     yield model_store, run_store, dataset_store
 
-    app.dependency_overrides.pop(get_model_store, None)
-    app.dependency_overrides.pop(get_run_store, None)
-    app.dependency_overrides.pop(get_dataset_store, None)
-    app.dependency_overrides.pop(get_inference_store, None)
+    session.close()
+    app.dependency_overrides.pop(get_uow, None)
     app.dependency_overrides.pop(get_pod_adapter, None)
 
 

@@ -2,6 +2,7 @@
 import pytest
 from sqlalchemy import create_engine
 
+from sqlalchemy.orm import Session
 from adapters.database import Base
 from adapters.database.run_store import SQLAlchemyRunStore
 from adapters.database.model_store import SQLAlchemyModelStore
@@ -20,7 +21,9 @@ from domain.models import (
 def run_store():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return SQLAlchemyRunStore(engine)
+    session = Session(engine)
+    yield SQLAlchemyRunStore(session)
+    session.close()
 
 
 def test_run_store_list_with_limit(run_store):
@@ -53,7 +56,9 @@ def test_run_store_count_by_owner(run_store):
 def model_store():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return SQLAlchemyModelStore(engine)
+    session = Session(engine)
+    yield SQLAlchemyModelStore(session)
+    session.close()
 
 
 def test_model_store_list_with_limit(model_store):
@@ -72,7 +77,9 @@ def test_model_store_list_with_limit(model_store):
 def dataset_store():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return SQLAlchemyDatasetStore(engine)
+    session = Session(engine)
+    yield SQLAlchemyDatasetStore(session)
+    session.close()
 
 
 def test_dataset_store_pagination(dataset_store):
@@ -86,7 +93,9 @@ def test_dataset_store_pagination(dataset_store):
 def inference_store_pag():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return SQLAlchemyInferenceStore(engine)
+    session = Session(engine)
+    yield SQLAlchemyInferenceStore(session)
+    session.close()
 
 
 def test_inference_store_pagination(inference_store_pag):

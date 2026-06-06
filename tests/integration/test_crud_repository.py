@@ -8,8 +8,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import BaseModel
 from sqlalchemy import DateTime, Integer, String, create_engine
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.pool import StaticPool
 
 from adapters.database.crud import CRUDRepository
@@ -62,20 +61,21 @@ def _to_widget(row: _WidgetRow) -> Widget:
 
 
 @pytest.fixture
-def engine() -> Engine:
-    eng = create_engine(
+def db_session() -> Session:
+    engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    _TestBase.metadata.create_all(eng)
-    return eng
+    _TestBase.metadata.create_all(engine)
+    with Session(engine) as session:
+        yield session
 
 
 @pytest.fixture
-def repo(engine: Engine) -> CRUDRepository[_WidgetRow, Widget, WidgetConfig]:
+def repo(db_session: Session) -> CRUDRepository[_WidgetRow, Widget, WidgetConfig]:
     return CRUDRepository(
-        engine=engine,
+        session=db_session,
         row_class=_WidgetRow,
         to_domain=_to_widget,
         order_by=_WidgetRow.created_at.desc(),

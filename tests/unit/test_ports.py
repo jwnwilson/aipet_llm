@@ -4,7 +4,7 @@ import pytest
 
 from domain.actions import Action
 from domain.models import InferenceRequest, InferenceResponse, RemoteTrainConfig
-from domain.ports import InferencePort, RemoteTrainingPort
+from domain.ports import InferencePort, RemoteTrainingPort, UnitOfWorkPort
 
 
 class FakeInferenceAdapter(InferencePort):
@@ -137,6 +137,19 @@ class TestRemoteTrainingPort:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+class TestUnitOfWorkPort:
+    def test_is_abstract(self):
+        with pytest.raises(TypeError):
+            UnitOfWorkPort()  # type: ignore[abstract]
+
+    def test_has_store_properties(self):
+        abstract_methods = getattr(UnitOfWorkPort, "__abstractmethods__", set())
+        assert "model_store" in abstract_methods
+        assert "run_store" in abstract_methods
+        assert "dataset_store" in abstract_methods
+        assert "inference_store" in abstract_methods
 
 
 @pytest.fixture()

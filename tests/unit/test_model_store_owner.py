@@ -4,22 +4,29 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from domain.models import TrainingModelConfig
-from adapters.database import Base, init_db
+from adapters.database import init_db
 from adapters.database.model_store import SQLAlchemyModelStore
 
 
 @pytest.fixture()
-def store() -> SQLAlchemyModelStore:
+def db_session():
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     init_db(engine)
-    return SQLAlchemyModelStore(engine)
+    with Session(engine) as session:
+        yield session
+
+
+@pytest.fixture()
+def store(db_session) -> SQLAlchemyModelStore:
+    return SQLAlchemyModelStore(db_session)
 
 
 def _config(name: str = "test-model", owner_id: str | None = None) -> TrainingModelConfig:

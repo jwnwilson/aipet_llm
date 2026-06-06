@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func, select, update
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from domain.models import TrainingModel, TrainingModelConfig
@@ -63,36 +62,34 @@ def _row_to_domain(row: _TrainingModelRow) -> TrainingModel:
 class SQLAlchemyModelStore(ModelStorePort):
     """ModelStorePort backed by a SQLAlchemy-managed relational database."""
 
-    def __init__(self, engine: Engine) -> None:
-        self._engine = engine
+    def __init__(self, session: Session) -> None:
+        self._session = session
         self._crud: CRUDRepository[_TrainingModelRow, TrainingModel, TrainingModelConfig] = CRUDRepository(
-            engine=engine,
+            session=session,
             row_class=_TrainingModelRow,
             to_domain=_row_to_domain,
             order_by=_TrainingModelRow.created_at.desc(),
         )
 
     def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[TrainingModel]:
-        with Session(self._engine) as db:
-            stmt = select(_TrainingModelRow)
-            if owner_id is not None:
-                stmt = stmt.where(
-                    (_TrainingModelRow.owner_id == owner_id)
-                    | (_TrainingModelRow.owner_id.is_(None))
-                )
-            stmt = stmt.order_by(_TrainingModelRow.created_at.desc()).offset(offset).limit(limit)
-            rows = db.scalars(stmt).all()
-            return [_row_to_domain(r) for r in rows]
+        stmt = select(_TrainingModelRow)
+        if owner_id is not None:
+            stmt = stmt.where(
+                (_TrainingModelRow.owner_id == owner_id)
+                | (_TrainingModelRow.owner_id.is_(None))
+            )
+        stmt = stmt.order_by(_TrainingModelRow.created_at.desc()).offset(offset).limit(limit)
+        rows = self._session.scalars(stmt).all()
+        return [_row_to_domain(r) for r in rows]
 
     def count(self, owner_id: str | None = None) -> int:
-        with Session(self._engine) as db:
-            stmt = select(func.count()).select_from(_TrainingModelRow)
-            if owner_id is not None:
-                stmt = stmt.where(
-                    (_TrainingModelRow.owner_id == owner_id)
-                    | (_TrainingModelRow.owner_id.is_(None))
-                )
-            return db.scalar(stmt) or 0
+        stmt = select(func.count()).select_from(_TrainingModelRow)
+        if owner_id is not None:
+            stmt = stmt.where(
+                (_TrainingModelRow.owner_id == owner_id)
+                | (_TrainingModelRow.owner_id.is_(None))
+            )
+        return self._session.scalar(stmt) or 0
 
     def get(self, id: str) -> TrainingModel | None:
         return self._crud.get(id)
@@ -108,25 +105,22 @@ class SQLAlchemyModelStore(ModelStorePort):
 
     def activate(self, id: str) -> TrainingModel | None:
         now = datetime.now(timezone.utc)
-        with Session(self._engine) as db:
-            row = db.get(_TrainingModelRow, id)
-            if row is None:
-                return None
-            db.execute(
-                update(_TrainingModelRow)
-                .where(_TrainingModelRow.id != id)
-                .values(is_active=False, updated_at=now)
-            )
-            row.is_active = True
-            row.updated_at = now
-            db.commit()
-            db.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_TrainingModelRow, id)
+        if row is None:
+            return None
+        self._session.execute(
+            update(_TrainingModelRow)
+            .where(_TrainingModelRow.id != id)
+            .values(is_active=False, updated_at=now)
+        )
+        row.is_active = True
+        row.updated_at = now
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def active(self) -> TrainingModel | None:
-        """Return the currently active model, or None if none is set."""
-        with Session(self._engine) as db:
-            row = db.scalars(
-                select(_TrainingModelRow).where(_TrainingModelRow.is_active.is_(True))
-            ).first()
-            return _row_to_domain(row) if row else None
+        row = self._session.scalars(
+            select(_TrainingModelRow).where(_TrainingModelRow.is_active.is_(True))
+        ).first()
+        return _row_to_domain(row) if row else None
