@@ -15,7 +15,8 @@ from temporalio import activity
 log = logging.getLogger(__name__)
 from temporalio.exceptions import ApplicationError
 
-from domain.ports import InferenceStorePort, ModelStorePort, RemoteJobPort, RemoteTrainingPort, RunStorePort, StoragePort, SubmitRetryConfig
+from sqlalchemy.engine import Engine as _Engine
+from domain.ports import RemoteJobPort, RemoteTrainingPort, StoragePort, SubmitRetryConfig
 from domain.train.dataset import EVAL_SIZE, SEED, TRAIN_SIZE
 from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DIR, DEFAULT_PATIENCE, DEFAULT_WARMUP_RATIO
 
@@ -24,20 +25,13 @@ from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DI
 # Module-level singletons — injected by the worker (or tests)
 # ---------------------------------------------------------------------------
 
-_model_store: ModelStorePort | None = None
-_run_store: RunStorePort | None = None
+_engine: _Engine | None = None
 _storage: StoragePort | None = None
-_inference_store: InferenceStorePort | None = None
 
 
-def configure_model_store(store: ModelStorePort) -> None:
-    global _model_store
-    _model_store = store
-
-
-def configure_run_store(store: RunStorePort) -> None:
-    global _run_store
-    _run_store = store
+def configure_engine(engine: _Engine) -> None:
+    global _engine
+    _engine = engine
 
 
 def configure_storage(storage: StoragePort) -> None:
@@ -45,21 +39,12 @@ def configure_storage(storage: StoragePort) -> None:
     _storage = storage
 
 
-def configure_inference_store(store: InferenceStorePort) -> None:
-    global _inference_store
-    _inference_store = store
-
-
-def _get_model_store() -> ModelStorePort:
-    if _model_store is None:
-        raise RuntimeError("ModelStorePort has not been configured in activities.")
-    return _model_store
-
-
-def _get_run_store() -> RunStorePort:
-    if _run_store is None:
-        raise RuntimeError("RunStorePort has not been configured in activities.")
-    return _run_store
+def _create_uow():
+    """Return a fresh UoW — create one per activity call, never share."""
+    from adapters.database.uow import SQLAlchemyUnitOfWork
+    if _engine is None:
+        raise RuntimeError("Engine has not been configured in activities.")
+    return SQLAlchemyUnitOfWork(_engine)
 
 
 def _get_storage() -> StoragePort:
@@ -114,7 +99,6 @@ class DatasetPaths:
 class TrainConfig:
     model: str = DEFAULT_MODEL
     train_data: str = "data/train.jsonl"
-    eval_data: str = "data/eval.jsonl"
     output_dir: str = DEFAULT_OUTPUT_DIR
     epochs: int = DEFAULT_EPOCHS
     patience: int = DEFAULT_PATIENCE
@@ -248,7 +232,8 @@ async def _poll_local_progress(run_id: str, output_dir: str, interval: int = 30)
                 for key in ("loss", "eval_loss"):
                     if key in data:
                         parts.append(f"{key}={data[key]:.4f}")
-                _get_run_store().update_progress(run_id, frac, "  ".join(parts))
+                with _create_uow().transaction() as _uow:
+                    _uow.run_store.update_progress(run_id, frac, "  ".join(parts))
             except Exception:
                 pass
         await asyncio.sleep(interval)
@@ -351,7 +336,6 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
             lambda: train(
                 model=config.model,
                 train_data=config.train_data,
-                eval_data=config.eval_data,
                 output_dir=config.output_dir,
                 epochs=config.epochs,
                 patience=config.patience,
@@ -382,56 +366,45 @@ _FILE_BASED_BACKENDS = frozenset({"colab", "ssh"})
 
 async def _resolve_training_data(
     config: TrainConfig, loop: asyncio.AbstractEventLoop
-) -> tuple[str, str]:
-    """Return *(train_key, eval_key)* ready for use in ``TrainJobSpec``.
+) -> str:
+    """Return the train key ready for use in ``TrainJobSpec``.
 
-    For **file-based backends** (Kaggle, Colab, SSH) the adapter stages data
-    from the local filesystem.  When ``skip_generate=True`` the workflow
-    forwards an S3 storage key (e.g. ``dataset/<uuid>/train.jsonl``) as
-    ``train_data`` — the file does not exist locally.  This function downloads
-    it to ``data/train.jsonl`` / ``data/eval.jsonl`` and returns the local paths.
+    For **file-based backends** (Colab, SSH) the adapter stages data from the
+    local filesystem.  When ``skip_generate=True`` the workflow forwards an S3
+    storage key as ``train_data`` — the file does not exist locally.  This
+    function downloads it to ``data/train.jsonl`` and returns the local path.
 
     For **S3-backed backends** (K8s, RunPod, VastAI) the remote job downloads
-    from S3 directly; the original S3 keys are returned unchanged so the pod
-    can find them (replacing keys with local paths would break S3 downloads).
-
-    If the paths already exist locally this is a no-op for file-based backends too.
+    from S3 directly; the original S3 key is returned unchanged.
     """
     train_key = config.train_data
-    # Derive eval key: use explicit config value or the sibling eval.jsonl.
-    eval_key = config.eval_data or str(Path(train_key).parent / "eval.jsonl")
 
-    # S3-backed backends: pass keys straight through — no local download needed.
+    # S3-backed backends: pass key straight through — no local download needed.
     if config.remote_backend not in _FILE_BASED_BACKENDS:
-        return train_key, eval_key
+        return train_key
 
     def _is_local(key: str) -> bool:
         p = Path(key)
         return (p if p.is_absolute() else Path.cwd() / p).exists()
 
-    if _is_local(train_key) and _is_local(eval_key):
-        return train_key, eval_key
+    if _is_local(train_key):
+        return train_key
 
     activity.logger.info(
-        "Training data not found locally (train=%r eval=%r cwd=%s); "
+        "Training data not found locally (train=%r cwd=%s); "
         "downloading from storage for local staging.",
-        train_key, eval_key, Path.cwd(),
+        train_key, Path.cwd(),
     )
     storage = _get_storage()
     dest = Path("data")
     dest.mkdir(parents=True, exist_ok=True)
     local_train = dest / "train.jsonl"
-    local_eval = dest / "eval.jsonl"
 
     if not _is_local(train_key):
         await loop.run_in_executor(None, lambda: storage.download(train_key, local_train))
         activity.logger.info("Downloaded train data → %s", local_train)
 
-    if not _is_local(eval_key):
-        await loop.run_in_executor(None, lambda: storage.download(eval_key, local_eval))
-        activity.logger.info("Downloaded eval data → %s", local_eval)
-
-    return str(local_train), str(local_eval)
+    return str(local_train)
 
 
 async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> CheckpointPath:
@@ -439,28 +412,20 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
     loop = asyncio.get_event_loop()
 
-    # Capture original keys before resolution — backends that access S3 directly
-    # (Kaggle, K8s, RunPod) use these to configure the remote worker without
-    # staging data on the local filesystem.
-    original_train_key = config.train_data
-    original_eval_key = config.eval_data
-
-    # If train/eval paths are S3 keys, download them locally for file-based
-    # backends (Colab, SSH) that stage data into their compute environment.
-    train_data, eval_data = await _resolve_training_data(config, loop)
+    # If train path is an S3 key, download locally for file-based backends
+    # (Colab, SSH) that stage data into their compute environment.
+    train_data = await _resolve_training_data(config, loop)
 
     remote_config = TrainJobSpec(
         model=config.model,
         train_data=train_data,
-        eval_data=eval_data,
         epochs=config.epochs,
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
         experiment_name=config.experiment_name or "llm-api",
         run_id=config.run_id,
-        # Original S3 keys for backends that access storage directly (e.g. Kaggle).
-        train_s3_key=original_train_key,
-        eval_s3_key=original_eval_key,
+        # Original S3 key for backends that access storage directly (e.g. Kaggle).
+        train_s3_key=config.train_data,
     )
 
     # Resume from a prior attempt if the remote job was already submitted.
@@ -533,7 +498,8 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
                 try:
                     frac, detail = await loop.run_in_executor(None, lambda: adapter.progress(run_id))
                     if frac > 0:
-                        _get_run_store().update_progress(config.run_id, frac, detail)
+                        with _create_uow().transaction() as _uow:
+                            _uow.run_store.update_progress(config.run_id, frac, detail)
                 except Exception:
                     pass
 
@@ -832,8 +798,8 @@ async def finalise_run_activity(run_id: str, passed: bool, valid_pct: float) -> 
     """
     from domain.models import RunStatus
 
-    store = _get_run_store()
-    store.update_status(run_id, RunStatus.COMPLETED if passed else RunStatus.FAILED)
+    with _create_uow().transaction() as uow:
+        uow.run_store.update_status(run_id, RunStatus.COMPLETED if passed else RunStatus.FAILED)
     activity.logger.info(
         "Run %s finalised: status=%s",
         run_id,
@@ -853,8 +819,8 @@ async def record_eval_result_activity(
     """
     from domain.models import EvalOutcome
 
-    store = _get_run_store()
-    store.update_eval_result(run_id, valid_pct, EvalOutcome(outcome_value))
+    with _create_uow().transaction() as uow:
+        uow.run_store.update_eval_result(run_id, valid_pct, EvalOutcome(outcome_value))
     activity.logger.info(
         "Eval result recorded: run=%s pct=%.1f%% outcome=%s",
         run_id, valid_pct * 100, outcome_value,
@@ -865,8 +831,8 @@ async def record_eval_result_activity(
 async def update_run_status_activity(run_id: str, status_value: str) -> None:
     """Set run status without touching eval_valid_pct (used by export-only workflows)."""
     from domain.models import RunStatus
-    store = _get_run_store()
-    store.update_status(run_id, RunStatus(status_value))
+    with _create_uow().transaction() as uow:
+        uow.run_store.update_status(run_id, RunStatus(status_value))
 
 
 @activity.defn
@@ -877,8 +843,8 @@ async def fail_run_activity(run_id: str, reason: str, status_value: str = "faile
     Temporal cancellation is reflected in the run record.
     """
     from domain.models import RunStatus
-    store = _get_run_store()
-    store.fail_run(run_id, reason, RunStatus(status_value))
+    with _create_uow().transaction() as uow:
+        uow.run_store.fail_run(run_id, reason, RunStatus(status_value))
     activity.logger.info(
         "Run %s marked %s: %s",
         run_id,
@@ -890,28 +856,27 @@ async def fail_run_activity(run_id: str, reason: str, status_value: str = "faile
 @activity.defn
 async def save_gguf_path_activity(model_id: str, gguf_path: str) -> None:
     """Persist the storage key of the exported GGUF back to the model record."""
-    store = _get_model_store()
-    model = store.get(model_id)
-    if model is None:
-        activity.logger.warning("save_gguf_path: model %s not found — skipping", model_id)
-        return
-
     from domain.models import TrainingModelConfig
-    config = TrainingModelConfig(
-        name=model.name,
-        description=model.description,
-        base_model=model.base_model,
-        train_data=model.train_data,
-        eval_data=model.eval_data,
-        epochs=model.epochs,
-        patience=model.patience,
-        warmup_ratio=model.warmup_ratio,
-        remote_backend=model.remote_backend,
-        skip_generate=model.skip_generate,
-        gguf_path=gguf_path,
-        is_active=model.is_active,
-    )
-    store.update(model_id, config)
+    with _create_uow().transaction() as uow:
+        model = uow.model_store.get(model_id)
+        if model is None:
+            activity.logger.warning("save_gguf_path: model %s not found — skipping", model_id)
+            return
+        config = TrainingModelConfig(
+            name=model.name,
+            description=model.description,
+            base_model=model.base_model,
+            train_data=model.train_data,
+            eval_data=model.eval_data,
+            epochs=model.epochs,
+            patience=model.patience,
+            warmup_ratio=model.warmup_ratio,
+            remote_backend=model.remote_backend,
+            skip_generate=model.skip_generate,
+            gguf_path=gguf_path,
+            is_active=model.is_active,
+        )
+        uow.model_store.update(model_id, config)
     activity.logger.info("Saved gguf_path=%s for model %s", gguf_path, model_id)
 
 
@@ -920,8 +885,7 @@ async def create_inference_activity(model_id: str, model_path: str = "", run_id:
     """Create an InferenceInstance record for an exported model.
     Returns the new instance id."""
     from domain.models import InferenceInstanceConfig
-    if _inference_store is None:
-        raise RuntimeError("InferenceStorePort has not been configured.")
     config = InferenceInstanceConfig(model_id=model_id, model_path=model_path, run_id=run_id or None)
-    instance = _inference_store.create(config)
+    with _create_uow().transaction() as uow:
+        instance = uow.inference_store.create(config)
     return instance.id

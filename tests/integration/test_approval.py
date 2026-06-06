@@ -5,12 +5,11 @@ import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport
-from adapters.database.model_store import SQLAlchemyModelStore
-from adapters.database.run_store import SQLAlchemyRunStore
 from domain.models import UserContext
 from domain.ports import AuthPort
+from adapters.database.uow import SQLAlchemyUnitOfWork
 from interactors.api.app import app
-from interactors.api.deps import configure_auth, get_model_store, get_run_store
+from interactors.api.deps import configure_auth, get_uow
 
 USER_TOKEN = "user-token"
 ADMIN_TOKEN = "admin-token"
@@ -41,14 +40,17 @@ def _setup():
 
 @pytest_asyncio.fixture
 async def client(db_engine):
-    app.dependency_overrides[get_model_store] = lambda: SQLAlchemyModelStore(db_engine)
-    app.dependency_overrides[get_run_store] = lambda: SQLAlchemyRunStore(db_engine)
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(db_engine)
+        with uow.transaction():
+            yield uow
+
+    app.dependency_overrides[get_uow] = override_get_uow
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c
-    app.dependency_overrides.pop(get_model_store, None)
-    app.dependency_overrides.pop(get_run_store, None)
+    app.dependency_overrides.pop(get_uow, None)
 
 
 USER_HEADERS = {"Authorization": f"Bearer {USER_TOKEN}"}

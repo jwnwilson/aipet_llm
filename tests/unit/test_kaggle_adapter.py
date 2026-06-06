@@ -25,9 +25,7 @@ def _config(**kwargs) -> RemoteTrainConfig:
     defaults = dict(
         model="HuggingFaceTB/SmolLM2-360M",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         train_s3_key="data/workflow/test-run/train.jsonl",
-        eval_s3_key="data/workflow/test-run/eval.jsonl",
         run_id="test-run-id",
         epochs=1,
         patience=3,
@@ -93,8 +91,8 @@ class TestRenderNotebook:
         source = "".join(nb["cells"][0]["source"])
         assert "KAGGLE_DATA_DIR" not in source
 
-    def test_notebook_sets_train_and_eval_data_keys_as_s3_keys(self, tmp_path, monkeypatch):
-        """TRAIN_DATA_KEY and EVAL_DATA_KEY must be the original S3 keys."""
+    def test_notebook_sets_train_data_key_as_s3_key(self, tmp_path, monkeypatch):
+        """TRAIN_DATA_KEY must be the original S3 key; eval is not passed to training."""
         adapter = _make_adapter(tmp_path, monkeypatch)
         kernel_dir = tmp_path / "my-exp"
         kernel_dir.mkdir()
@@ -104,8 +102,7 @@ class TestRenderNotebook:
         source = "".join(nb["cells"][0]["source"])
         assert "TRAIN_DATA_KEY" in source
         assert "data/workflow/test-run/train.jsonl" in source
-        assert "EVAL_DATA_KEY" in source
-        assert "data/workflow/test-run/eval.jsonl" in source
+        assert "EVAL_DATA_KEY" not in source
         assert "S3_KEY_PREFIX" in source
         assert "workflow/test-run-id" in source
 

@@ -6,6 +6,7 @@ hexagonal architecture contract.
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,6 +55,10 @@ def run_export(storage: StoragePort, config: ExportJobConfig, work_dir: Path) ->
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     storage.write_bytes(f"{prefix}/status.txt", b"running")
+    storage.write_bytes(
+        f"{prefix}/progress.json",
+        json.dumps({"fraction": 0.0, "detail": "starting export"}).encode(),
+    )
     log.info("export  run_id=%s  quantize=%s", config.run_id, config.quantize)
 
     # 1. Download checkpoint
@@ -70,6 +75,11 @@ def run_export(storage: StoragePort, config: ExportJobConfig, work_dir: Path) ->
             "Verify CHECKPOINT_S3_PREFIX matches the training job S3_KEY_PREFIX + '/checkpoint/'."
         )
 
+    storage.write_bytes(
+        f"{prefix}/progress.json",
+        json.dumps({"fraction": 0.4, "detail": "checkpoint downloaded"}).encode(),
+    )
+
     # 2. Export to GGUF — lazy import keeps heavy deps out of module-load time
     from domain.train.export import export as export_gguf
     log.info("exporting  quantize=%s  llama_cpp_dir=%s", config.quantize, config.llama_cpp_dir)
@@ -81,9 +91,19 @@ def run_export(storage: StoragePort, config: ExportJobConfig, work_dir: Path) ->
     )
     log.info("GGUF written  size=%.1f MB", gguf_output.stat().st_size / 1024 ** 2)
 
+    storage.write_bytes(
+        f"{prefix}/progress.json",
+        json.dumps({"fraction": 0.9, "detail": "uploading GGUF"}).encode(),
+    )
+
     # 3. Upload GGUF
     log.info("uploading GGUF  key=%s", config.gguf_s3_key)
     storage.upload(gguf_output, config.gguf_s3_key)
+
+    storage.write_bytes(
+        f"{prefix}/progress.json",
+        json.dumps({"fraction": 1.0, "detail": "export complete"}).encode(),
+    )
 
     # 4. Cleanup checkpoint from S3 (best-effort — GGUF is already uploaded)
     try:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import uuid
@@ -198,6 +199,49 @@ async def stream_run_logs(
                         "stream_run_logs: S3 returned empty  run_id=%s  key=%s  offset=%d  is_terminal=%s",
                         run_id, log_key, offset, is_terminal,
                     )
+
+            if is_terminal:
+                yield "event: done\ndata: stream closed\n\n"
+                return
+
+            try:
+                await asyncio.sleep(3.0)
+            except asyncio.CancelledError:
+                return
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/{run_id}/progress/stream")
+async def stream_run_progress(
+    run_id: str,
+    run_store: RunStorePort = Depends(get_run_store),
+    user: UserContext = Depends(require_approved),
+) -> StreamingResponse:
+    run = run_store.get(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run.owner_id is not None and run.owner_id != user.user_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    loop = asyncio.get_running_loop()
+
+    async def _event_generator():
+        last_fraction: float | None = None
+        while True:
+            current_run = await loop.run_in_executor(None, lambda: run_store.get(run_id))
+            is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
+
+            fraction = current_run.progress if current_run else None
+            detail = (current_run.progress_detail or "") if current_run else ""
+
+            if fraction is not None and fraction != last_fraction:
+                last_fraction = fraction
+                yield f"data: {json.dumps({'fraction': fraction, 'detail': detail})}\n\n"
 
             if is_terminal:
                 yield "event: done\ndata: stream closed\n\n"

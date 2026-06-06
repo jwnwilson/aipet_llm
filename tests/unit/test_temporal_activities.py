@@ -21,8 +21,6 @@ from interactors.temporal.activities import (
     ExportConfig,
     GGUFPath,
     TrainConfig,
-    configure_model_store,
-    configure_run_store,
     configure_storage,
     evaluate_activity,
     export_activity,
@@ -36,6 +34,26 @@ from interactors.temporal.activities import (
 
 
 ENV = ActivityEnvironment()
+
+def _mock_uow(run_store=None, model_store=None, inference_store=None):
+    """Mock UoW whose transaction() context manager yields itself."""
+    from contextlib import contextmanager
+    mock = MagicMock()
+    if run_store is not None:
+        mock.run_store = run_store
+    if model_store is not None:
+        mock.model_store = model_store
+    if inference_store is not None:
+        mock.inference_store = inference_store
+
+    @contextmanager
+    def fake_transaction():
+        yield mock
+
+    mock.transaction = fake_transaction
+    return mock
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +151,6 @@ async def test_train_activity_delegates_to_domain():
     config = TrainConfig(
         model="some-model",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         output_dir="models/checkpoints",
         epochs=3,
         patience=2,
@@ -144,7 +161,6 @@ async def test_train_activity_delegates_to_domain():
     mock_train.assert_called_once_with(
         model="some-model",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         output_dir="models/checkpoints",
         epochs=3,
         patience=2,
@@ -472,7 +488,7 @@ class TestTrainRemoteProgress:
     async def test_calls_adapter_progress_and_persists_when_run_id_set(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0  loss=0.4312"))
         config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
@@ -486,7 +502,7 @@ class TestTrainRemoteProgress:
     async def test_skips_update_when_fraction_is_zero(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.0, ""))
         config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
@@ -500,7 +516,7 @@ class TestTrainRemoteProgress:
     async def test_skips_progress_entirely_when_no_run_id(self, monkeypatch):
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.75, "epoch=2.0"))
         config = TrainConfig(run_id="", experiment_name="test", output_dir="/tmp/out")
@@ -515,7 +531,7 @@ class TestTrainRemoteProgress:
         acts = self._patches(monkeypatch)
         mock_store = MagicMock()
         mock_store.update_progress.side_effect = RuntimeError("DB gone")
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         adapter = self._make_adapter(["done"], progress_return=(0.5, "epoch=1.0"))
         config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
@@ -539,7 +555,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         (tmp_path / "progress.json").write_text(
@@ -558,7 +574,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         (tmp_path / "progress.json").write_text(
@@ -578,7 +594,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         (tmp_path / "progress.json").write_text('{"step": 50, "max_steps": 100, "epoch": 1.0}')
@@ -595,7 +611,7 @@ class TestPollLocalProgress:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
         monkeypatch.setattr(acts.activity, "heartbeat", MagicMock())
 
         with patch("interactors.temporal.activities.asyncio.sleep", side_effect=asyncio.CancelledError):
@@ -622,7 +638,7 @@ class TestFinaliseRunActivity:
         import interactors.temporal.activities as acts
 
         mock_store = self._make_run_store()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(finalise_run_activity, "run-1", True, 0.97)
 
@@ -634,7 +650,7 @@ class TestFinaliseRunActivity:
         import interactors.temporal.activities as acts
 
         mock_store = self._make_run_store()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(finalise_run_activity, "run-2", False, 0.75)
 
@@ -646,7 +662,7 @@ class TestFinaliseRunActivity:
         import interactors.temporal.activities as acts
 
         mock_store = self._make_run_store()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(finalise_run_activity, "run-3", True, 0.95)
 
@@ -667,7 +683,7 @@ class TestUpdateRunStatusActivity:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(update_run_status_activity, "run-42", "training")
 
@@ -679,7 +695,7 @@ class TestUpdateRunStatusActivity:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(update_run_status_activity, "run-42", "evaluating")
 
@@ -691,7 +707,7 @@ class TestUpdateRunStatusActivity:
         import interactors.temporal.activities as acts
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(update_run_status_activity, "run-42", "completed")
 
@@ -713,7 +729,7 @@ class TestFailRunActivity:
         from interactors.temporal.activities import fail_run_activity
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(fail_run_activity, "run-99", "train failed: OOM")
 
@@ -726,7 +742,7 @@ class TestFailRunActivity:
         from interactors.temporal.activities import fail_run_activity
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(fail_run_activity, "run-99", "cancelled by user", "cancelled")
 
@@ -739,7 +755,7 @@ class TestFailRunActivity:
         from interactors.temporal.activities import fail_run_activity
 
         mock_store = MagicMock()
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         await ENV.run(fail_run_activity, "run-55", "evaluate failed: timeout", "failed")
 
@@ -754,7 +770,7 @@ class TestFailRunActivity:
 
         mock_store = MagicMock()
         mock_store.fail_run.return_value = None  # store returns None for unknown id
-        monkeypatch.setattr(acts, "_run_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
 
         # should complete without raising
         await ENV.run(fail_run_activity, "unknown-run", "some error")
@@ -864,7 +880,7 @@ class TestSaveGgufPathActivity:
         model = self._make_model()
         mock_store = MagicMock()
         mock_store.get.return_value = model
-        monkeypatch.setattr(acts, "_model_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(model_store=mock_store))
 
         await ENV.run(save_gguf_path_activity, "model-uuid", "gguf/my-model.gguf")
 
@@ -881,7 +897,7 @@ class TestSaveGgufPathActivity:
 
         mock_store = MagicMock()
         mock_store.get.return_value = None
-        monkeypatch.setattr(acts, "_model_store", mock_store)
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(model_store=mock_store))
 
         # Must not raise
         await ENV.run(save_gguf_path_activity, "nonexistent-model", "gguf/x.gguf")
@@ -897,105 +913,65 @@ class TestSaveGgufPathActivity:
 class TestResolveTrainingData:
     """Unit tests for the _resolve_training_data helper.
 
-    File-based backends (Kaggle, Colab, SSH) stage data from the local filesystem
-    and need S3 keys materialised locally when skip_generate=True.
-    S3-backed backends (K8s, RunPod, VastAI) must receive the original S3 key so
-    the remote pod can download it — replacing the key with a local path breaks them.
+    File-based backends (Colab, SSH) stage data from the local filesystem and
+    need S3 keys materialised locally when skip_generate=True.
+    S3-backed backends (K8s, RunPod, VastAI, Kaggle) must receive the original
+    S3 key so the remote pod can download it.
     """
 
     @pytest.mark.asyncio
-    async def test_returns_paths_unchanged_when_files_exist_locally(self, tmp_path):
-        """No-op when both files already exist locally (file-based backend)."""
+    async def test_returns_train_path_unchanged_when_file_exists_locally(self, tmp_path):
+        """No-op when train file already exists locally (file-based backend)."""
         import asyncio
         import interactors.temporal.activities as acts
 
         train = tmp_path / "train.jsonl"
-        eval_ = tmp_path / "eval.jsonl"
         train.write_text('{"prompt":"p","completion":"c"}\n')
-        eval_.write_text('{"prompt":"p","completion":"c"}\n')
 
-        config = TrainConfig(train_data=str(train), eval_data=str(eval_), remote_backend="kaggle")
+        config = TrainConfig(train_data=str(train), remote_backend="ssh")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == str(train)
-        assert eval_out == str(eval_)
 
     @pytest.mark.asyncio
-    async def test_passes_s3_keys_unchanged_for_kaggle(self, tmp_path, monkeypatch):
-        """Kaggle is no longer file-based: S3 keys are returned unchanged (no local download)."""
+    async def test_passes_s3_key_unchanged_for_kaggle(self, tmp_path, monkeypatch):
+        """Kaggle is S3-backed: train key is returned unchanged (no local download)."""
         import asyncio
         import interactors.temporal.activities as acts
 
         mock_storage = MagicMock()
         monkeypatch.setattr(acts, "_storage", mock_storage)
 
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="dataset/abc123/eval.jsonl",
-            remote_backend="kaggle",
-        )
+        config = TrainConfig(train_data="dataset/abc123/train.jsonl", remote_backend="kaggle")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == "dataset/abc123/train.jsonl"
-        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_derives_eval_key_from_train_parent_when_eval_not_configured(
-        self, tmp_path, monkeypatch
-    ):
-        """When eval_data is empty, the eval key defaults to the train parent / eval.jsonl."""
-        import asyncio
-        import interactors.temporal.activities as acts
-
-        mock_storage = MagicMock()
-        monkeypatch.setattr(acts, "_storage", mock_storage)
-        monkeypatch.chdir(tmp_path)
-
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="",
-            remote_backend="kaggle",
-        )
-        loop = asyncio.get_event_loop()
-        _, eval_out = await acts._resolve_training_data(config, loop)
-
-        # Kaggle is S3-backed — keys are passed through; eval key is derived from train parent
-        assert eval_out == "dataset/abc123/eval.jsonl"
-        mock_storage.download.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_skips_download_when_both_files_already_local(self, tmp_path, monkeypatch):
-        """Storage.download must not be called when both files already exist locally."""
+    async def test_skips_download_when_file_already_local(self, tmp_path, monkeypatch):
+        """Storage.download must not be called when train file already exists locally."""
         import asyncio
         import interactors.temporal.activities as acts
 
         train = tmp_path / "data" / "train.jsonl"
-        eval_ = tmp_path / "data" / "eval.jsonl"
         train.parent.mkdir(parents=True)
         train.write_text("{}\n")
-        eval_.write_text("{}\n")
 
         mock_storage = MagicMock()
         monkeypatch.setattr(acts, "_storage", mock_storage)
 
-        config = TrainConfig(
-            train_data=str(train), eval_data=str(eval_), remote_backend="kaggle"
-        )
+        config = TrainConfig(train_data=str(train), remote_backend="ssh")
         loop = asyncio.get_event_loop()
         await acts._resolve_training_data(config, loop)
 
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_k8s_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
-        """K8s (S3-backed) must receive the original S3 key — never a local path.
-
-        Replacing the key with a local path would make the K8s pod look for
-        'data/train.jsonl' in S3, where it doesn't exist for skip_generate=True runs.
-        """
+    async def test_k8s_passes_s3_key_through_unchanged(self, tmp_path, monkeypatch):
+        """K8s (S3-backed) must receive the original S3 key — never a local path."""
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -1003,21 +979,16 @@ class TestResolveTrainingData:
         monkeypatch.setattr(acts, "_storage", mock_storage)
         monkeypatch.chdir(tmp_path)
 
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="dataset/abc123/eval.jsonl",
-            remote_backend="k8s",
-        )
+        config = TrainConfig(train_data="dataset/abc123/train.jsonl", remote_backend="k8s")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == "dataset/abc123/train.jsonl"
-        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_runpod_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
-        """RunPod (S3-backed) also passes S3 keys through unchanged."""
+    async def test_runpod_passes_s3_key_through_unchanged(self, tmp_path, monkeypatch):
+        """RunPod (S3-backed) also passes S3 key through unchanged."""
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -1025,16 +996,11 @@ class TestResolveTrainingData:
         monkeypatch.setattr(acts, "_storage", mock_storage)
         monkeypatch.chdir(tmp_path)
 
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="dataset/abc123/eval.jsonl",
-            remote_backend="runpod",
-        )
+        config = TrainConfig(train_data="dataset/abc123/train.jsonl", remote_backend="runpod")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == "dataset/abc123/train.jsonl"
-        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
 

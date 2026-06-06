@@ -66,7 +66,6 @@ class TrainJobSpec(BaseModel):
     job_type: Literal["train"] = "train"
     model: str
     train_data: str
-    eval_data: str
     epochs: int
     patience: int
     warmup_ratio: float
@@ -80,7 +79,6 @@ class TrainJobSpec(BaseModel):
     # (e.g. Kaggle with enable_internet=True) use these instead of staging local
     # JSONL files inside their compute environment.
     train_s3_key: str = ""
-    eval_s3_key: str = ""
 
 
 # Backward-compat alias so existing code using RemoteTrainConfig continues to work.

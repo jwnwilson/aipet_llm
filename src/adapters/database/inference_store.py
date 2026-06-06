@@ -47,45 +47,38 @@ def _row_to_domain(row: _InferenceInstanceRow) -> InferenceInstance:
 
 
 class SQLAlchemyInferenceStore(InferenceStorePort):
-    def __init__(self, engine) -> None:
-        self._engine = engine
-
-    def _session(self) -> Session:
-        return Session(self._engine)
+    def __init__(self, session: Session) -> None:
+        self._session = session
 
     def list(self, model_id: str | None = None, run_id: str | None = None, offset: int = 0, limit: int = 50) -> list[InferenceInstance]:  # type: ignore[override]
-        with self._session() as s:
-            stmt = sa_select(_InferenceInstanceRow)
-            if model_id is not None:
-                stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
-            if run_id is not None:
-                stmt = stmt.where(_InferenceInstanceRow.run_id == run_id)
-            stmt = stmt.order_by(_InferenceInstanceRow.created_at.desc()).offset(offset).limit(limit)
-            rows = s.scalars(stmt).all()
-            return [_row_to_domain(r) for r in rows]
+        stmt = sa_select(_InferenceInstanceRow)
+        if model_id is not None:
+            stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
+        if run_id is not None:
+            stmt = stmt.where(_InferenceInstanceRow.run_id == run_id)
+        stmt = stmt.order_by(_InferenceInstanceRow.created_at.desc()).offset(offset).limit(limit)
+        rows = self._session.scalars(stmt).all()
+        return [_row_to_domain(r) for r in rows]
 
     def count(self, model_id: str | None = None, run_id: str | None = None) -> int:
-        with self._session() as s:
-            stmt = sa_select(func.count()).select_from(_InferenceInstanceRow)
-            if model_id is not None:
-                stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
-            if run_id is not None:
-                stmt = stmt.where(_InferenceInstanceRow.run_id == run_id)
-            return s.scalar(stmt) or 0
+        stmt = sa_select(func.count()).select_from(_InferenceInstanceRow)
+        if model_id is not None:
+            stmt = stmt.where(_InferenceInstanceRow.model_id == model_id)
+        if run_id is not None:
+            stmt = stmt.where(_InferenceInstanceRow.run_id == run_id)
+        return self._session.scalar(stmt) or 0
 
     def list_active(self) -> list[InferenceInstance]:
-        with self._session() as s:
-            rows = (
-                s.query(_InferenceInstanceRow)
-                .filter(_InferenceInstanceRow.status.in_(_ACTIVE_STATUSES))
-                .all()
-            )
-            return [_row_to_domain(r) for r in rows]
+        rows = (
+            self._session.query(_InferenceInstanceRow)
+            .filter(_InferenceInstanceRow.status.in_(_ACTIVE_STATUSES))
+            .all()
+        )
+        return [_row_to_domain(r) for r in rows]
 
     def get(self, id: str) -> InferenceInstance | None:
-        with self._session() as s:
-            row = s.get(_InferenceInstanceRow, id)
-            return _row_to_domain(row) if row else None
+        row = self._session.get(_InferenceInstanceRow, id)
+        return _row_to_domain(row) if row else None
 
     def create(self, config: InferenceInstanceConfig) -> InferenceInstance:
         now = datetime.now(timezone.utc)
@@ -101,73 +94,66 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
             created_at=now,
             updated_at=now,
         )
-        with self._session() as s:
-            s.add(row)
-            s.commit()
-            s.refresh(row)
-            return _row_to_domain(row)
+        self._session.add(row)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def update(self, id: str, config: InferenceInstanceConfig) -> InferenceInstance | None:
-        with self._session() as s:
-            row = s.get(_InferenceInstanceRow, id)
-            if not row:
-                return None
-            row.idle_timeout_minutes = config.idle_timeout_minutes
-            row.updated_at = datetime.now(timezone.utc)
-            s.commit()
-            s.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_InferenceInstanceRow, id)
+        if not row:
+            return None
+        row.idle_timeout_minutes = config.idle_timeout_minutes
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def delete(self, id: str) -> bool:
-        with self._session() as s:
-            row = s.get(_InferenceInstanceRow, id)
-            if not row:
-                return False
-            s.delete(row)
-            s.commit()
-            return True
+        row = self._session.get(_InferenceInstanceRow, id)
+        if not row:
+            return False
+        self._session.delete(row)
+        self._session.flush()
+        return True
 
     def update_status(self, id: str, status: InferenceStatus) -> InferenceInstance | None:
-        with self._session() as s:
-            row = s.get(_InferenceInstanceRow, id)
-            if not row:
-                return None
-            row.status = status.value
-            row.updated_at = datetime.now(timezone.utc)
-            s.commit()
-            s.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_InferenceInstanceRow, id)
+        if not row:
+            return None
+        row.status = status.value
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def update_pod(self, id: str, pod_name: str, pod_namespace: str) -> InferenceInstance | None:
-        with self._session() as s:
-            row = s.get(_InferenceInstanceRow, id)
-            if not row:
-                return None
-            row.pod_name = pod_name
-            row.pod_namespace = pod_namespace
-            row.updated_at = datetime.now(timezone.utc)
-            s.commit()
-            s.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_InferenceInstanceRow, id)
+        if not row:
+            return None
+        row.pod_name = pod_name
+        row.pod_namespace = pod_namespace
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
 
     def delete_by_model(self, model_id: str) -> list[InferenceInstance]:
-        with self._session() as s:
-            rows = s.scalars(
-                sa_select(_InferenceInstanceRow).where(_InferenceInstanceRow.model_id == model_id)
-            ).all()
-            instances = [_row_to_domain(r) for r in rows]
-            for row in rows:
-                s.delete(row)
-            s.commit()
-            return instances
+        rows = self._session.scalars(
+            sa_select(_InferenceInstanceRow).where(_InferenceInstanceRow.model_id == model_id)
+        ).all()
+        result = [_row_to_domain(r) for r in rows]
+        for row in rows:
+            self._session.delete(row)
+        self._session.flush()
+        return result
 
     def update_last_used(self, id: str) -> InferenceInstance | None:
-        with self._session() as s:
-            row = s.get(_InferenceInstanceRow, id)
-            if not row:
-                return None
-            row.last_used_at = datetime.now(timezone.utc)
-            row.updated_at = datetime.now(timezone.utc)
-            s.commit()
-            s.refresh(row)
-            return _row_to_domain(row)
+        row = self._session.get(_InferenceInstanceRow, id)
+        if not row:
+            return None
+        row.last_used_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)

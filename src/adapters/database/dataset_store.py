@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import DateTime, String, Text, func, select
-from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from domain.models import DatasetConfig, DatasetRecord, DatasetType
@@ -43,30 +42,28 @@ def _row_to_domain(row: _DatasetRow) -> DatasetRecord:
 class SQLAlchemyDatasetStore(DatasetStorePort):
     """DatasetStorePort backed by a SQLAlchemy-managed relational database."""
 
-    def __init__(self, engine: Engine) -> None:
-        self._engine = engine
+    def __init__(self, session: Session) -> None:
+        self._session = session
         self._crud: CRUDRepository[_DatasetRow, DatasetRecord, DatasetConfig] = CRUDRepository(
-            engine=engine,
+            session=session,
             row_class=_DatasetRow,
             to_domain=_row_to_domain,
             order_by=_DatasetRow.created_at.desc(),
         )
 
     def list(self, owner_id: str | None = None, offset: int = 0, limit: int = 50) -> list[DatasetRecord]:
-        with Session(self._engine) as db:
-            stmt = select(_DatasetRow)
-            if owner_id is not None:
-                stmt = stmt.where(_DatasetRow.owner_id == owner_id)
-            stmt = stmt.order_by(_DatasetRow.created_at.desc()).offset(offset).limit(limit)
-            rows = db.scalars(stmt).all()
-            return [_row_to_domain(r) for r in rows]
+        stmt = select(_DatasetRow)
+        if owner_id is not None:
+            stmt = stmt.where(_DatasetRow.owner_id == owner_id)
+        stmt = stmt.order_by(_DatasetRow.created_at.desc()).offset(offset).limit(limit)
+        rows = self._session.scalars(stmt).all()
+        return [_row_to_domain(r) for r in rows]
 
     def count(self, owner_id: str | None = None) -> int:
-        with Session(self._engine) as db:
-            stmt = select(func.count()).select_from(_DatasetRow)
-            if owner_id is not None:
-                stmt = stmt.where(_DatasetRow.owner_id == owner_id)
-            return db.scalar(stmt) or 0
+        stmt = select(func.count()).select_from(_DatasetRow)
+        if owner_id is not None:
+            stmt = stmt.where(_DatasetRow.owner_id == owner_id)
+        return self._session.scalar(stmt) or 0
 
     def get(self, id: str) -> DatasetRecord | None:
         return self._crud.get(id)

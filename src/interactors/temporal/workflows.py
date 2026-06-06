@@ -154,7 +154,6 @@ class TrainingPipelineWorkflow:
                 TrainConfig(
                     model=config.model,
                     train_data=result.dataset_paths.train,
-                    eval_data=result.dataset_paths.eval,
                     output_dir=config.output_dir,
                     epochs=config.epochs,
                     patience=config.patience,
