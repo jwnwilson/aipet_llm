@@ -549,7 +549,7 @@ def train(
         _ActionQualityCallback(eval_records, tokenizer, n_sample=20),
         _ProgressCallback(Path(effective_progress_path)),
     ]
-    if not dry_run:
+    if not dry_run and _has_eval:
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=patience))
 
     trainer = _WeightedTrainer(
