@@ -10,6 +10,7 @@ import { PipelineStages } from '@/components/PipelineStages'
 import { RunDetailsPanel } from '@/components/RunDetailsPanel'
 import { EvalMetrics } from '@/components/EvalMetrics'
 import { Button } from '@/components/ui/button'
+import { useProgressStream } from '@/hooks/useProgressStream'
 import type { PipelineStage, StageStatus } from '@/components/PipelineStages'
 import type { RunStatus } from '@/types'
 
@@ -61,6 +62,9 @@ export function RunDetailPage() {
       return data && isRunActive(data) ? 5000 : false
     },
   })
+
+  const isActive = run != null && isRunActive(run)
+  const { progress } = useProgressStream(runId!, isActive)
 
   const showEval = run != null && EVAL_STATUSES.includes(run.status) && run.eval_valid_pct != null
 
@@ -152,6 +156,24 @@ export function RunDetailPage() {
             </Button>
           </div>
         </div>
+        {isActive && progress != null && (
+          <div className="flex items-center gap-3 mb-2">
+            <div className="flex-1 max-w-xs h-[3px] bg-[#f0efe8] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#1a1a1a] rounded-full transition-[width] duration-500"
+                style={{ width: `${Math.round(progress.fraction * 100)}%` }}
+              />
+            </div>
+            <span className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#6b6b6b] shrink-0">
+              {Math.round(progress.fraction * 100)}%
+            </span>
+            {progress.detail && (
+              <span className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#6b6b6b] truncate max-w-[250px]">
+                {progress.detail}
+              </span>
+            )}
+          </div>
+        )}
         <h1 className="font-['DM_Serif_Display'] text-[1.75rem] leading-tight text-[#1a1a1a] break-all">
           {run.name ?? run.workflow_id}
         </h1>
