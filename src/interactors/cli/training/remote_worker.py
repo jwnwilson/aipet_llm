@@ -96,7 +96,6 @@ def _run_train(storage, run_id: str, prefix: str) -> None:
         run_id=run_id,
         storage_prefix=prefix,
         train_key=_require("TRAIN_DATA_KEY"),
-        eval_key=_require("EVAL_DATA_KEY"),
         model=_require("MODEL"),
         epochs=int(os.environ.get("EPOCHS", "1")),
         patience=int(os.environ.get("PATIENCE", "3")),

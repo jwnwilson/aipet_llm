@@ -67,7 +67,6 @@ def _make_remote_config() -> RemoteTrainConfig:
     return RemoteTrainConfig(
         model="HuggingFaceTB/SmolLM-360M",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         epochs=1,
         patience=1,
         warmup_ratio=0.05,

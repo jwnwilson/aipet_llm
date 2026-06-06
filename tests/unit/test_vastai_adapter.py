@@ -15,7 +15,6 @@ def _config(**kwargs) -> RemoteTrainConfig:
     defaults = dict(
         model="HuggingFaceTB/SmolLM-360M",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         epochs=2,
         patience=2,
         warmup_ratio=0.05,
@@ -163,12 +162,11 @@ class TestVastAiAdapterDownload:
             experiment_name="my-exp",
             model="HuggingFaceTB/SmolLM2-360M",
             train_data="data/train.jsonl",
-            eval_data="data/eval.jsonl",
             epochs=1, patience=3, warmup_ratio=0.05,
         )
         env = adapter._build_instance_env("workflow/my-exp-abc123", config)
         assert env["TRAIN_DATA_KEY"] == "workflow/my-exp-abc123/data/train.jsonl"
-        assert env["EVAL_DATA_KEY"] == "workflow/my-exp-abc123/data/eval.jsonl"
+        assert "EVAL_DATA_KEY" not in env
         assert env["STORAGE_BACKEND"] == "s3"
 
 

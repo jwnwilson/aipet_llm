@@ -15,7 +15,6 @@ def _config(**kwargs) -> RemoteTrainConfig:
     defaults = dict(
         model="HuggingFaceTB/SmolLM-360M",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         epochs=2,
         patience=2,
         warmup_ratio=0.05,
@@ -217,7 +216,7 @@ class TestRunPodAdapterDownload:
         adapter, _ = _make_adapter(monkeypatch, tmp_path)
         env = adapter._build_pod_env("workflow/my-exp-abc123", _config())
         assert env["TRAIN_DATA_KEY"] == "workflow/my-exp-abc123/data/train.jsonl"
-        assert env["EVAL_DATA_KEY"] == "workflow/my-exp-abc123/data/eval.jsonl"
+        assert "EVAL_DATA_KEY" not in env
         assert env["STORAGE_BACKEND"] == "s3"
 
     def test_build_pod_env_includes_runpod_api_key(self, monkeypatch, tmp_path):

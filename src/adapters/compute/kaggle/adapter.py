@@ -284,9 +284,9 @@ class KaggleTrainingAdapter(RemoteJobPort):
         directly from S3 (enable_internet=True).  Only the project wheel is needed
         in the dataset so the kernel can install the project code.
         """
-        if not config.train_s3_key or not config.eval_s3_key:
+        if not config.train_s3_key:
             raise ValueError(
-                "Kaggle S3 backend requires train_s3_key and eval_s3_key in TrainJobSpec. "
+                "Kaggle S3 backend requires train_s3_key in TrainJobSpec. "
                 "Ensure generate_dataset_activity ran with upload_to_storage=True before "
                 f"train_activity (train_data={config.train_data!r})."
             )
@@ -440,7 +440,6 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "        'JOB_TYPE': 'train',\n",
                         f"        'RUN_ID': {config.experiment_name!r},\n",
                         f"        'TRAIN_DATA_KEY': {config.train_s3_key!r},\n",
-                        f"        'EVAL_DATA_KEY': {config.eval_s3_key!r},\n",
                         f"        'MODEL': {config.model!r},\n",
                         f"        'EPOCHS': {str(config.epochs)!r},\n",
                         f"        'PATIENCE': {str(config.patience)!r},\n",

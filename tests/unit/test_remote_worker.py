@@ -24,7 +24,6 @@ def _setup_env(monkeypatch, run_id: str = "runpod/test-exp-abc123") -> None:
     monkeypatch.setenv("RUN_ID", run_id)
     monkeypatch.setenv("JOB_TYPE", "train")
     monkeypatch.setenv("TRAIN_DATA_KEY", f"{run_id}/data/train.jsonl")
-    monkeypatch.setenv("EVAL_DATA_KEY", f"{run_id}/data/eval.jsonl")
     monkeypatch.setenv("MODEL", "HuggingFaceTB/SmolLM2-360M")
     monkeypatch.setenv("EPOCHS", "1")
     monkeypatch.setenv("PATIENCE", "3")
@@ -90,13 +89,13 @@ class TestRemoteWorkerHappyPath:
         ]
         assert status_calls[0] == call("runpod/test-exp-abc123/status.txt", b"running")
 
-    def test_downloads_train_and_eval_via_storage_port(self, monkeypatch, tmp_path):
+    def test_downloads_train_via_storage_port(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
         storage, _ = _run_worker(monkeypatch, tmp_path)
 
         keys = [c.args[0] for c in storage.download.call_args_list]
         assert "runpod/test-exp-abc123/data/train.jsonl" in keys
-        assert "runpod/test-exp-abc123/data/eval.jsonl" in keys
+        assert not any("eval.jsonl" in k for k in keys), "eval should not be downloaded during training"
 
     def test_calls_domain_train_directly_not_subprocess(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
@@ -130,19 +129,6 @@ class TestRemoteWorkerHappyPath:
         assert not any("checkpoint.tar.gz" in k for k in upload_keys), (
             f"Tarball upload must not occur; upload keys: {upload_keys}"
         )
-
-    def test_calls_domain_evaluate_and_writes_eval_result(self, monkeypatch, tmp_path):
-        _setup_env(monkeypatch)
-        storage, _ = _run_worker(monkeypatch, tmp_path)
-
-        eval_calls = [
-            c for c in storage.write_bytes.call_args_list
-            if "eval_result.json" in str(c.args[0])
-        ]
-        assert eval_calls, "eval_result.json must be written to S3"
-        written = json.loads(eval_calls[0].args[1])
-        assert written["valid_pct"] == pytest.approx(0.97)
-        assert written["passed"] is True
 
     def test_writes_done_status_on_success(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
@@ -217,37 +203,6 @@ class TestRemoteWorkerFailurePaths:
         ]
         assert b"failed" in status_values
 
-    def test_eval_failure_writes_zero_pct_and_still_writes_done(self, monkeypatch, tmp_path):
-        """Eval failure is non-fatal: still completes the run with passed=False."""
-        _setup_env(monkeypatch)
-        storage = MagicMock()
-
-        sys.modules.pop("interactors.cli.training.remote_worker", None)
-        with (
-            patch("interactors.cli.training.remote_worker._make_storage", return_value=storage),
-            patch("domain.train.trainer.train", _checkpoint_train()),
-            patch("domain.train.evaluate.load_hf_pipeline", side_effect=RuntimeError("no model")),
-            patch("domain.train.evaluate.evaluate"),
-            patch("domain.train.evaluate.infer_hf"),
-        ):
-            from interactors.cli.training import remote_worker
-            remote_worker.main()
-
-        eval_calls = [
-            c for c in storage.write_bytes.call_args_list
-            if "eval_result.json" in str(c.args[0])
-        ]
-        assert eval_calls
-        result = json.loads(eval_calls[0].args[1])
-        assert result["valid_pct"] == pytest.approx(0.0)
-        assert result["passed"] is False
-
-        status_values = [
-            c.args[1]
-            for c in storage.write_bytes.call_args_list
-            if "status.txt" in str(c.args[0])
-        ]
-        assert b"done" in status_values
 
 
 # ---------------------------------------------------------------------------
