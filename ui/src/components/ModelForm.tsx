@@ -8,7 +8,7 @@ import { Label } from './ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
 import { Combobox } from './ui/combobox'
 
-const REMOTE_BACKEND_OPTIONS = ['k8s', 'kaggle', 'ssh', 'colab', 'runpod'] as const
+const REMOTE_BACKEND_OPTIONS = ['k8s', 'kaggle', 'runpod', 'vastai'] as const
 
 const BASE_MODEL_OPTIONS = [
   'HuggingFaceTB/SmolLM2-360M',
