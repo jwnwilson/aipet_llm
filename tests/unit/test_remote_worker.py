@@ -288,6 +288,98 @@ class TestRemoteWorkerProgressPolling:
 
 
 # ---------------------------------------------------------------------------
+# Incremental log flush tests (Tasks 1 & 2)
+# ---------------------------------------------------------------------------
+
+def _make_storage_mock(existing: bytes = b"") -> MagicMock:
+    s = MagicMock()
+    s.read_bytes_from.return_value = existing
+    return s
+
+
+@pytest.fixture(autouse=False)
+def reset_flush_globals():
+    """Reset _log_stream and _flushed_chars between flush unit tests."""
+    import interactors.cli.training.remote_worker as rw
+    orig_stream = rw._log_stream
+    orig_chars = rw._flushed_chars
+    yield
+    rw._log_stream = orig_stream
+    rw._flushed_chars = orig_chars
+
+
+class TestFlushLogsIncremental:
+    def test_sends_full_content_on_first_call(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        rw._log_stream.write("line1\n")
+        storage = _make_storage_mock(existing=b"")
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_called_once_with("workflow/abc/logs.txt", b"line1\n")
+        assert rw._flushed_chars == 6
+
+    def test_sends_only_delta_on_second_call(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        rw._log_stream.write("first\n")
+        storage = _make_storage_mock(existing=b"")
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+
+        storage.reset_mock()
+        storage.read_bytes_from.return_value = b"first\n"
+        rw._log_stream.write("second\n")
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_called_once_with(
+            "workflow/abc/logs.txt", b"first\nsecond\n"
+        )
+        assert rw._flushed_chars == 13
+
+    def test_skips_when_no_new_content(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        rw._log_stream.write("hello\n")
+        storage = _make_storage_mock()
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.reset_mock()
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_not_called()
+
+    def test_noop_when_no_prefix(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._log_stream.write("data\n")
+        storage = _make_storage_mock()
+        rw._flush_logs_to_s3(storage, "")
+        storage.write_bytes.assert_not_called()
+
+    def test_noop_when_stream_is_none(self, reset_flush_globals):
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = None
+        storage = _make_storage_mock()
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_not_called()
+
+    def test_periodic_flush_starts_daemon_thread(self, reset_flush_globals):
+        import io
+        import threading
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        storage = _make_storage_mock()
+        before = threading.active_count()
+        rw._start_periodic_log_flush(storage, "workflow/abc", interval=9999)
+        after = threading.active_count()
+        assert after > before, "a new daemon thread should have started"
+
+
+# ---------------------------------------------------------------------------
 # Module-level checks
 # ---------------------------------------------------------------------------
 
