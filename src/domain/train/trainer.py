@@ -344,7 +344,7 @@ class _WeightedTrainer(Trainer):
 def train(
     model: str = DEFAULT_MODEL,
     train_data: str = DEFAULT_TRAIN_DATA,
-    eval_data: str = DEFAULT_EVAL_DATA,
+    eval_data: str | None = None,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     epochs: int = DEFAULT_EPOCHS,
     patience: int = DEFAULT_PATIENCE,
@@ -478,42 +478,57 @@ def train(
 
     log.info("Loading training data from: %s", train_data)
     train_records = load_jsonl(train_data)
-    log.info("Loading eval data from: %s", eval_data)
-    eval_records = load_jsonl(eval_data)
+
+    eval_records: list[dict] = []
+    eval_dataset = None
+    if eval_data:
+        log.info("Loading eval data from: %s", eval_data)
+        eval_records = load_jsonl(eval_data)
+        if dry_run:
+            eval_records = eval_records[:4]
+        log.info("Tokenising %d eval examples …", len(eval_records))
+        eval_dataset = build_hf_dataset(eval_records, tokenizer)
 
     if dry_run:
         train_records = train_records[:8]
-        eval_records = eval_records[:4]
 
     log.info("Tokenising %d training examples …", len(train_records))
     train_dataset = build_hf_dataset(train_records, tokenizer)
-    log.info("Tokenising %d eval examples …", len(eval_records))
-    eval_dataset = build_hf_dataset(eval_records, tokenizer)
 
     sample_weights = compute_sample_weights(train_records)
 
     os.makedirs(output_dir, exist_ok=True)
 
+    _has_eval = eval_dataset is not None
     if dry_run:
         training_args = TrainingArguments(
             output_dir=output_dir,
-            max_steps=1, eval_steps=1, save_steps=1,
-            eval_strategy="steps", save_strategy="steps", logging_steps=1,
-            load_best_model_at_end=True, metric_for_best_model="eval_loss",
-            greater_is_better=False, report_to="none",
-            per_device_train_batch_size=1, per_device_eval_batch_size=1,
+            max_steps=1, save_steps=1,
+            eval_steps=1 if _has_eval else None,
+            eval_strategy="steps" if _has_eval else "no",
+            save_strategy="steps", logging_steps=1,
+            load_best_model_at_end=_has_eval,
+            metric_for_best_model="eval_loss" if _has_eval else None,
+            greater_is_better=False if _has_eval else None,
+            report_to="none",
+            per_device_train_batch_size=1,
+            per_device_eval_batch_size=1 if _has_eval else None,
         )
     else:
         training_args = TrainingArguments(
             output_dir=output_dir,
             num_train_epochs=epochs,
-            eval_steps=200, save_steps=200,
-            eval_strategy="steps", save_strategy="steps", logging_steps=50,
-            load_best_model_at_end=True, metric_for_best_model="eval_loss",
-            greater_is_better=False, report_to="none",
+            eval_steps=200 if _has_eval else None,
+            save_steps=200,
+            eval_strategy="steps" if _has_eval else "no",
+            save_strategy="steps", logging_steps=50,
+            load_best_model_at_end=_has_eval,
+            metric_for_best_model="eval_loss" if _has_eval else None,
+            greater_is_better=False if _has_eval else None,
+            report_to="none",
             save_total_limit=2,
             per_device_train_batch_size=effective_batch,
-            per_device_eval_batch_size=8 if use_cuda else effective_batch,
+            per_device_eval_batch_size=(8 if use_cuda else effective_batch) if _has_eval else None,
             gradient_accumulation_steps=grad_accum,
             warmup_ratio=warmup_ratio,
             lr_scheduler_type="cosine",
