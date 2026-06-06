@@ -373,7 +373,7 @@ async def _resolve_training_data(
 
     For **file-based backends** (Kaggle, Colab, SSH) the adapter stages data
     from the local filesystem.  When ``skip_generate=True`` the workflow
-    forwards an S3 storage key (e.g. ``datasets/<uuid>.jsonl``) as
+    forwards an S3 storage key (e.g. ``dataset/<uuid>/train.jsonl``) as
     ``train_data`` — the file does not exist locally.  This function downloads
     it to ``data/train.jsonl`` / ``data/eval.jsonl`` and returns the local paths.
 
@@ -467,6 +467,11 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
         run_id = await _retryable_submit(adapter, remote_config, loop)
 
         activity.logger.info("Remote job submitted: adapter=%s run_id=%s", type(adapter).__name__, run_id)
+
+        # Give the remote backend time to register the job before the first status
+        # poll.  Kaggle's GetKernelSessionStatus returns 500 if the session does not
+        # exist yet (race condition between kernel push and session initialisation).
+        await asyncio.sleep(10)
 
     started_at = time.time()
 
@@ -897,11 +902,11 @@ async def save_gguf_path_activity(model_id: str, gguf_path: str) -> None:
 
 
 @activity.defn
-async def create_inference_activity(model_id: str, model_path: str = "") -> str:
+async def create_inference_activity(model_id: str, model_path: str = "", run_id: str = "") -> str:
     """Create an InferenceInstance record for an exported model.
     Returns the new instance id."""
     from domain.models import InferenceInstanceConfig
-    config = InferenceInstanceConfig(model_id=model_id, model_path=model_path)
+    config = InferenceInstanceConfig(model_id=model_id, model_path=model_path, run_id=run_id or None)
     with _create_uow().transaction() as uow:
         instance = uow.inference_store.create(config)
     return instance.id

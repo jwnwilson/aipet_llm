@@ -10,8 +10,8 @@ from domain.models import EvalJobSpec, RemoteTrainConfig
 
 _CONFIG = RemoteTrainConfig(
     model="HuggingFaceTB/SmolLM2-360M",
-    train_data="datasets/abc.jsonl",
-    eval_data="datasets/abc_eval.jsonl",
+    train_data="dataset/abc.jsonl",
+    eval_data="dataset/abc_eval.jsonl",
     epochs=1,
     patience=3,
     warmup_ratio=0.05,

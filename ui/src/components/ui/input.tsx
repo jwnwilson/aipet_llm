@@ -14,7 +14,7 @@ const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLI
         "font-['Outfit'] font-normal",
         'px-3 py-2 rounded-[3px]',
         'border-[1.5px] border-[#d0d0c8]',
-        'placeholder:text-[#b3b1a6]',
+        'placeholder:text-[#767676]',
         'transition-colors duration-150',
         'focus-visible:outline-none focus-visible:border-[#1a1a1a]',
         'disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-[#f6f5ef]',

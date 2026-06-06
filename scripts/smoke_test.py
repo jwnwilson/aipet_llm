@@ -48,7 +48,6 @@ def create_model(
         "description": "Created by smoke test — safe to delete",
         "base_model": "HuggingFaceTB/SmolLM2-360M",
         "remote_backend": remote_backend,
-        "skip_generate": True,
     }
     resp = client.post(f"{api_url}/api/models", json=payload, headers=headers)
     return check("POST /api/models", resp, expected_status=201)
@@ -75,16 +74,12 @@ def trigger_run(
     api_url: str,
     headers: dict[str, str],
     model_id: str,
-    dataset_id: str,
     remote_backend: str = "k8s",
 ) -> dict:
     """POST /api/runs/trigger — return {workflow_id, run_id}."""
     payload = {
         "model_id": model_id,
-        "train_dataset_id": dataset_id,
-        "eval_dataset_id": dataset_id,
         "remote_backend": remote_backend,
-        "skip_generate": True,
         "num_train_samples": 2,
         "num_eval_samples": 2,
         # Keep the smoke test fast — we only care that the pipeline runs end-to-end,
@@ -357,7 +352,7 @@ def main() -> None:
 
         # 7. Trigger a training run and wait for completion
         run_trigger = trigger_run(
-            client, api_url, auth_headers, model_id, dataset_id,
+            client, api_url, auth_headers, model_id,
             remote_backend=remote_backend,
         )
         run_id = run_trigger["run_id"]

@@ -175,6 +175,7 @@ class RunStatus(str, Enum):
 class RunConfig(BaseModel):
     model_id: str
     workflow_id: str
+    name: str | None = None
     training_config: dict | None = None  # full training params saved at trigger time
     train_dataset_id: str | None = None
     eval_dataset_id: str | None = None
@@ -250,7 +251,7 @@ class DatasetConfig(BaseModel):
     name: str
     description: str = ""
     dataset_type: DatasetType
-    key: str  # storage key, e.g. "datasets/{id}.jsonl"
+    key: str  # storage key, e.g. "dataset/{id}.jsonl"
     owner_id: str | None = None
 
 
@@ -271,6 +272,7 @@ class InferenceStatus(str, Enum):
 
 class InferenceInstanceConfig(BaseModel):
     model_id: str
+    run_id: str | None = None
     model_path: str = ""
     pod_name: str = ""
     pod_namespace: str = "default"

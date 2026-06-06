@@ -104,12 +104,27 @@ class KaggleTrainingAdapter(RemoteJobPort):
             capture_output=True,
             text=True,
             timeout=30,
-            check=True,
         )
-        output = result.stdout.lower()
+        log.info(
+            "kaggle kernels status %s → rc=%d stdout=%r stderr=%r",
+            run_id, result.returncode, result.stdout.strip(), result.stderr.strip(),
+        )
+        # Check both stdout and stderr — Kaggle CLI sometimes puts status in stderr
+        # or exits non-zero for terminal states (e.g. "error").
+        output = (result.stdout + " " + result.stderr).lower()
+
         for keyword, canonical in _STATUS_MAP.items():
             if keyword in output:
+                log.info("kaggle kernels status %s → mapped %r → %r", run_id, keyword, canonical)
                 return canonical  # type: ignore[return-value]
+        if result.returncode != 0:
+            log.error(
+                "kaggle kernels status %s failed (rc=%d) with no recognised keyword — stdout=%r stderr=%r",
+                run_id, result.returncode, result.stdout.strip(), result.stderr.strip(),
+            )
+            raise subprocess.CalledProcessError(
+                result.returncode, result.args, result.stdout, result.stderr
+            )
         return "pending"
 
     def download(self, run_id: str, dest: Path) -> str:
@@ -383,7 +398,7 @@ class KaggleTrainingAdapter(RemoteJobPort):
                         "import subprocess, sys, os, glob, pathlib\n",
                         "\n",
                         "# Locate the project wheel — handle both old (/kaggle/input/<slug>/) and\n",
-                        "# new (/kaggle/input/datasets/<owner>/<slug>/) Kaggle mount paths.\n",
+                        "# new (/kaggle/input/dataset/<owner>/<slug>/) Kaggle mount paths.\n",
                         f"_whl_list = (\n",
                         f"    glob.glob('/kaggle/input/{dataset_slug}/*.whl') or\n",
                         f"    glob.glob('/kaggle/input/**/{dataset_slug}/*.whl', recursive=True)\n",

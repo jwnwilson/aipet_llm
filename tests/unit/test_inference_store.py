@@ -101,6 +101,36 @@ def test_update_returns_none_for_missing(store):
     assert store.update("nonexistent", config) is None
 
 
+# --- run_id filtering ---
+
+def test_list_filters_by_run_id(store):
+    store.create(InferenceInstanceConfig(model_id="m1", run_id="run-aaa"))
+    store.create(InferenceInstanceConfig(model_id="m1", run_id="run-bbb"))
+
+    results = store.list(run_id="run-aaa")
+    assert len(results) == 1
+    assert results[0].run_id == "run-aaa"
+
+
+def test_count_filters_by_run_id(store):
+    store.create(InferenceInstanceConfig(model_id="m1", run_id="run-aaa"))
+    store.create(InferenceInstanceConfig(model_id="m1", run_id="run-bbb"))
+
+    assert store.count(run_id="run-aaa") == 1
+    assert store.count() == 2
+
+
+def test_create_persists_run_id(store):
+    inst = store.create(InferenceInstanceConfig(model_id="m1", run_id="run-xyz"))
+    found = store.get(inst.id)
+    assert found.run_id == "run-xyz"
+
+
+def test_create_run_id_defaults_to_none(store):
+    inst = store.create(InferenceInstanceConfig(model_id="m1"))
+    assert inst.run_id is None
+
+
 # --- list_active FAILED exclusion ---
 
 def test_list_active_excludes_failed(store):

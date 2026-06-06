@@ -29,6 +29,7 @@ class _RunRow(Base):
     train_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     eval_dataset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     owner_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(nullable=False)
     updated_at: Mapped[datetime] = mapped_column(nullable=False)
 
@@ -38,6 +39,7 @@ def _row_to_domain(row: _RunRow) -> RunRecord:
         id=row.id,
         model_id=row.model_id,
         workflow_id=row.workflow_id,
+        name=row.name,
         status=RunStatus(row.status),
         eval_valid_pct=row.eval_valid_pct,
         eval_result=EvalOutcome(row.eval_result) if row.eval_result else None,
@@ -64,6 +66,7 @@ class SQLAlchemyRunStore(RunStorePort):
             id=str(uuid.uuid4()),
             model_id=config.model_id,
             workflow_id=config.workflow_id,
+            name=config.name,
             status=RunStatus.PENDING.value,
             eval_valid_pct=None,
             training_config=json.dumps(config.training_config) if config.training_config else None,

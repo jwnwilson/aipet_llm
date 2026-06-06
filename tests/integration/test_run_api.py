@@ -124,6 +124,41 @@ class TestTriggerRun:
         assert resp.status_code == 404
 
     @pytest.mark.asyncio
+    async def test_trigger_with_name_persists_name_in_run(self, client_with_model):
+        c, model, run_store = client_with_model
+        connect_mock, _ = self._connect_mock()
+
+        with (
+            patch("temporalio.client.Client.connect", connect_mock),
+            patch("pathlib.Path.mkdir"),
+        ):
+            resp = await c.post(
+                "/api/runs/trigger",
+                json={"model_id": model.id, "name": "my-experiment"},
+            )
+
+        assert resp.status_code == 202
+        run = run_store.get(resp.json()["run_id"])
+        assert run is not None
+        assert run.name == "my-experiment"
+
+    @pytest.mark.asyncio
+    async def test_trigger_without_name_stores_null(self, client_with_model):
+        c, model, run_store = client_with_model
+        connect_mock, _ = self._connect_mock()
+
+        with (
+            patch("temporalio.client.Client.connect", connect_mock),
+            patch("pathlib.Path.mkdir"),
+        ):
+            resp = await c.post("/api/runs/trigger", json={"model_id": model.id})
+
+        assert resp.status_code == 202
+        run = run_store.get(resp.json()["run_id"])
+        assert run is not None
+        assert run.name is None
+
+    @pytest.mark.asyncio
     async def test_trigger_passes_model_config_to_workflow(self, client_with_model):
         c, model, run_store = client_with_model
         connect_mock, mock_wf_client = self._connect_mock()
@@ -161,7 +196,7 @@ class TestTriggerRun:
             DatasetConfig(
                 name="smoke-ds",
                 dataset_type=DatasetType.TRAIN,
-                key="datasets/abc123.jsonl",
+                key="dataset/abc123.jsonl",
                 owner_id="integration-test-user",
             )
         )
@@ -183,8 +218,8 @@ class TestTriggerRun:
 
         assert resp.status_code == 202
         config = mock_wf_client.start_workflow.call_args[0][1]
-        assert config.train_data == "datasets/abc123.jsonl"
-        assert config.eval_data == "datasets/abc123.jsonl", (
+        assert config.train_data == "dataset/abc123.jsonl"
+        assert config.eval_data == "dataset/abc123.jsonl", (
             "eval_data must fall back to the train dataset S3 key when "
             "eval_dataset_id is omitted — not the model's local 'data/eval.jsonl'"
         )
@@ -232,6 +267,24 @@ class TestGetRun:
         c, _ = client
         resp = await c.get("/api/runs/no-such-run")
         assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_response_includes_name_field(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-named", name="labelled-run"))
+
+        resp = await c.get(f"/api/runs/{run.id}")
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "labelled-run"
+
+    @pytest.mark.asyncio
+    async def test_response_name_is_null_when_not_set(self, client_with_model):
+        c, model, run_store = client_with_model
+        run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-unnamed"))
+
+        resp = await c.get(f"/api/runs/{run.id}")
+        assert resp.status_code == 200
+        assert resp.json()["name"] is None
 
 
 class TestActivateRun:

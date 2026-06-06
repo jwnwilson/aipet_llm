@@ -47,6 +47,7 @@ export interface RunRecord {
   id: string
   workflow_id: string
   model_id: string
+  name: string | null
   status: RunStatus
   eval_valid_pct: number | null
   progress: number | null
@@ -84,6 +85,7 @@ export interface CreateDatasetRequest {
 
 export interface TriggerRunRequest {
   model_id: string
+  name?: string | null
   epochs?: number | null
   patience?: number | null
   warmup_ratio?: number | null
@@ -182,6 +184,7 @@ export interface InferenceInstanceConfig {
 export interface InferenceInstance {
   id: string
   model_id: string
+  run_id: string | null
   pod_name: string
   pod_namespace: string
   idle_timeout_minutes: number

@@ -56,7 +56,7 @@ export function InferencePanel({ model }: InferencePanelProps) {
   return (
     <Card>
       <CardHeader>
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
           Section II
         </div>
         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -80,7 +80,7 @@ export function InferencePanel({ model }: InferencePanelProps) {
         )}
 
         <div>
-          <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] mb-1.5">
+          <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-1.5">
             Request payload
           </div>
           <textarea
@@ -121,18 +121,18 @@ export function InferencePanel({ model }: InferencePanelProps) {
 function InferenceResult({ result }: { result: InferenceResponse }) {
   return (
     <div className="bg-[#f6f5ef] border-l-[3px] border-[#1a1a1a] px-4 py-3">
-      <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] mb-2">
+      <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-2">
         Response
       </div>
       <dl className="grid grid-cols-3 gap-x-6 gap-y-1">
         <div>
-          <dt className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#888888]">
+          <dt className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
             Action
           </dt>
           <dd className="font-['DM_Serif_Display'] text-[1.1rem] text-[#1a1a1a]">{result.action}</dd>
         </div>
         <div>
-          <dt className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#888888]">
+          <dt className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
             Target
           </dt>
           <dd className="font-['IBM_Plex_Mono'] text-[0.9rem] text-[#1a1a1a]">
@@ -140,7 +140,7 @@ function InferenceResult({ result }: { result: InferenceResponse }) {
           </dd>
         </div>
         <div>
-          <dt className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#888888]">
+          <dt className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
             Confidence
           </dt>
           <dd className="font-['IBM_Plex_Mono'] text-[0.9rem] text-[#1a1a1a]">

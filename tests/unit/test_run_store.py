@@ -31,8 +31,8 @@ def store(db_session) -> SQLAlchemyRunStore:
     return SQLAlchemyRunStore(db_session)
 
 
-def _config(model_id: str = "model-1", workflow_id: str = "wf-1") -> RunConfig:
-    return RunConfig(model_id=model_id, workflow_id=workflow_id)
+def _config(model_id: str = "model-1", workflow_id: str = "wf-1", name: str | None = None) -> RunConfig:
+    return RunConfig(model_id=model_id, workflow_id=workflow_id, name=name)
 
 
 class TestCreate:
@@ -62,6 +62,36 @@ class TestCreate:
         run = store.create(_config())
         assert run.created_at is not None
         assert run.updated_at is not None
+
+
+class TestName:
+    def test_persists_name_when_provided(self, store):
+        run = store.create(_config(name="my-experiment"))
+        assert run.name == "my-experiment"
+
+    def test_name_is_none_when_not_provided(self, store):
+        run = store.create(_config())
+        assert run.name is None
+
+    def test_name_persists_across_get(self, store):
+        created = store.create(_config(name="persistent-name"))
+        fetched = store.get(created.id)
+        assert fetched is not None
+        assert fetched.name == "persistent-name"
+
+    def test_null_name_persists_across_get(self, store):
+        created = store.create(_config())
+        fetched = store.get(created.id)
+        assert fetched is not None
+        assert fetched.name is None
+
+    def test_name_appears_in_list(self, store):
+        store.create(_config(model_id="m1", name="run-alpha"))
+        store.create(_config(model_id="m1", name=None))
+        runs = store.list(model_id="m1")
+        names = {r.name for r in runs}
+        assert "run-alpha" in names
+        assert None in names
 
 
 class TestGet:

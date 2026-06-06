@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from domain.models import EvaluationData, PaginatedResponse, QualityReport, RunConfig, RunRecord, RunStatus, UserContext
@@ -33,6 +33,7 @@ router = APIRouter(
 
 class TriggerRunRequest(BaseModel):
     model_id: str
+    name: str | None = None
     epochs: int | None = None
     patience: int | None = None
     warmup_ratio: float | None = None
@@ -131,13 +132,16 @@ def get_run_evaluation(
     )
 
 
-@router.get("/{run_id}/logs", response_model=RunLogsResponse)
+_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache"}
+
+
+@router.get("/{run_id}/logs")
 def get_run_logs(
     run_id: str,
     run_store: RunStorePort = Depends(get_run_store),
     storage: StoragePort = Depends(get_storage),
     user: UserContext = Depends(require_approved),
-) -> RunLogsResponse:
+) -> JSONResponse:
     run = run_store.get(run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -145,9 +149,8 @@ def get_run_logs(
         raise HTTPException(status_code=404, detail="Run not found")
 
     logs = storage.read_text(f"workflow/{run_id}/logs.txt")
-    if not logs:
-        return RunLogsResponse(logs=None, source=None)
-    return RunLogsResponse(logs=logs, source="s3")
+    payload = RunLogsResponse(logs=logs or None, source="s3" if logs else None)
+    return JSONResponse(content=payload.model_dump(), headers=_NO_CACHE_HEADERS)
 
 
 @router.get("/{run_id}/logs/stream")
@@ -164,26 +167,37 @@ async def stream_run_logs(
         raise HTTPException(status_code=404, detail="Run not found")
 
     log_key = f"workflow/{run_id}/logs.txt"
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     async def _event_generator():
         sent_bytes = 0
+        consecutive_empty = 0
         while True:
-            current_run = run_store.get(run_id)
+            current_run = await loop.run_in_executor(None, lambda: run_store.get(run_id))
             is_terminal = current_run is None or current_run.status in _TERMINAL_STATUSES
 
+            offset = sent_bytes
             try:
                 chunk = await loop.run_in_executor(
-                    None, lambda: storage.read_bytes_from(log_key, sent_bytes)
+                    None, lambda: storage.read_bytes_from(log_key, offset)
                 )
             except Exception:
+                log.warning("stream_run_logs: S3 read failed  run_id=%s  offset=%d", run_id, offset, exc_info=True)
                 chunk = b""
 
             if chunk:
+                consecutive_empty = 0
                 sent_bytes += len(chunk)
                 new_text = chunk.decode("utf-8", errors="replace")
                 for line in new_text.splitlines():
                     yield f"data: {line}\n\n"
+            else:
+                consecutive_empty += 1
+                if consecutive_empty == 1:
+                    log.info(
+                        "stream_run_logs: S3 returned empty  run_id=%s  key=%s  offset=%d  is_terminal=%s",
+                        run_id, log_key, offset, is_terminal,
+                    )
 
             if is_terminal:
                 yield "event: done\ndata: stream closed\n\n"
@@ -348,7 +362,6 @@ async def trigger_run(
     if remote_backend and skip_generate and body.train_dataset_id is None:
         is_s3_key = (
             train_data.startswith("dataset/")
-            or train_data.startswith("datasets/")
             or train_data.startswith("workflow/")
         )
         if not is_s3_key:
@@ -393,6 +406,7 @@ async def trigger_run(
         run = run_store.create(RunConfig(
             model_id=model.id,
             workflow_id=workflow_id,
+            name=body.name,
             training_config=run_training_config,
             train_dataset_id=body.train_dataset_id,
             eval_dataset_id=body.eval_dataset_id,

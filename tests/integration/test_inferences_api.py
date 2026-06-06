@@ -34,8 +34,12 @@ def _make_store(instances: list[InferenceInstance] | None = None):
         for inst in instances:
             _instances[inst.id] = inst
 
-    def _list(model_id=None, offset=0, limit=50):
-        items = [v for v in _instances.values() if model_id is None or v.model_id == model_id]
+    def _list(model_id=None, run_id=None, offset=0, limit=50):
+        items = [
+            v for v in _instances.values()
+            if (model_id is None or v.model_id == model_id)
+            and (run_id is None or v.run_id == run_id)
+        ]
         return items[offset:offset + limit]
 
     def _get(id: str):
@@ -47,6 +51,7 @@ def _make_store(instances: list[InferenceInstance] | None = None):
         inst = InferenceInstance(
             id=str(uuid.uuid4()),
             model_id=config.model_id,
+            run_id=config.run_id,
             pod_name=config.pod_name,
             pod_namespace=config.pod_namespace,
             idle_timeout_minutes=config.idle_timeout_minutes,
@@ -88,8 +93,12 @@ def _make_store(instances: list[InferenceInstance] | None = None):
         _instances[id] = updated
         return updated
 
-    def _count(model_id=None):
-        return len([v for v in _instances.values() if model_id is None or v.model_id == model_id])
+    def _count(model_id=None, run_id=None):
+        return len([
+            v for v in _instances.values()
+            if (model_id is None or v.model_id == model_id)
+            and (run_id is None or v.run_id == run_id)
+        ])
 
     store.list.side_effect = _list
     store.count.side_effect = _count
@@ -147,6 +156,18 @@ class TestListInferences:
         assert len(data) == 2
         model_ids = {d["model_id"] for d in data}
         assert model_ids == {"my-model", "model-2"}
+
+    @pytest.mark.asyncio
+    async def test_filters_by_run_id(self, client):
+        c, store, pod, _ = client
+        await c.post("/api/inferences", json={**_VALID_CONFIG, "run_id": "run-aaa"})
+        await c.post("/api/inferences", json={**_VALID_CONFIG, "run_id": "run-bbb"})
+
+        resp = await c.get("/api/inferences", params={"run_id": "run-aaa"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["items"][0]["run_id"] == "run-aaa"
 
 
 class TestCreateInference:

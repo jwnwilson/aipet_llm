@@ -27,7 +27,7 @@ export function EvalMetrics({ validPct, passed, qualityReport }: EvalMetricsProp
           {passed ? <Check className="h-6 w-6" /> : <X className="h-6 w-6" />}
         </div>
         <div className="min-w-0">
-          <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] mb-1">
+          <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-1">
             Eval score
           </div>
           <div className="font-['DM_Serif_Display'] text-[2.4rem] leading-none text-[#1a1a1a]">
@@ -46,25 +46,25 @@ export function EvalMetrics({ validPct, passed, qualityReport }: EvalMetricsProp
       {qualityReport && (
         <div className="px-6 py-5 flex flex-col gap-6">
           <section>
-            <h3 className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] mb-3">
+            <h3 className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-3">
               Per-stat accuracy
             </h3>
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] font-medium text-left pb-2 border-b border-[#1a1a1a]">
+                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] font-medium text-left pb-2 border-b border-[#1a1a1a]">
                     Stat
                   </th>
-                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] font-medium text-right pb-2 border-b border-[#1a1a1a]">
+                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] font-medium text-right pb-2 border-b border-[#1a1a1a]">
                     Correct
                   </th>
-                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] font-medium text-right pb-2 border-b border-[#1a1a1a]">
+                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] font-medium text-right pb-2 border-b border-[#1a1a1a]">
                     Total
                   </th>
-                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] font-medium text-right pb-2 border-b border-[#1a1a1a]">
+                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] font-medium text-right pb-2 border-b border-[#1a1a1a]">
                     Accuracy
                   </th>
-                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] font-medium text-right pb-2 border-b border-[#1a1a1a]">
+                  <th className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] font-medium text-right pb-2 border-b border-[#1a1a1a]">
                     Pass
                   </th>
                 </tr>
@@ -106,7 +106,7 @@ export function EvalMetrics({ validPct, passed, qualityReport }: EvalMetricsProp
           </section>
 
           <section>
-            <h3 className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888] mb-3">
+            <h3 className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b] mb-3">
               Action distribution
             </h3>
             <div className="flex flex-wrap gap-2">
@@ -118,7 +118,7 @@ export function EvalMetrics({ validPct, passed, qualityReport }: EvalMetricsProp
                   <span className="font-['IBM_Plex_Mono'] text-[0.7rem] text-[#1a1a1a] uppercase tracking-[0.08em]">
                     {action}
                   </span>
-                  <span className="font-['IBM_Plex_Mono'] text-[0.7rem] text-[#888888]">
+                  <span className="font-['IBM_Plex_Mono'] text-[0.7rem] text-[#6b6b6b]">
                     {count}
                   </span>
                 </span>

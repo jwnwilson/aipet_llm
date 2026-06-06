@@ -71,8 +71,8 @@ export function RunDetailPage() {
   })
 
   const { data: instancesData } = useQuery({
-    queryKey: ['inferences', { modelId: run?.model_id }],
-    queryFn: () => listInferences(1, 50, run!.model_id),
+    queryKey: ['inferences', { modelId: run?.model_id, runId }],
+    queryFn: () => listInferences(1, 50, run!.model_id, runId),
     enabled: run != null,
   })
   const instances = instancesData?.items ?? []
@@ -107,7 +107,7 @@ export function RunDetailPage() {
   if (isLoading) {
     return (
       <div className="ed-page">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading run
         </span>
       </div>
@@ -127,7 +127,7 @@ export function RunDetailPage() {
     <div className="ed-page max-w-4xl">
       <Link
         to="/runs"
-        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-3"
+        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] hover:text-[#1a1a1a] mb-3"
       >
         <ArrowLeft className="h-3 w-3" />
         Back to runs
@@ -136,7 +136,7 @@ export function RunDetailPage() {
       <header className="mb-4">
         <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
           <div className="flex items-center gap-3 min-w-0">
-            <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] shrink-0">
+            <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#6b6b6b] shrink-0">
               Run · {run.id.slice(0, 8)}
             </span>
             <RunStatusBadge status={run.status} />
@@ -153,8 +153,13 @@ export function RunDetailPage() {
           </div>
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[1.75rem] leading-tight text-[#1a1a1a] break-all">
-          {run.workflow_id}
+          {run.name ?? run.workflow_id}
         </h1>
+        {run.name && (
+          <p className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b] mt-1 break-all">
+            {run.workflow_id}
+          </p>
+        )}
       </header>
 
       {(cancelMutation.isError || deleteMutation.isError) && (
@@ -167,7 +172,7 @@ export function RunDetailPage() {
 
       {/* Pipeline */}
       <section className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)] px-5 py-4 mb-6">
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-3">
           Pipeline
         </div>
         <PipelineStages stages={buildStages(run.status)} />
@@ -178,7 +183,7 @@ export function RunDetailPage() {
       <section className="mb-10">
         <h2 className="font-['DM_Serif_Display'] text-[1.4rem] text-[#1a1a1a] mb-4">Inference instances</h2>
         {instances.length === 0 ? (
-          <p className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#888888] italic">
+          <p className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#6b6b6b] italic">
             No inference instances for this model.
           </p>
         ) : (
@@ -193,7 +198,7 @@ export function RunDetailPage() {
                   <span className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a]">
                     {inst.pod_name || inst.id.slice(0, 8)}
                   </span>
-                  <span className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#888888] ml-auto">
+                  <span className="font-['IBM_Plex_Mono'] text-[0.65rem] text-[#6b6b6b] ml-auto">
                     {inst.id.slice(0, 8)}
                   </span>
                 </Link>

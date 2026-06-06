@@ -29,7 +29,7 @@ export function ModelFormPage() {
   if (isEdit && isLoading) {
     return (
       <div className="ed-page">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading model
         </span>
       </div>
@@ -40,14 +40,14 @@ export function ModelFormPage() {
     <div className="ed-page max-w-3xl">
       <Link
         to={isEdit ? `/models/${id}` : '/models'}
-        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] hover:text-[#1a1a1a] mb-5"
+        className="inline-flex items-center gap-1.5 font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] hover:text-[#1a1a1a] mb-5"
       >
         <ArrowLeft className="h-3 w-3" />
         {isEdit ? 'Back to model' : 'Back to models'}
       </Link>
 
       <header className="mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#888888] mb-2">
+        <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-2">
           {isEdit ? 'Edit · Configuration' : 'New · Specification'}
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-3">

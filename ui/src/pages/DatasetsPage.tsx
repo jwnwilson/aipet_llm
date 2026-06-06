@@ -18,7 +18,7 @@ function getErrorMessage(error: unknown): string {
 function DatasetRow({ dataset, onDelete, index }: { dataset: Dataset; onDelete: (id: string) => void; index: number }) {
   return (
     <tr>
-      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
+      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b]">
         {String(index + 1).padStart(2, '0')}
       </td>
       <td className="font-['IBM_Plex_Mono'] text-[0.88rem] text-[#1a1a1a]">{dataset.name}</td>
@@ -38,17 +38,17 @@ function DatasetRow({ dataset, onDelete, index }: { dataset: Dataset; onDelete: 
       <td className="font-['Outfit'] text-[0.82rem] text-[#3a3a36] max-w-xs truncate">
         {dataset.description || '—'}
       </td>
-      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888] max-w-xs truncate">
+      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b] max-w-xs truncate">
         {dataset.key}
       </td>
-      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
+      <td className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b]">
         {new Date(dataset.created_at).toLocaleDateString()}
       </td>
       <td className="text-right">
         <button
           onClick={() => onDelete(dataset.id)}
           aria-label={`Delete dataset ${dataset.name}`}
-          className="text-[#888888] hover:text-[#7f1d1d] transition-colors p-1.5"
+          className="text-[#6b6b6b] hover:text-[#7f1d1d] transition-colors p-1.5"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -74,7 +74,7 @@ function DatasetMobileCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888]">
+            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#6b6b6b]">
               {String(index + 1).padStart(2, '0')}
             </span>
             <span
@@ -93,21 +93,21 @@ function DatasetMobileCard({
             {dataset.name}
           </p>
           {dataset.description && (
-            <p className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-2">
+            <p className="font-['Outfit'] text-[0.78rem] text-[#6b6b6b] mt-0.5 line-clamp-2">
               {dataset.description}
             </p>
           )}
-          <p className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888] mt-1 truncate">
+          <p className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#6b6b6b] mt-1 truncate">
             {dataset.key}
           </p>
-          <p className="font-['Outfit'] text-[0.72rem] text-[#888888] mt-0.5">
+          <p className="font-['Outfit'] text-[0.72rem] text-[#6b6b6b] mt-0.5">
             {new Date(dataset.created_at).toLocaleDateString()}
           </p>
         </div>
         <button
           onClick={() => onDelete(dataset.id)}
           aria-label={`Delete dataset ${dataset.name}`}
-          className="text-[#888888] hover:text-[#7f1d1d] transition-colors p-1.5 shrink-0 mt-1"
+          className="text-[#6b6b6b] hover:text-[#7f1d1d] transition-colors p-1.5 shrink-0 mt-1"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -185,7 +185,7 @@ function UploadDropzone({ onSuccess }: { onSuccess: () => void }) {
         <p className="font-['DM_Serif_Display'] text-[1.3rem] text-[#1a1a1a] mb-1">
           {fileName ?? 'Drop your dataset here'}
         </p>
-        <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888]">
+        <p className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
           {fileName ? 'Click to replace' : 'Click to browse · accepted format .jsonl'}
         </p>
         <input
@@ -287,7 +287,7 @@ export function DatasetsPage() {
   return (
     <div className="ed-page">
       <header className="mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-3">
           Vol. 3 · Corpus
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[2.4rem] leading-[1.05] text-[#1a1a1a] mb-3">
@@ -304,7 +304,7 @@ export function DatasetsPage() {
         {/* Upload column */}
         <aside className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
           <div className="px-6 py-4 border-b border-[#d0d0c8]">
-            <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+            <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
               Section I
             </div>
             <h2 className="font-['DM_Serif_Display'] text-[1.25rem] text-[#1a1a1a]">
@@ -320,14 +320,14 @@ export function DatasetsPage() {
         <section className="bg-white border border-[#d0d0c8] rounded-[4px] shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
           <div className="px-6 py-4 border-b border-[#d0d0c8] flex items-center justify-between">
             <div>
-              <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#888888]">
+              <div className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
                 Section II
               </div>
               <h2 className="font-['DM_Serif_Display'] text-[1.25rem] text-[#1a1a1a]">
                 Catalog
               </h2>
             </div>
-            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888]">
+            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b]">
               {datasets?.length ?? 0} {datasets?.length === 1 ? 'entry' : 'entries'}
             </span>
           </div>
@@ -335,7 +335,7 @@ export function DatasetsPage() {
           <div>
             {isLoading && (
               <div className="px-6 py-8">
-                <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+                <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
                   Loading
                 </span>
               </div>
@@ -349,7 +349,7 @@ export function DatasetsPage() {
             )}
             {datasets && datasets.length === 0 && (
               <div className="px-6 py-12 text-center">
-                <p className="font-['DM_Serif_Display'] italic text-[1.2rem] text-[#888888]">
+                <p className="font-['DM_Serif_Display'] italic text-[1.2rem] text-[#6b6b6b]">
                   No datasets uploaded yet.
                 </p>
               </div>

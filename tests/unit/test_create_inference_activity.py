@@ -115,6 +115,44 @@ class TestCreateInferenceActivity:
         assert result == "inst-xyz789"
 
     @pytest.mark.asyncio
+    async def test_creates_instance_with_run_id(self):
+        mock_instance = MagicMock()
+        mock_instance.id = "inst-run123"
+        mock_store = MagicMock()
+        mock_store.create.return_value = mock_instance
+
+        import interactors.temporal.activities as acts
+        original = acts._create_uow
+        acts._create_uow = lambda: _mock_uow(inference_store=mock_store)
+        try:
+            from interactors.temporal.activities import create_inference_activity
+            await create_inference_activity("model-42", "workflow/abc/model.gguf", "run-xyz")
+        finally:
+            acts._create_uow = original
+
+        call_args = mock_store.create.call_args[0][0]
+        assert call_args.run_id == "run-xyz"
+
+    @pytest.mark.asyncio
+    async def test_run_id_empty_string_stored_as_none(self):
+        mock_instance = MagicMock()
+        mock_instance.id = "inst-run456"
+        mock_store = MagicMock()
+        mock_store.create.return_value = mock_instance
+
+        import interactors.temporal.activities as acts
+        original = acts._create_uow
+        acts._create_uow = lambda: _mock_uow(inference_store=mock_store)
+        try:
+            from interactors.temporal.activities import create_inference_activity
+            await create_inference_activity("model-42", "", "")
+        finally:
+            acts._create_uow = original
+
+        call_args = mock_store.create.call_args[0][0]
+        assert call_args.run_id is None
+
+    @pytest.mark.asyncio
     async def test_propagates_store_exception(self):
         mock_store = MagicMock()
         mock_store.create.side_effect = RuntimeError("DB unavailable")

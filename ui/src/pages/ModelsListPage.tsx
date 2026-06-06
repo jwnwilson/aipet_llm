@@ -15,7 +15,7 @@ function LoadingState() {
   return (
     <div className="ed-page">
       <div className="flex items-center gap-3">
-        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888]">
+        <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b]">
           Loading models
         </span>
         <div className="h-px w-24 bg-[#1a1a1a] animate-pulse" />
@@ -30,7 +30,7 @@ function EmptyState() {
       <p className="font-['DM_Serif_Display'] italic text-[1.4rem] text-[#3a3a36] mb-2">
         No models configured.
       </p>
-      <p className="font-['Outfit'] text-[0.9rem] text-[#888888] mb-6 max-w-md mx-auto">
+      <p className="font-['Outfit'] text-[0.9rem] text-[#6b6b6b] mb-6 max-w-md mx-auto">
         Configure a base model, training parameters, and a backend to begin your first experiment.
       </p>
       <Button asChild>
@@ -66,10 +66,10 @@ function ModelMobileCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888]">
+            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#6b6b6b]">
               {String(index + 1).padStart(2, '0')}
             </span>
-            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#888888]">
+            <span className="font-['IBM_Plex_Mono'] text-[0.68rem] text-[#6b6b6b]">
               {model.base_model}
             </span>
           </div>
@@ -77,7 +77,7 @@ function ModelMobileCard({
             {model.name}
           </h3>
           {model.description && (
-            <p className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-1">
+            <p className="font-['Outfit'] text-[0.78rem] text-[#6b6b6b] mt-0.5 line-clamp-1">
               {model.description}
             </p>
           )}
@@ -85,7 +85,7 @@ function ModelMobileCard({
             <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#3a3a36]">
               {model.remote_backend}
             </span>
-            <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#888888]">
+            <span className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b]">
               {model.epochs} epochs
             </span>
             {model.is_active && <RunStatusBadge status="completed" />}
@@ -155,7 +155,7 @@ export function ModelsListPage() {
     <div className="ed-page">
       {/* Page header — serif title, mono kicker, full-bleed rule */}
       <header className="mb-10">
-        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#888888] mb-3">
+        <div className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-3">
           Vol. 1 · Catalog
         </div>
         <div className="flex items-end justify-between gap-6 flex-wrap">
@@ -184,7 +184,7 @@ export function ModelsListPage() {
         <>
           {/* Search bar */}
           <div className="flex items-center gap-3 mb-6">
-            <Search className="h-4 w-4 text-[#888888]" />
+            <Search className="h-4 w-4 text-[#6b6b6b]" />
             <Input
               className="max-w-sm"
               placeholder="Filter by name, description, or base model"
@@ -192,7 +192,7 @@ export function ModelsListPage() {
               onChange={e => setSearch(e.target.value)}
               aria-label="Search models"
             />
-            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#888888] ml-auto">
+            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#6b6b6b] ml-auto">
               {filtered.length} / {models.length} shown
             </span>
           </div>
@@ -201,7 +201,7 @@ export function ModelsListPage() {
             {isMobile ? (
               filtered.length === 0 ? (
                 <div className="px-4 py-10 text-center">
-                  <span className="font-['DM_Serif_Display'] italic text-[#888888]">
+                  <span className="font-['DM_Serif_Display'] italic text-[#6b6b6b]">
                     No models match "{search}"
                   </span>
                 </div>
@@ -236,7 +236,7 @@ export function ModelsListPage() {
                   {filtered.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center py-10">
-                        <span className="font-['DM_Serif_Display'] italic text-[#888888]">
+                        <span className="font-['DM_Serif_Display'] italic text-[#6b6b6b]">
                           No models match "{search}"
                         </span>
                       </td>
@@ -249,7 +249,7 @@ export function ModelsListPage() {
                         onClick={() => navigate(`/models/${model.id}`)}
                       >
                         <td>
-                          <span className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#888888]">
+                          <span className="font-['IBM_Plex_Mono'] text-[0.78rem] text-[#6b6b6b]">
                             {String(i + 1).padStart(2, '0')}
                           </span>
                         </td>
@@ -258,7 +258,7 @@ export function ModelsListPage() {
                             {model.name}
                           </div>
                           {model.description && (
-                            <div className="font-['Outfit'] text-[0.78rem] text-[#888888] mt-0.5 line-clamp-1 max-w-md">
+                            <div className="font-['Outfit'] text-[0.78rem] text-[#6b6b6b] mt-0.5 line-clamp-1 max-w-md">
                               {model.description}
                             </div>
                           )}
@@ -276,7 +276,7 @@ export function ModelsListPage() {
                           {model.is_active ? (
                             <RunStatusBadge status="completed" />
                           ) : (
-                            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#b3b1a6]">
+                            <span className="font-['IBM_Plex_Mono'] text-[0.7rem] uppercase tracking-[0.14em] text-[#767676]">
                               —
                             </span>
                           )}

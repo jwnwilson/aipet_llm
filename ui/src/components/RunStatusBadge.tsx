@@ -24,14 +24,6 @@ const TONE_CLASS: Record<BadgeTone, string> = {
   danger:  'bg-[#f1e2e0] text-[#7f1d1d] border-[#7f1d1d]',
 }
 
-// Legacy classes kept outside cn() so tailwind-merge doesn't strip them.
-// Required by existing tests asserting on bg-green-100 / bg-red-100 / bg-blue-100.
-const LEGACY_CLASS: Partial<Record<BadgeTone, string>> = {
-  active:  'bg-blue-100',
-  success: 'bg-green-100',
-  danger:  'bg-red-100',
-}
-
 interface RunStatusBadgeProps {
   status: RunStatus
   className?: string
@@ -39,7 +31,6 @@ interface RunStatusBadgeProps {
 
 export function RunStatusBadge({ status, className }: RunStatusBadgeProps) {
   const config = STATUS_CONFIG[status]
-  const legacyClass = LEGACY_CLASS[config.tone] ?? ''
   return (
     <span
       data-testid="run-status-badge"
@@ -48,7 +39,6 @@ export function RunStatusBadge({ status, className }: RunStatusBadgeProps) {
         "font-['IBM_Plex_Mono'] text-[0.65rem] font-medium uppercase tracking-[0.14em]",
         'px-2 py-[3px] rounded-[2px] border',
         TONE_CLASS[config.tone],
-        legacyClass,
         className,
       )}
     >

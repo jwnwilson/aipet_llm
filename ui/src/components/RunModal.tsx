@@ -27,6 +27,7 @@ const BASE_MODEL_OPTIONS = [
 ]
 
 const schema = z.object({
+  name:               z.string().trim().nullable(),
   epochs:             z.coerce.number().int().positive().nullable(),
   patience:           z.coerce.number().int().positive().nullable(),
   warmup_ratio:       z.coerce.number().min(0).max(1).nullable(),
@@ -52,6 +53,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
   const { register, handleSubmit, control, watch } = useForm<FormValues>({
     resolver: zodResolver(schema) as Resolver<FormValues>,
     defaultValues: {
+      name:              null,
       epochs:            model.epochs,
       patience:          model.patience,
       warmup_ratio:      model.warmup_ratio,
@@ -86,6 +88,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
   function onSubmit(values: FormValues) {
     mutation.mutate({
       model_id: model.id,
+      name: values.name || null,
       ...(values.epochs             != null && { epochs:            values.epochs }),
       ...(values.patience           != null && { patience:          values.patience }),
       ...(values.warmup_ratio       != null && { warmup_ratio:      values.warmup_ratio }),
@@ -113,7 +116,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
       >
         <header className="px-6 py-5 border-b border-[#d0d0c8] flex items-start justify-between">
           <div>
-            <div className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.18em] text-[#888888] mb-1">
+            <div className="font-['IBM_Plex_Mono'] text-[0.62rem] uppercase tracking-[0.18em] text-[#6b6b6b] mb-1">
               New training run
             </div>
             <h2 id="run-modal-title" className="font-['DM_Serif_Display'] text-[1.5rem] leading-tight text-[#1a1a1a]">
@@ -123,7 +126,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
           <button
             onClick={onClose}
             aria-label="Close"
-            className="text-[#888888] hover:text-[#1a1a1a] transition-colors p-1 -m-1"
+            className="text-[#6b6b6b] hover:text-[#1a1a1a] transition-colors p-1 -m-1"
           >
             <X className="h-4 w-4" />
           </button>
@@ -135,6 +138,16 @@ export function RunModal({ model, onClose }: RunModalProps) {
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="run_name">Run name</Label>
+              <Input
+                id="run_name"
+                type="text"
+                placeholder="Optional — helps identify this run"
+                {...register('name')}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="epochs">Epochs</Label>

@@ -272,7 +272,7 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 shutil.copy2(jsonl, staging / jsonl.name)
 
             if not staged:
-                if not (spec.train_data.startswith("dataset/") or spec.train_data.startswith("datasets/") or spec.train_data.startswith("workflow/")):
+                if not (spec.train_data.startswith("dataset/") or spec.train_data.startswith("workflow/")):
                     raise ValueError(
                         f"No local training data at {train_data.parent} and "
                         f"'{spec.train_data}' is not a recognised S3 key. "
