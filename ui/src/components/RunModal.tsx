@@ -27,6 +27,7 @@ const BASE_MODEL_OPTIONS = [
 ]
 
 const schema = z.object({
+  name:               z.string().trim().nullable(),
   epochs:             z.coerce.number().int().positive().nullable(),
   patience:           z.coerce.number().int().positive().nullable(),
   warmup_ratio:       z.coerce.number().min(0).max(1).nullable(),
@@ -52,6 +53,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
   const { register, handleSubmit, control, watch } = useForm<FormValues>({
     resolver: zodResolver(schema) as Resolver<FormValues>,
     defaultValues: {
+      name:              null,
       epochs:            model.epochs,
       patience:          model.patience,
       warmup_ratio:      model.warmup_ratio,
@@ -86,6 +88,7 @@ export function RunModal({ model, onClose }: RunModalProps) {
   function onSubmit(values: FormValues) {
     mutation.mutate({
       model_id: model.id,
+      name: values.name || null,
       ...(values.epochs             != null && { epochs:            values.epochs }),
       ...(values.patience           != null && { patience:          values.patience }),
       ...(values.warmup_ratio       != null && { warmup_ratio:      values.warmup_ratio }),
@@ -135,6 +138,16 @@ export function RunModal({ model, onClose }: RunModalProps) {
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="run_name">Run name</Label>
+              <Input
+                id="run_name"
+                type="text"
+                placeholder="Optional — helps identify this run"
+                {...register('name')}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="epochs">Epochs</Label>

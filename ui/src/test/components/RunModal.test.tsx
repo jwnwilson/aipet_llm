@@ -42,6 +42,51 @@ describe('RunModal', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('renders a run name input', () => {
+    renderModal()
+    expect(screen.getByLabelText(/^run name$/i)).toBeInTheDocument()
+  })
+
+  it('run name input starts empty', () => {
+    renderModal()
+    expect(screen.getByLabelText(/^run name$/i)).toHaveValue('')
+  })
+
+  it('includes name in the trigger request when provided', async () => {
+    const { server } = await import('../msw/server')
+    const { http, HttpResponse } = await import('msw')
+    const { RUN_FIXTURE } = await import('../msw/fixtures')
+    let capturedBody: Record<string, unknown> | null = null
+    server.use(
+      http.post('http://localhost:8000/api/runs/trigger', async ({ request }) => {
+        capturedBody = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ run_id: RUN_FIXTURE.id }, { status: 202 })
+      })
+    )
+    renderModal()
+    await userEvent.type(screen.getByLabelText(/^run name$/i), 'my-labelled-run')
+    await userEvent.click(screen.getByRole('button', { name: /start run/i }))
+    await waitFor(() => expect(capturedBody).not.toBeNull())
+    expect(capturedBody).toMatchObject({ name: 'my-labelled-run' })
+  })
+
+  it('sends null name when run name input is empty', async () => {
+    const { server } = await import('../msw/server')
+    const { http, HttpResponse } = await import('msw')
+    const { RUN_FIXTURE } = await import('../msw/fixtures')
+    let capturedBody: Record<string, unknown> | null = null
+    server.use(
+      http.post('http://localhost:8000/api/runs/trigger', async ({ request }) => {
+        capturedBody = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ run_id: RUN_FIXTURE.id }, { status: 202 })
+      })
+    )
+    renderModal()
+    await userEvent.click(screen.getByRole('button', { name: /start run/i }))
+    await waitFor(() => expect(capturedBody).not.toBeNull())
+    expect(capturedBody).toMatchObject({ name: null })
+  })
+
   it('renders num_train_samples and num_eval_samples fields', () => {
     renderModal()
     expect(screen.getByLabelText(/train samples/i)).toBeInTheDocument()

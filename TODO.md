@@ -23,6 +23,10 @@
 - Provide an apikey for a user to run inference on their model
 - Add rate limiting per user 
 
+# Agent harness design
+- Design an agent harness system to create an orchestrator agent that can delegate to subagents tracking task progress as it works.
+- Add ability to use local or 3rd party agents.
+
 ## Fast E2E tests
 - Re-enable fast E2E tests on CI/CD now we have working smoke tests
 
