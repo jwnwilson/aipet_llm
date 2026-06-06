@@ -10,13 +10,10 @@ from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
 from tests.integration.conftest import make_test_engine
-from adapters.database.model_store import SQLAlchemyModelStore
-from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
 from domain.models import RunConfig, RunStatus, TrainingModelConfig
 from interactors.temporal.activities import (
-    configure_inference_store,
-    configure_model_store,
-    configure_run_store,
+    configure_engine,
     configure_storage,
     create_inference_activity,
     evaluate_activity,
@@ -53,30 +50,24 @@ def _fake_evaluate(eval_data, infer_fn):
 @pytest.mark.asyncio
 async def test_workflow_updates_run_status_in_db():
     engine = make_test_engine()
-    model_store = SQLAlchemyModelStore(engine)
-    run_store = SQLAlchemyRunStore(engine)
 
-    model = model_store.create(TrainingModelConfig(
-        name="status-test-model",
-        base_model="HuggingFaceTB/SmolLM2-360M",
-        train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
-        epochs=3,
-        patience=2,
-        warmup_ratio=0.05,
-        remote_backend="local",
-        skip_generate=False,
-    ))
-
-    run = run_store.create(RunConfig(model_id=model.id, workflow_id="wf-status-test"))
+    with SQLAlchemyUnitOfWork(engine).transaction() as _uow:
+        model = _uow.model_store.create(TrainingModelConfig(
+            name="status-test-model",
+            base_model="HuggingFaceTB/SmolLM2-360M",
+            train_data="data/train.jsonl",
+            eval_data="data/eval.jsonl",
+            epochs=3,
+            patience=2,
+            warmup_ratio=0.05,
+            remote_backend="local",
+            skip_generate=False,
+        ))
+        run = _uow.run_store.create(RunConfig(model_id=model.id, workflow_id="wf-status-test"))
     assert run.status == RunStatus.PENDING
 
-    configure_run_store(run_store)
-    configure_model_store(model_store)
+    configure_engine(engine)
     configure_storage(MagicMock())
-    mock_inference_store = MagicMock()
-    mock_inference_store.create.return_value = MagicMock(id="test-inference-id")
-    configure_inference_store(mock_inference_store)
 
     config = ExperimentConfig(
         experiment_name="db-status-test",
@@ -122,7 +113,8 @@ async def test_workflow_updates_run_status_in_db():
                     task_queue="llm-api-training",
                 )
 
-    final_run = run_store.get(run.id)
+    with SQLAlchemyUnitOfWork(engine).transaction() as _uow:
+        final_run = _uow.run_store.get(run.id)
     assert final_run.status == RunStatus.COMPLETED
     assert final_run.eval_valid_pct == pytest.approx(0.95, abs=0.01)
     assert result.passed is True

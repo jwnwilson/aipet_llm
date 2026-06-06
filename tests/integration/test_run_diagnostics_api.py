@@ -9,10 +9,12 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 from interactors.api.app import app
-from interactors.api.deps import get_model_store, get_run_store, get_storage
-from domain.models import RunConfig, TrainingModelConfig
+from sqlalchemy.orm import Session
 from adapters.database.model_store import SQLAlchemyModelStore
 from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
+from domain.models import RunConfig, TrainingModelConfig
+from interactors.api.deps import get_storage, get_uow
 from adapters.storage.local import LocalStorageAdapter
 
 
@@ -37,15 +39,24 @@ def storage(tmp_path):
 
 @pytest_asyncio.fixture
 async def client(db_engine, storage):
-    model_store = SQLAlchemyModelStore(db_engine)
-    run_store = SQLAlchemyRunStore(db_engine)
-    app.dependency_overrides[get_model_store] = lambda: model_store
-    app.dependency_overrides[get_run_store] = lambda: run_store
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(db_engine)
+        with uow.transaction():
+            yield uow
+
+    app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_storage] = lambda: storage
+
+    session = Session(db_engine)
+    model_store = SQLAlchemyModelStore(session)
+    run_store = SQLAlchemyRunStore(session)
+
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c, model_store, run_store
+
+    session.close()
     app.dependency_overrides.clear()
 
 

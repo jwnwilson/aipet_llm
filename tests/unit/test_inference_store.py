@@ -1,15 +1,22 @@
 """Unit tests for SQLAlchemyInferenceStore."""
 import pytest
+from sqlalchemy.orm import Session
 from adapters.database import init_db, make_engine
 from adapters.database.inference_store import SQLAlchemyInferenceStore
 from domain.models import InferenceInstanceConfig, InferenceStatus
 
 
 @pytest.fixture
-def store(tmp_path):
+def db_session(tmp_path):
     engine = make_engine(f"sqlite:///{tmp_path}/test.db")
     init_db(engine)
-    return SQLAlchemyInferenceStore(engine)
+    with Session(engine) as session:
+        yield session
+
+
+@pytest.fixture
+def store(db_session):
+    return SQLAlchemyInferenceStore(db_session)
 
 
 def test_create_defaults_to_pending(store):

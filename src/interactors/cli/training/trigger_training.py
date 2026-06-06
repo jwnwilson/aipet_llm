@@ -34,21 +34,22 @@ async def _trigger(
 
     model_name = ""
     if model_id is not None:
-        from adapters.database.engine import make_engine
-        from adapters.database.model_store import SQLAlchemyModelStore
-        from adapters.database.run_store import SQLAlchemyRunStore
+        from adapters.database import init_db, make_engine
+        from adapters.database.uow import SQLAlchemyUnitOfWork
         from domain.models import RunConfig
 
         engine = make_engine()
-        db_model = SQLAlchemyModelStore(engine).get(model_id)
-        if db_model is None:
-            print(f"ERROR: model '{model_id}' not found in database.", file=sys.stderr)
-            sys.exit(1)
-        model_name = db_model.name
+        init_db(engine)
         workflow_id = f"training-{model_id}-{uuid.uuid4().hex[:8]}"
-        run_record = SQLAlchemyRunStore(engine).create(
-            RunConfig(model_id=model_id, workflow_id=workflow_id)
-        )
+        with SQLAlchemyUnitOfWork(engine).transaction() as uow:
+            db_model = uow.model_store.get(model_id)
+            if db_model is None:
+                print(f"ERROR: model '{model_id}' not found in database.", file=sys.stderr)
+                sys.exit(1)
+            model_name = db_model.name
+            run_record = uow.run_store.create(
+                RunConfig(model_id=model_id, workflow_id=workflow_id)
+            )
         run_id = run_record.id
         print(f"RunRecord created: run_id={run_id}")
     else:

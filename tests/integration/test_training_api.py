@@ -13,11 +13,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 from interactors.api.app import app
-from interactors.api.deps import get_dataset_store, get_inference_store, get_model_store, get_pod_adapter, get_run_store
-from adapters.database.dataset_store import SQLAlchemyDatasetStore
-from adapters.database.inference_store import SQLAlchemyInferenceStore
-from adapters.database.model_store import SQLAlchemyModelStore
-from adapters.database.run_store import SQLAlchemyRunStore
+from adapters.database.uow import SQLAlchemyUnitOfWork
+from interactors.api.deps import get_pod_adapter, get_uow
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -39,16 +36,14 @@ _VALID_CONFIG: dict[str, Any] = {
 
 @pytest_asyncio.fixture
 async def client(db_engine):
-    store = SQLAlchemyModelStore(db_engine)
-    run_store = SQLAlchemyRunStore(db_engine)
-    dataset_store = SQLAlchemyDatasetStore(db_engine)
-    inference_store = SQLAlchemyInferenceStore(db_engine)
+    def override_get_uow():
+        uow = SQLAlchemyUnitOfWork(db_engine)
+        with uow.transaction():
+            yield uow
+
     pod_adapter = MagicMock()
     pod_adapter.delete_pod = MagicMock()
-    app.dependency_overrides[get_model_store] = lambda: store
-    app.dependency_overrides[get_run_store] = lambda: run_store
-    app.dependency_overrides[get_dataset_store] = lambda: dataset_store
-    app.dependency_overrides[get_inference_store] = lambda: inference_store
+    app.dependency_overrides[get_uow] = override_get_uow
     app.dependency_overrides[get_pod_adapter] = lambda: pod_adapter
     async with httpx.AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -225,18 +220,20 @@ class TestDeleteModelCascade:
         assert resp.status_code == 201
         model_id = resp.json()["id"]
 
-        inference_store = SQLAlchemyInferenceStore(db_engine)
         from domain.models import InferenceInstanceConfig
-        inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="pod-a", pod_namespace="default", idle_timeout_minutes=60))
-        inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="pod-b", pod_namespace="default", idle_timeout_minutes=60))
-        assert inference_store.count(model_id=model_id) == 2
+        with SQLAlchemyUnitOfWork(db_engine).transaction() as _uow:
+            _uow.inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="pod-a", pod_namespace="default", idle_timeout_minutes=60))
+            _uow.inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="pod-b", pod_namespace="default", idle_timeout_minutes=60))
+        with SQLAlchemyUnitOfWork(db_engine).transaction() as _uow:
+            assert _uow.inference_store.count(model_id=model_id) == 2
 
         # Act — delete the model
         del_resp = await client.delete(f"/api/models/{model_id}")
         assert del_resp.status_code == 204
 
         # Assert — inference instances are gone
-        assert inference_store.count(model_id=model_id) == 0
+        with SQLAlchemyUnitOfWork(db_engine).transaction() as _uow:
+            assert _uow.inference_store.count(model_id=model_id) == 0
 
     @pytest.mark.asyncio
     async def test_deleting_model_without_instances_succeeds(self, client):
@@ -253,9 +250,9 @@ class TestDeleteModelCascade:
         resp = await client.post("/api/models", json=_VALID_CONFIG)
         model_id = resp.json()["id"]
 
-        inference_store = SQLAlchemyInferenceStore(db_engine)
         from domain.models import InferenceInstanceConfig
-        inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="my-pod", pod_namespace="ns", idle_timeout_minutes=60))
+        with SQLAlchemyUnitOfWork(db_engine).transaction() as _uow:
+            _uow.inference_store.create(InferenceInstanceConfig(model_id=model_id, pod_name="my-pod", pod_namespace="ns", idle_timeout_minutes=60))
 
         # Capture the mock pod adapter from the overrides
         pod_adapter = app.dependency_overrides[get_pod_adapter]()

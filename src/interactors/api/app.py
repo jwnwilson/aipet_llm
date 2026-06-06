@@ -49,39 +49,27 @@ def _resolve_model_path(storage) -> str:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from adapters.auth.auth0 import Auth0Adapter
     from adapters.database import init_db, make_engine
-    from adapters.database.dataset_store import SQLAlchemyDatasetStore
-    from adapters.database.model_store import SQLAlchemyModelStore
-    from adapters.database.run_store import SQLAlchemyRunStore
     from adapters.inference import LlamaCppInferenceAdapter
     from interactors.api.deps import (
         clear_adapter,
         clear_auth,
-        clear_dataset_store,
         clear_storage,
+        clear_uow,
         configure,
         configure_auth,
-        configure_dataset_store,
-        configure_model_store,
-        configure_run_store,
         configure_storage as configure_api_storage,
+        configure_uow,
     )
     from interactors.temporal.activities import (
-        configure_run_store as configure_activity_run_store,
+        configure_engine as configure_activity_engine,
         configure_storage,
     )
 
     engine = make_engine()
     init_db(engine)
 
-    store = SQLAlchemyModelStore(engine)
-    configure_model_store(store)
-
-    run_store = SQLAlchemyRunStore(engine)
-    configure_run_store(run_store)
-    configure_activity_run_store(run_store)
-
-    dataset_store = SQLAlchemyDatasetStore(engine)
-    configure_dataset_store(dataset_store)
+    configure_uow(engine)
+    configure_activity_engine(engine)
 
     storage = _make_storage_adapter()
     configure_storage(storage)
@@ -112,7 +100,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("INFERENCE_DISABLED=true — skipping local model download and inference adapter")
     else:
         from adapters.storage import download_model
-        active = store.active()
+        from adapters.database.uow import SQLAlchemyUnitOfWork
+        with SQLAlchemyUnitOfWork(engine).transaction() as _startup_uow:
+            active = _startup_uow.model_store.active()
         if active and active.gguf_path:
             local_path = Path("models/cache") / active.id / "model.gguf"
             try:
@@ -145,11 +135,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("Pod adapter: K8sPodAdapter")
 
     from adapters.database.inference_store import SQLAlchemyInferenceStore
-    from interactors.api.deps import clear_inference_store, configure_inference_store
     from interactors.api.idle_shutdown import idle_shutdown_loop, readiness_watch_loop
+    from sqlalchemy.orm import Session as _Session
 
-    inference_store = SQLAlchemyInferenceStore(engine)
-    configure_inference_store(inference_store)
+    _bg_session = _Session(engine)
+    inference_store = SQLAlchemyInferenceStore(_bg_session)
 
     shutdown_task = asyncio.create_task(idle_shutdown_loop(inference_store, pod_adapter))
     readiness_task = asyncio.create_task(readiness_watch_loop(inference_store, pod_adapter))
@@ -161,10 +151,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         shutdown_task.cancel()
         readiness_task.cancel()
+        _bg_session.close()
         clear_adapter()
         clear_auth()
-        clear_dataset_store()
-        clear_inference_store()
+        clear_uow()
         clear_storage()
         clear_pod_adapter()
 
