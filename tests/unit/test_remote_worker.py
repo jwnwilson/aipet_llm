@@ -24,7 +24,6 @@ def _setup_env(monkeypatch, run_id: str = "runpod/test-exp-abc123") -> None:
     monkeypatch.setenv("RUN_ID", run_id)
     monkeypatch.setenv("JOB_TYPE", "train")
     monkeypatch.setenv("TRAIN_DATA_KEY", f"{run_id}/data/train.jsonl")
-    monkeypatch.setenv("EVAL_DATA_KEY", f"{run_id}/data/eval.jsonl")
     monkeypatch.setenv("MODEL", "HuggingFaceTB/SmolLM2-360M")
     monkeypatch.setenv("EPOCHS", "1")
     monkeypatch.setenv("PATIENCE", "3")
@@ -90,13 +89,13 @@ class TestRemoteWorkerHappyPath:
         ]
         assert status_calls[0] == call("runpod/test-exp-abc123/status.txt", b"running")
 
-    def test_downloads_train_and_eval_via_storage_port(self, monkeypatch, tmp_path):
+    def test_downloads_train_via_storage_port(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
         storage, _ = _run_worker(monkeypatch, tmp_path)
 
         keys = [c.args[0] for c in storage.download.call_args_list]
         assert "runpod/test-exp-abc123/data/train.jsonl" in keys
-        assert "runpod/test-exp-abc123/data/eval.jsonl" in keys
+        assert not any("eval.jsonl" in k for k in keys), "eval should not be downloaded during training"
 
     def test_calls_domain_train_directly_not_subprocess(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
@@ -130,19 +129,6 @@ class TestRemoteWorkerHappyPath:
         assert not any("checkpoint.tar.gz" in k for k in upload_keys), (
             f"Tarball upload must not occur; upload keys: {upload_keys}"
         )
-
-    def test_calls_domain_evaluate_and_writes_eval_result(self, monkeypatch, tmp_path):
-        _setup_env(monkeypatch)
-        storage, _ = _run_worker(monkeypatch, tmp_path)
-
-        eval_calls = [
-            c for c in storage.write_bytes.call_args_list
-            if "eval_result.json" in str(c.args[0])
-        ]
-        assert eval_calls, "eval_result.json must be written to S3"
-        written = json.loads(eval_calls[0].args[1])
-        assert written["valid_pct"] == pytest.approx(0.97)
-        assert written["passed"] is True
 
     def test_writes_done_status_on_success(self, monkeypatch, tmp_path):
         _setup_env(monkeypatch)
@@ -217,37 +203,6 @@ class TestRemoteWorkerFailurePaths:
         ]
         assert b"failed" in status_values
 
-    def test_eval_failure_writes_zero_pct_and_still_writes_done(self, monkeypatch, tmp_path):
-        """Eval failure is non-fatal: still completes the run with passed=False."""
-        _setup_env(monkeypatch)
-        storage = MagicMock()
-
-        sys.modules.pop("interactors.cli.training.remote_worker", None)
-        with (
-            patch("interactors.cli.training.remote_worker._make_storage", return_value=storage),
-            patch("domain.train.trainer.train", _checkpoint_train()),
-            patch("domain.train.evaluate.load_hf_pipeline", side_effect=RuntimeError("no model")),
-            patch("domain.train.evaluate.evaluate"),
-            patch("domain.train.evaluate.infer_hf"),
-        ):
-            from interactors.cli.training import remote_worker
-            remote_worker.main()
-
-        eval_calls = [
-            c for c in storage.write_bytes.call_args_list
-            if "eval_result.json" in str(c.args[0])
-        ]
-        assert eval_calls
-        result = json.loads(eval_calls[0].args[1])
-        assert result["valid_pct"] == pytest.approx(0.0)
-        assert result["passed"] is False
-
-        status_values = [
-            c.args[1]
-            for c in storage.write_bytes.call_args_list
-            if "status.txt" in str(c.args[0])
-        ]
-        assert b"done" in status_values
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +240,98 @@ class TestRemoteWorkerProgressPolling:
             if "progress.json" in str(c.args[0])
         ]
         assert progress_writes, "Background thread must upload progress.json to S3"
+
+
+# ---------------------------------------------------------------------------
+# Incremental log flush tests (Tasks 1 & 2)
+# ---------------------------------------------------------------------------
+
+def _make_storage_mock(existing: bytes = b"") -> MagicMock:
+    s = MagicMock()
+    s.read_bytes_from.return_value = existing
+    return s
+
+
+@pytest.fixture(autouse=False)
+def reset_flush_globals():
+    """Reset _log_stream and _flushed_chars between flush unit tests."""
+    import interactors.cli.training.remote_worker as rw
+    orig_stream = rw._log_stream
+    orig_chars = rw._flushed_chars
+    yield
+    rw._log_stream = orig_stream
+    rw._flushed_chars = orig_chars
+
+
+class TestFlushLogsIncremental:
+    def test_sends_full_content_on_first_call(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        rw._log_stream.write("line1\n")
+        storage = _make_storage_mock(existing=b"")
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_called_once_with("workflow/abc/logs.txt", b"line1\n")
+        assert rw._flushed_chars == 6
+
+    def test_sends_only_delta_on_second_call(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        rw._log_stream.write("first\n")
+        storage = _make_storage_mock(existing=b"")
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+
+        storage.reset_mock()
+        storage.read_bytes_from.return_value = b"first\n"
+        rw._log_stream.write("second\n")
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_called_once_with(
+            "workflow/abc/logs.txt", b"first\nsecond\n"
+        )
+        assert rw._flushed_chars == 13
+
+    def test_skips_when_no_new_content(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        rw._log_stream.write("hello\n")
+        storage = _make_storage_mock()
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.reset_mock()
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_not_called()
+
+    def test_noop_when_no_prefix(self, reset_flush_globals):
+        import io
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._log_stream.write("data\n")
+        storage = _make_storage_mock()
+        rw._flush_logs_to_s3(storage, "")
+        storage.write_bytes.assert_not_called()
+
+    def test_noop_when_stream_is_none(self, reset_flush_globals):
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = None
+        storage = _make_storage_mock()
+        rw._flush_logs_to_s3(storage, "workflow/abc")
+        storage.write_bytes.assert_not_called()
+
+    def test_periodic_flush_starts_daemon_thread(self, reset_flush_globals):
+        import io
+        import threading
+        import interactors.cli.training.remote_worker as rw
+        rw._log_stream = io.StringIO()
+        rw._flushed_chars = 0
+        storage = _make_storage_mock()
+        before = threading.active_count()
+        rw._start_periodic_log_flush(storage, "workflow/abc", interval=9999)
+        after = threading.active_count()
+        assert after > before, "a new daemon thread should have started"
 
 
 # ---------------------------------------------------------------------------

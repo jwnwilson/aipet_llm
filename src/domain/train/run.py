@@ -34,9 +34,6 @@ class TrainRunConfig:
     train_key: str
     """Storage key for the training JSONL file."""
 
-    eval_key: str
-    """Storage key for the eval JSONL file."""
-
     model: str
     """HuggingFace model ID."""
 
@@ -101,7 +98,6 @@ def run(
     checkpoint_dir = work_dir / "checkpoint"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     train_path = work_dir / "train.jsonl"
-    eval_path = work_dir / "eval.jsonl"
     progress_path = work_dir / "progress.json"
 
     log.info(
@@ -119,8 +115,6 @@ def run(
     # 2. Download training data via StoragePort
     log.info("downloading train data  key=%s", config.train_key)
     storage.download(config.train_key, train_path)
-    log.info("downloading eval data  key=%s", config.eval_key)
-    storage.download(config.eval_key, eval_path)
     storage.write_bytes(
         f"{prefix}/progress.json",
         json.dumps({"fraction": 0.15, "detail": "data downloaded"}).encode(),
@@ -142,7 +136,6 @@ def run(
         train(
             model=config.model,
             train_data=str(train_path),
-            eval_data=str(eval_path),
             output_dir=str(checkpoint_dir),
             epochs=config.epochs,
             patience=config.patience,
@@ -175,27 +168,6 @@ def run(
     storage.upload_directory(checkpoint_dir, f"{prefix}/checkpoint")
     log.info("checkpoint upload complete")
 
-    storage.write_bytes(
-        f"{prefix}/progress.json",
-        json.dumps({"fraction": 0.95, "detail": "evaluating"}).encode(),
-    )
-
-    # 6. Evaluate — lazy import, non-fatal failure
-    try:
-        from domain.train.evaluate import PASS_THRESHOLD, evaluate, infer_hf, load_hf_pipeline
-        pipe = load_hf_pipeline(str(checkpoint_dir))
-        _exit_code, valid_pct = evaluate(eval_path, lambda p: infer_hf(pipe, p))
-        passed = valid_pct >= PASS_THRESHOLD
-        log.info("eval complete  valid_pct=%.1f%%  passed=%s", valid_pct * 100, passed)
-    except Exception as exc:
-        log.error("eval failed — recording 0%%: %s", exc, exc_info=True)
-        valid_pct, passed = 0.0, False
-
-    # 7. Write results
-    storage.write_bytes(
-        f"{prefix}/eval_result.json",
-        json.dumps({"valid_pct": valid_pct, "passed": passed}).encode(),
-    )
     storage.write_bytes(
         f"{prefix}/progress.json",
         json.dumps({"fraction": 1.0, "detail": "done"}).encode(),

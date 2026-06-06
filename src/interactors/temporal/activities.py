@@ -99,7 +99,6 @@ class DatasetPaths:
 class TrainConfig:
     model: str = DEFAULT_MODEL
     train_data: str = "data/train.jsonl"
-    eval_data: str = "data/eval.jsonl"
     output_dir: str = DEFAULT_OUTPUT_DIR
     epochs: int = DEFAULT_EPOCHS
     patience: int = DEFAULT_PATIENCE
@@ -337,7 +336,6 @@ async def _train_local(config: TrainConfig) -> CheckpointPath:
             lambda: train(
                 model=config.model,
                 train_data=config.train_data,
-                eval_data=config.eval_data,
                 output_dir=config.output_dir,
                 epochs=config.epochs,
                 patience=config.patience,
@@ -368,56 +366,45 @@ _FILE_BASED_BACKENDS = frozenset({"colab", "ssh"})
 
 async def _resolve_training_data(
     config: TrainConfig, loop: asyncio.AbstractEventLoop
-) -> tuple[str, str]:
-    """Return *(train_key, eval_key)* ready for use in ``TrainJobSpec``.
+) -> str:
+    """Return the train key ready for use in ``TrainJobSpec``.
 
-    For **file-based backends** (Kaggle, Colab, SSH) the adapter stages data
-    from the local filesystem.  When ``skip_generate=True`` the workflow
-    forwards an S3 storage key (e.g. ``dataset/<uuid>/train.jsonl``) as
-    ``train_data`` — the file does not exist locally.  This function downloads
-    it to ``data/train.jsonl`` / ``data/eval.jsonl`` and returns the local paths.
+    For **file-based backends** (Colab, SSH) the adapter stages data from the
+    local filesystem.  When ``skip_generate=True`` the workflow forwards an S3
+    storage key as ``train_data`` — the file does not exist locally.  This
+    function downloads it to ``data/train.jsonl`` and returns the local path.
 
     For **S3-backed backends** (K8s, RunPod, VastAI) the remote job downloads
-    from S3 directly; the original S3 keys are returned unchanged so the pod
-    can find them (replacing keys with local paths would break S3 downloads).
-
-    If the paths already exist locally this is a no-op for file-based backends too.
+    from S3 directly; the original S3 key is returned unchanged.
     """
     train_key = config.train_data
-    # Derive eval key: use explicit config value or the sibling eval.jsonl.
-    eval_key = config.eval_data or str(Path(train_key).parent / "eval.jsonl")
 
-    # S3-backed backends: pass keys straight through — no local download needed.
+    # S3-backed backends: pass key straight through — no local download needed.
     if config.remote_backend not in _FILE_BASED_BACKENDS:
-        return train_key, eval_key
+        return train_key
 
     def _is_local(key: str) -> bool:
         p = Path(key)
         return (p if p.is_absolute() else Path.cwd() / p).exists()
 
-    if _is_local(train_key) and _is_local(eval_key):
-        return train_key, eval_key
+    if _is_local(train_key):
+        return train_key
 
     activity.logger.info(
-        "Training data not found locally (train=%r eval=%r cwd=%s); "
+        "Training data not found locally (train=%r cwd=%s); "
         "downloading from storage for local staging.",
-        train_key, eval_key, Path.cwd(),
+        train_key, Path.cwd(),
     )
     storage = _get_storage()
     dest = Path("data")
     dest.mkdir(parents=True, exist_ok=True)
     local_train = dest / "train.jsonl"
-    local_eval = dest / "eval.jsonl"
 
     if not _is_local(train_key):
         await loop.run_in_executor(None, lambda: storage.download(train_key, local_train))
         activity.logger.info("Downloaded train data → %s", local_train)
 
-    if not _is_local(eval_key):
-        await loop.run_in_executor(None, lambda: storage.download(eval_key, local_eval))
-        activity.logger.info("Downloaded eval data → %s", local_eval)
-
-    return str(local_train), str(local_eval)
+    return str(local_train)
 
 
 async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> CheckpointPath:
@@ -425,28 +412,20 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
     loop = asyncio.get_event_loop()
 
-    # Capture original keys before resolution — backends that access S3 directly
-    # (Kaggle, K8s, RunPod) use these to configure the remote worker without
-    # staging data on the local filesystem.
-    original_train_key = config.train_data
-    original_eval_key = config.eval_data
-
-    # If train/eval paths are S3 keys, download them locally for file-based
-    # backends (Colab, SSH) that stage data into their compute environment.
-    train_data, eval_data = await _resolve_training_data(config, loop)
+    # If train path is an S3 key, download locally for file-based backends
+    # (Colab, SSH) that stage data into their compute environment.
+    train_data = await _resolve_training_data(config, loop)
 
     remote_config = TrainJobSpec(
         model=config.model,
         train_data=train_data,
-        eval_data=eval_data,
         epochs=config.epochs,
         patience=config.patience,
         warmup_ratio=config.warmup_ratio,
         experiment_name=config.experiment_name or "llm-api",
         run_id=config.run_id,
-        # Original S3 keys for backends that access storage directly (e.g. Kaggle).
-        train_s3_key=original_train_key,
-        eval_s3_key=original_eval_key,
+        # Original S3 key for backends that access storage directly (e.g. Kaggle).
+        train_s3_key=config.train_data,
     )
 
     # Resume from a prior attempt if the remote job was already submitted.

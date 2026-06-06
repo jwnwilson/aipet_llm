@@ -28,26 +28,46 @@ import io
 import logging
 import os
 import sys
+import threading
+import time
 from pathlib import Path
 
 _log_stream: io.StringIO | None = None
+_flushed_chars: int = 0  # chars of _log_stream already written to S3
 log = logging.getLogger(__name__)
 
 
 def _flush_logs_to_s3(storage, prefix: str) -> None:
-    """Append buffered log output to S3 as ``{prefix}/logs.txt`` (best-effort).
+    """Append any unflushed log output to ``{prefix}/logs.txt`` in S3 (best-effort).
 
-    Reads existing content first so this job's logs accumulate after any
-    previous phase logs (e.g. training logs written by the Temporal activity).
+    Reads existing S3 content first so this job's output accumulates after
+    any logs from a previous phase (e.g. training logs written by Temporal).
+    Uses _flushed_chars to avoid re-sending content from earlier flushes.
     """
+    global _flushed_chars
     if not prefix or _log_stream is None:
         return
     try:
-        new_content = _log_stream.getvalue().encode()
+        all_content = _log_stream.getvalue()
+        new_content = all_content[_flushed_chars:].encode()
+        if not new_content:
+            return
         existing = storage.read_bytes_from(f"{prefix}/logs.txt", 0)
         storage.write_bytes(f"{prefix}/logs.txt", existing + new_content)
+        _flushed_chars = len(all_content)
     except Exception as exc:  # noqa: BLE001
         log.warning("failed to flush logs to S3: %s", exc)
+
+
+def _start_periodic_log_flush(storage, prefix: str, interval: float = 30.0) -> None:
+    """Start a daemon thread that flushes buffered logs to S3 every *interval* seconds."""
+    def _loop() -> None:
+        while True:
+            time.sleep(interval)
+            _flush_logs_to_s3(storage, prefix)
+
+    t = threading.Thread(target=_loop, daemon=True, name="log-flush")
+    t.start()
 
 
 def _require(name: str) -> str:
@@ -76,7 +96,6 @@ def _run_train(storage, run_id: str, prefix: str) -> None:
         run_id=run_id,
         storage_prefix=prefix,
         train_key=_require("TRAIN_DATA_KEY"),
-        eval_key=_require("EVAL_DATA_KEY"),
         model=_require("MODEL"),
         epochs=int(os.environ.get("EPOCHS", "1")),
         patience=int(os.environ.get("PATIENCE", "3")),
@@ -143,6 +162,7 @@ def main() -> None:
         sys.exit(f"ERROR: unknown JOB_TYPE {job_type!r}. Valid: {sorted(_HANDLERS)}")
 
     storage = _make_storage()
+    _start_periodic_log_flush(storage, prefix)
     log.info(
         "remote_worker  run_id=%s  job_type=%s  backend=%s  prefix=%s",
         run_id, job_type, os.environ.get("STORAGE_BACKEND", "s3"), prefix,

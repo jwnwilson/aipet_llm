@@ -224,7 +224,6 @@ class RunPodTrainingAdapter(RemoteJobPort):
                 "PATIENCE": str(spec.patience),
                 "WARMUP_RATIO": str(spec.warmup_ratio),
                 "TRAIN_DATA_KEY": f"{run_id}/data/train.jsonl",
-                "EVAL_DATA_KEY": f"{run_id}/data/eval.jsonl",
                 "STORAGE_BACKEND": "s3",
             }
         elif isinstance(spec, EvalJobSpec):
@@ -284,7 +283,6 @@ class RunPodTrainingAdapter(RemoteJobPort):
                     spec.train_data,
                 )
                 self._storage.download(spec.train_data, staging / "train.jsonl")
-                self._storage.download(spec.eval_data, staging / "eval.jsonl")
 
     def _upload_staged_files(self, staging: Path, run_id: str, spec: RemoteJobSpec) -> None:  # noqa: ARG002
         for path in staging.iterdir():

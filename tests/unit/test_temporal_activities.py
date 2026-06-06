@@ -151,7 +151,6 @@ async def test_train_activity_delegates_to_domain():
     config = TrainConfig(
         model="some-model",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         output_dir="models/checkpoints",
         epochs=3,
         patience=2,
@@ -162,7 +161,6 @@ async def test_train_activity_delegates_to_domain():
     mock_train.assert_called_once_with(
         model="some-model",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         output_dir="models/checkpoints",
         epochs=3,
         patience=2,
@@ -915,105 +913,65 @@ class TestSaveGgufPathActivity:
 class TestResolveTrainingData:
     """Unit tests for the _resolve_training_data helper.
 
-    File-based backends (Kaggle, Colab, SSH) stage data from the local filesystem
-    and need S3 keys materialised locally when skip_generate=True.
-    S3-backed backends (K8s, RunPod, VastAI) must receive the original S3 key so
-    the remote pod can download it — replacing the key with a local path breaks them.
+    File-based backends (Colab, SSH) stage data from the local filesystem and
+    need S3 keys materialised locally when skip_generate=True.
+    S3-backed backends (K8s, RunPod, VastAI, Kaggle) must receive the original
+    S3 key so the remote pod can download it.
     """
 
     @pytest.mark.asyncio
-    async def test_returns_paths_unchanged_when_files_exist_locally(self, tmp_path):
-        """No-op when both files already exist locally (file-based backend)."""
+    async def test_returns_train_path_unchanged_when_file_exists_locally(self, tmp_path):
+        """No-op when train file already exists locally (file-based backend)."""
         import asyncio
         import interactors.temporal.activities as acts
 
         train = tmp_path / "train.jsonl"
-        eval_ = tmp_path / "eval.jsonl"
         train.write_text('{"prompt":"p","completion":"c"}\n')
-        eval_.write_text('{"prompt":"p","completion":"c"}\n')
 
-        config = TrainConfig(train_data=str(train), eval_data=str(eval_), remote_backend="kaggle")
+        config = TrainConfig(train_data=str(train), remote_backend="ssh")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == str(train)
-        assert eval_out == str(eval_)
 
     @pytest.mark.asyncio
-    async def test_passes_s3_keys_unchanged_for_kaggle(self, tmp_path, monkeypatch):
-        """Kaggle is no longer file-based: S3 keys are returned unchanged (no local download)."""
+    async def test_passes_s3_key_unchanged_for_kaggle(self, tmp_path, monkeypatch):
+        """Kaggle is S3-backed: train key is returned unchanged (no local download)."""
         import asyncio
         import interactors.temporal.activities as acts
 
         mock_storage = MagicMock()
         monkeypatch.setattr(acts, "_storage", mock_storage)
 
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="dataset/abc123/eval.jsonl",
-            remote_backend="kaggle",
-        )
+        config = TrainConfig(train_data="dataset/abc123/train.jsonl", remote_backend="kaggle")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == "dataset/abc123/train.jsonl"
-        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_derives_eval_key_from_train_parent_when_eval_not_configured(
-        self, tmp_path, monkeypatch
-    ):
-        """When eval_data is empty, the eval key defaults to the train parent / eval.jsonl."""
-        import asyncio
-        import interactors.temporal.activities as acts
-
-        mock_storage = MagicMock()
-        monkeypatch.setattr(acts, "_storage", mock_storage)
-        monkeypatch.chdir(tmp_path)
-
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="",
-            remote_backend="kaggle",
-        )
-        loop = asyncio.get_event_loop()
-        _, eval_out = await acts._resolve_training_data(config, loop)
-
-        # Kaggle is S3-backed — keys are passed through; eval key is derived from train parent
-        assert eval_out == "dataset/abc123/eval.jsonl"
-        mock_storage.download.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_skips_download_when_both_files_already_local(self, tmp_path, monkeypatch):
-        """Storage.download must not be called when both files already exist locally."""
+    async def test_skips_download_when_file_already_local(self, tmp_path, monkeypatch):
+        """Storage.download must not be called when train file already exists locally."""
         import asyncio
         import interactors.temporal.activities as acts
 
         train = tmp_path / "data" / "train.jsonl"
-        eval_ = tmp_path / "data" / "eval.jsonl"
         train.parent.mkdir(parents=True)
         train.write_text("{}\n")
-        eval_.write_text("{}\n")
 
         mock_storage = MagicMock()
         monkeypatch.setattr(acts, "_storage", mock_storage)
 
-        config = TrainConfig(
-            train_data=str(train), eval_data=str(eval_), remote_backend="kaggle"
-        )
+        config = TrainConfig(train_data=str(train), remote_backend="ssh")
         loop = asyncio.get_event_loop()
         await acts._resolve_training_data(config, loop)
 
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_k8s_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
-        """K8s (S3-backed) must receive the original S3 key — never a local path.
-
-        Replacing the key with a local path would make the K8s pod look for
-        'data/train.jsonl' in S3, where it doesn't exist for skip_generate=True runs.
-        """
+    async def test_k8s_passes_s3_key_through_unchanged(self, tmp_path, monkeypatch):
+        """K8s (S3-backed) must receive the original S3 key — never a local path."""
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -1021,21 +979,16 @@ class TestResolveTrainingData:
         monkeypatch.setattr(acts, "_storage", mock_storage)
         monkeypatch.chdir(tmp_path)
 
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="dataset/abc123/eval.jsonl",
-            remote_backend="k8s",
-        )
+        config = TrainConfig(train_data="dataset/abc123/train.jsonl", remote_backend="k8s")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == "dataset/abc123/train.jsonl"
-        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_runpod_passes_s3_keys_through_unchanged(self, tmp_path, monkeypatch):
-        """RunPod (S3-backed) also passes S3 keys through unchanged."""
+    async def test_runpod_passes_s3_key_through_unchanged(self, tmp_path, monkeypatch):
+        """RunPod (S3-backed) also passes S3 key through unchanged."""
         import asyncio
         import interactors.temporal.activities as acts
 
@@ -1043,16 +996,11 @@ class TestResolveTrainingData:
         monkeypatch.setattr(acts, "_storage", mock_storage)
         monkeypatch.chdir(tmp_path)
 
-        config = TrainConfig(
-            train_data="dataset/abc123/train.jsonl",
-            eval_data="dataset/abc123/eval.jsonl",
-            remote_backend="runpod",
-        )
+        config = TrainConfig(train_data="dataset/abc123/train.jsonl", remote_backend="runpod")
         loop = asyncio.get_event_loop()
-        train_out, eval_out = await acts._resolve_training_data(config, loop)
+        train_out = await acts._resolve_training_data(config, loop)
 
         assert train_out == "dataset/abc123/train.jsonl"
-        assert eval_out == "dataset/abc123/eval.jsonl"
         mock_storage.download.assert_not_called()
 
 

@@ -36,7 +36,6 @@ def _config(**kwargs) -> RemoteTrainConfig:
     defaults = dict(
         model="HuggingFaceTB/SmolLM-360M",
         train_data="data/train.jsonl",
-        eval_data="data/eval.jsonl",
         epochs=2,
         patience=2,
         warmup_ratio=0.05,
@@ -47,16 +46,10 @@ def _config(**kwargs) -> RemoteTrainConfig:
 
 
 def _make_data(tmp_path: Path, **kwargs) -> RemoteTrainConfig:
-    """Return a config with S3 keys for train/eval data.
-
-    _stage_dataset now requires train_s3_key and eval_s3_key (data comes from S3
-    directly; JSONL files are no longer staged in the Kaggle dataset).
-    """
+    """Return a config with S3 key for train data."""
     return _config(
         train_data="data/workflow/test-run/train.jsonl",
-        eval_data="data/workflow/test-run/eval.jsonl",
         train_s3_key="data/workflow/test-run/train.jsonl",
-        eval_s3_key="data/workflow/test-run/eval.jsonl",
         run_id="test-run-id",
         **kwargs,
     )
@@ -606,7 +599,6 @@ class TestColabAdapterSubmit:
         (data_dir / "eval.jsonl").write_text('{"x":2}\n')
         return _config(
             train_data=str(data_dir / "train.jsonl"),
-            eval_data=str(data_dir / "eval.jsonl"),
             **kwargs,
         )
 
@@ -1008,13 +1000,13 @@ class TestKaggleStagingOutput:
         assert wheels, f"No .whl found in staging: {list(staging.iterdir())}"
 
     def test_stage_dataset_guard_raises_when_s3_keys_missing(self, tmp_path, monkeypatch):
-        """Pre-flight guard must fire when train_s3_key / eval_s3_key are absent."""
+        """Pre-flight guard must fire when train_s3_key is absent."""
         monkeypatch.setattr(
             "adapters.compute.kaggle.adapter.build_wheel",
             lambda root, dest: (dest / "fake.whl").touch(),
         )
         adapter = KaggleTrainingAdapter()
-        config = _config()  # no train_s3_key / eval_s3_key
+        config = _config()  # no train_s3_key
         with pytest.raises(ValueError, match="train_s3_key"):
             adapter._stage_dataset(config, tmp_path / "staging", dataset_slug="x")
 
@@ -1051,12 +1043,11 @@ class TestKaggleNotebookKernelSim:
         assert "'S3_KEY_PREFIX'" in source
         assert "workflow/test-run-id" in source
 
-    def test_notebook_sets_train_and_eval_s3_keys(self, tmp_path):
+    def test_notebook_sets_train_s3_key(self, tmp_path):
         source = self._cell_source(tmp_path)
         assert "'TRAIN_DATA_KEY'" in source
         assert "data/workflow/test-run/train.jsonl" in source
-        assert "'EVAL_DATA_KEY'" in source
-        assert "data/workflow/test-run/eval.jsonl" in source
+        assert "'EVAL_DATA_KEY'" not in source
 
     def test_notebook_wheel_glob_covers_new_kaggle_mount_path(self, tmp_path):
         """New Kaggle path /kaggle/input/datasets/<owner>/<slug>/ needs a recursive glob."""
