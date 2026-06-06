@@ -153,8 +153,13 @@ export function RunDetailPage() {
           </div>
         </div>
         <h1 className="font-['DM_Serif_Display'] text-[1.75rem] leading-tight text-[#1a1a1a] break-all">
-          {run.workflow_id}
+          {run.name ?? run.workflow_id}
         </h1>
+        {run.name && (
+          <p className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#6b6b6b] mt-1 break-all">
+            {run.workflow_id}
+          </p>
+        )}
       </header>
 
       {(cancelMutation.isError || deleteMutation.isError) && (

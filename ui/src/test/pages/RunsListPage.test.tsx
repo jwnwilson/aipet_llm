@@ -71,3 +71,56 @@ describe('RunsListPage', () => {
     await waitFor(() => expect(screen.getByText(/unknown model/i)).toBeInTheDocument())
   })
 })
+
+describe('RunsListPage — name display', () => {
+  afterEach(() => resetHandlerState())
+
+  it('shows workflow_id in link label when name is null', async () => {
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: RUN_FIXTURE.workflow_id })).toBeInTheDocument()
+    })
+  })
+
+  it('shows name in link label when name is set', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs', ({ request }) => {
+        const url = new URL(request.url)
+        const page = parseInt(url.searchParams.get('page') ?? '1', 10)
+        const limit = parseInt(url.searchParams.get('limit') ?? '50', 10)
+        const items = [{ ...RUN_FIXTURE, name: 'smoke-test-run' }, RUN_FIXTURE_2]
+        return HttpResponse.json({ items, total: items.length, page, limit, pages: 1 })
+      })
+    )
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'smoke-test-run' })).toBeInTheDocument()
+    })
+  })
+
+  it('shows workflow_id as secondary text when name is set', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs', ({ request }) => {
+        const url = new URL(request.url)
+        const page = parseInt(url.searchParams.get('page') ?? '1', 10)
+        const limit = parseInt(url.searchParams.get('limit') ?? '50', 10)
+        const items = [{ ...RUN_FIXTURE, name: 'smoke-test-run' }, RUN_FIXTURE_2]
+        return HttpResponse.json({ items, total: items.length, page, limit, pages: 1 })
+      })
+    )
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByText('smoke-test-run')).toBeInTheDocument()
+    })
+    expect(screen.getByText(RUN_FIXTURE.workflow_id)).toBeInTheDocument()
+  })
+
+  it('does not show workflow_id as secondary text when name is null', async () => {
+    renderPage()
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: RUN_FIXTURE.workflow_id })).toBeInTheDocument()
+    })
+    // workflow_id appears only in the primary label, not as a dimmed secondary line
+    expect(screen.getAllByText(RUN_FIXTURE.workflow_id)).toHaveLength(1)
+  })
+})

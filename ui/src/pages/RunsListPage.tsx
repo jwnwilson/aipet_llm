@@ -29,7 +29,7 @@ function RunModelGroup({ model, runs }: RunModelGroupProps) {
           <li key={run.id}>
             <Link
               to={`/runs/${run.id}`}
-              aria-label={run.workflow_id}
+              aria-label={run.name ?? run.workflow_id}
               className="flex items-center justify-between gap-5 px-6 py-4 border-b border-[#e5e3d8] last:border-b-0 hover:bg-[#f3f2ec] transition-colors"
             >
               <div className="flex items-baseline gap-4 min-w-0">
@@ -38,8 +38,13 @@ function RunModelGroup({ model, runs }: RunModelGroupProps) {
                 </span>
                 <div className="min-w-0">
                   <p className="font-['IBM_Plex_Mono'] text-[0.85rem] text-[#1a1a1a] truncate">
-                    {run.workflow_id}
+                    {run.name ?? run.workflow_id}
                   </p>
+                  {run.name && (
+                    <p className="font-['IBM_Plex_Mono'] text-[0.72rem] text-[#9a9a9a] truncate">
+                      {run.workflow_id}
+                    </p>
+                  )}
                   <p className="font-['Outfit'] text-[0.78rem] text-[#6b6b6b] mt-0.5">
                     {new Date(run.created_at).toLocaleString()}
                   </p>

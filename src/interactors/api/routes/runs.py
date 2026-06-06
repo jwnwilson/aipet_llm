@@ -33,6 +33,7 @@ router = APIRouter(
 
 class TriggerRunRequest(BaseModel):
     model_id: str
+    name: str | None = None
     epochs: int | None = None
     patience: int | None = None
     warmup_ratio: float | None = None
@@ -405,6 +406,7 @@ async def trigger_run(
         run = run_store.create(RunConfig(
             model_id=model.id,
             workflow_id=workflow_id,
+            name=body.name,
             training_config=run_training_config,
             train_dataset_id=body.train_dataset_id,
             eval_dataset_id=body.eval_dataset_id,

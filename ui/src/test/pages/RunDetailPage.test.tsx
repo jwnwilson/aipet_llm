@@ -215,3 +215,55 @@ describe('RunDetailPage', () => {
     )
   })
 })
+
+describe('RunDetailPage — name display', () => {
+  it('shows workflow_id as heading when name is null', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText(RUN_FIXTURE.workflow_id)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: RUN_FIXTURE.workflow_id })).toBeInTheDocument()
+  })
+
+  it('shows name as heading when name is set', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id)
+          return HttpResponse.json({ ...RUN_FIXTURE, name: 'my-experiment' })
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      })
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText('my-experiment')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('heading', { name: 'my-experiment' })).toBeInTheDocument()
+  })
+
+  it('shows workflow_id as a subtitle element when name is set', async () => {
+    server.use(
+      http.get('http://localhost:8000/api/runs/:id', ({ params }) => {
+        if (params.id === RUN_FIXTURE.id)
+          return HttpResponse.json({ ...RUN_FIXTURE, name: 'my-experiment' })
+        return HttpResponse.json({ detail: 'Not found' }, { status: 404 })
+      })
+    )
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText('my-experiment')).toBeInTheDocument()
+    })
+    // workflow_id should appear in a <p> subtitle — not just the temporal <dd> panel
+    const matches = screen.getAllByText(RUN_FIXTURE.workflow_id)
+    expect(matches.some(el => el.tagName === 'P')).toBe(true)
+  })
+
+  it('does not render a workflow_id subtitle when name is null', async () => {
+    renderPage(RUN_FIXTURE.id)
+    await waitFor(() => {
+      expect(screen.getByText(RUN_FIXTURE.workflow_id)).toBeInTheDocument()
+    })
+    // When name is null the workflow_id IS the heading — no separate <p> subtitle should exist
+    const matches = screen.getAllByText(RUN_FIXTURE.workflow_id)
+    expect(matches.some(el => el.tagName === 'P')).toBe(false)
+  })
+})

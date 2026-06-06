@@ -175,6 +175,7 @@ class RunStatus(str, Enum):
 class RunConfig(BaseModel):
     model_id: str
     workflow_id: str
+    name: str | None = None
     training_config: dict | None = None  # full training params saved at trigger time
     train_dataset_id: str | None = None
     eval_dataset_id: str | None = None

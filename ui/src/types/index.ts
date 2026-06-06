@@ -47,6 +47,7 @@ export interface RunRecord {
   id: string
   workflow_id: string
   model_id: string
+  name: string | null
   status: RunStatus
   eval_valid_pct: number | null
   progress: number | null
@@ -84,6 +85,7 @@ export interface CreateDatasetRequest {
 
 export interface TriggerRunRequest {
   model_id: string
+  name?: string | null
   epochs?: number | null
   patience?: number | null
   warmup_ratio?: number | null

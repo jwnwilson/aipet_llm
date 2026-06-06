@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { Play, Pencil, Trash2, ArrowLeft } from 'lucide-react'
@@ -123,8 +124,10 @@ export function ModelDetailPage() {
   const runs = (allRunsData?.items ?? []).filter(r => r.model_id === id)
   const hasCompletedRun = runs.some(r => r.status === 'completed')
 
+  const [runName, setRunName] = useState('')
+
   const triggerMutation = useMutation({
-    mutationFn: () => triggerRun({ model_id: id! }),
+    mutationFn: () => triggerRun({ model_id: id!, name: runName.trim() || null }),
     onSuccess: (data) => navigate(`/runs/${data.run_id}`),
   })
 
@@ -172,7 +175,15 @@ export function ModelDetailPage() {
               </p>
             )}
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 shrink-0 items-center">
+            <input
+              type="text"
+              value={runName}
+              onChange={(e) => setRunName(e.target.value)}
+              placeholder="Run name (optional)"
+              disabled={triggerMutation.isPending}
+              className="font-['IBM_Plex_Mono'] text-[0.8rem] border border-[#d0d0c8] rounded-[4px] px-3 py-1.5 w-48 bg-white focus:outline-none focus:border-[#1a1a1a] placeholder:text-[#9a9a9a]"
+            />
             <Button onClick={() => triggerMutation.mutate()} disabled={triggerMutation.isPending}>
               <Play className="h-3.5 w-3.5" />
               {triggerMutation.isPending ? 'Starting' : 'Run'}
@@ -254,7 +265,7 @@ export function ModelDetailPage() {
                           {String(runs.length - i).padStart(2, '0')}
                         </span>
                         <span className="font-['IBM_Plex_Mono'] text-[0.82rem] text-[#1a1a1a] truncate">
-                          {run.workflow_id}
+                          {run.name ?? run.workflow_id}
                         </span>
                       </div>
                       <RunStatusBadge status={run.status} />
