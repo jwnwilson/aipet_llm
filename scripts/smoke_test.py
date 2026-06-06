@@ -1,10 +1,26 @@
 #!/usr/bin/env python3
 """Post-deploy smoke test — validates the live API endpoints.
 
-Full pipeline exercised (k8s backend):
-  dataset upload → k8s training Job → eval → inference pod → /infer → cleanup
+Full pipeline exercised:
+  dataset upload → remote training Job → eval → inference pod → /infer → cleanup
 
-Set REMOTE_BACKEND env var to switch backends (default: k8s).
+Set REMOTE_BACKEND env var to switch compute backends (default: k8s).
+
+Supported backends and their required env vars:
+
+  k8s     — in-cluster kubeconfig (no extra vars needed in-cluster)
+  kaggle  — KAGGLE_USERNAME, KAGGLE_KEY, KAGGLE_AWS_ACCESS_KEY_ID,
+             KAGGLE_AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET
+  runpod  — RUNPOD_API_KEY, AWS_S3_BUCKET, AWS_ACCESS_KEY_ID,
+             AWS_SECRET_ACCESS_KEY
+  vastai  — VAST_API_KEY, AWS_S3_BUCKET, AWS_ACCESS_KEY_ID,
+             AWS_SECRET_ACCESS_KEY
+             Optional: VASTAI_GPU_QUERY (default: "num_gpus=1 gpu_name=RTX_3090 reliability>0.99")
+
+Example (vastai):
+  REMOTE_BACKEND=vastai VAST_API_KEY=... AWS_S3_BUCKET=... \\
+    AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \\
+    python scripts/smoke_test.py
 """
 
 from __future__ import annotations
