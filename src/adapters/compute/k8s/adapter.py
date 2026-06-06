@@ -140,21 +140,43 @@ class K8sPodAdapter(PodLifecyclePort):
                 result.spec.node_name if result.spec else "unscheduled",
             )
         except Exception as exc:
-            log.error(
-                "create_pod: FAILED to create pod %s in namespace %s: %s",
-                pod_name, namespace, exc,
-            )
-            raise
+            if getattr(exc, "status", None) == 409:
+                existing_status = self.pod_status(pod_name, namespace)
+                if existing_status in ("running", "pending"):
+                    log.info(
+                        "create_pod: pod %s already exists with status=%s — reusing",
+                        pod_name, existing_status,
+                    )
+                else:
+                    log.info(
+                        "create_pod: pod %s exists with status=%s — deleting and recreating",
+                        pod_name, existing_status,
+                    )
+                    self.delete_pod(pod_name, namespace)
+                    result = self._core.create_namespaced_pod(namespace=namespace, body=pod)
+                    log.info(
+                        "create_pod: pod recreated — uid=%s",
+                        result.metadata.uid,
+                    )
+            else:
+                log.error(
+                    "create_pod: FAILED to create pod %s in namespace %s: %s",
+                    pod_name, namespace, exc,
+                )
+                raise
 
         try:
             self._core.create_namespaced_service(namespace=namespace, body=svc)
             log.info("create_pod: ClusterIP service %s created in namespace %s", pod_name, namespace)
         except Exception as exc:
-            log.error(
-                "create_pod: FAILED to create service %s in namespace %s: %s",
-                pod_name, namespace, exc,
-            )
-            raise
+            if getattr(exc, "status", None) == 409:
+                log.info("create_pod: service %s already exists in namespace %s — reusing", pod_name, namespace)
+            else:
+                log.error(
+                    "create_pod: FAILED to create service %s in namespace %s: %s",
+                    pod_name, namespace, exc,
+                )
+                raise
 
         return pod_name
 
