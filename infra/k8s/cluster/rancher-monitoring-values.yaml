@@ -1,0 +1,110 @@
+# rancher-monitoring Helm values override
+# Apply via: Rancher UI → Apps → rancher-monitoring → Edit/Upgrade → Values YAML
+#
+# Strategy:
+#   - prometheusAdapter: HARD requirement to avoid control-plane (it causes CPU spikes)
+#   - All other workloads: SOFT preference to avoid control-plane (falls back to master if workers are full)
+#
+# These settings are additive to Rancher's internal defaults.
+# The existing custom values are preserved below.
+
+# ── Existing custom values (preserve these) ────────────────────────────────────
+global:
+  cattle:
+    clusterId: "local"
+    clusterName: "local"
+    rkePathPrefix: ""
+    rkeWindowsPathPrefix: ""
+    systemDefaultRegistry: ""
+    systemProjectId: "p-p5f8d"
+    url: "https://rancher.local"
+  systemDefaultRegistry: ""
+
+k3sControllerManager:
+  enabled: true
+k3sProxy:
+  enabled: true
+k3sScheduler:
+  enabled: true
+k3sServer:
+  enabled: true
+
+prometheus:
+  prometheusSpec:
+    resources:
+      requests:
+        memory: "1750Mi"
+    retentionSize: "50GiB"
+
+# ── Node placement: keep monitoring workloads off the master ───────────────────
+
+# HARD: prometheus-adapter must not run on control-plane or inference node.
+prometheus-adapter:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: dedicated
+                operator: NotIn
+                values:
+                  - inference
+
+# SOFT: Grafana avoids control-plane and inference node.
+grafana:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: dedicated
+                operator: NotIn
+                values:
+                  - inference
+
+# SOFT: kube-state-metrics avoids control-plane and inference node.
+kube-state-metrics:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: dedicated
+                operator: NotIn
+                values:
+                  - inference
+
+# SOFT: Prometheus Operator avoids control-plane and inference node.
+prometheusOperator:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: dedicated
+                operator: NotIn
+                values:
+                  - inference
+
+# SOFT: Alertmanager avoids control-plane and inference node.
+alertmanager:
+  alertmanagerSpec:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: node-role.kubernetes.io/control-plane
+                  operator: DoesNotExist
+                - key: dedicated
+                  operator: NotIn
+                  values:
+                    - inference

@@ -1,0 +1,42 @@
+# cert-manager Helm values override
+# Apply via: Rancher UI → Apps → cert-manager → Edit/Upgrade → Values YAML
+#
+# Keeps cert-manager off both the control-plane and the dedicated inference node.
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: DoesNotExist
+            - key: dedicated
+              operator: NotIn
+              values:
+                - inference
+
+cainjector:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: dedicated
+                operator: NotIn
+                values:
+                  - inference
+
+webhook:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+              - key: dedicated
+                operator: NotIn
+                values:
+                  - inference

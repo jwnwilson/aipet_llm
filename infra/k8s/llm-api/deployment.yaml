@@ -23,23 +23,11 @@ spec:
         - name: ecr-credentials
       affinity:
         nodeAffinity:
-          # Hard rule: never schedule on control-plane nodes
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
-          # Soft rule: strongly prefer the 16 GB high-memory node
-          # Label the target node first:
-          #   kubectl label node <node-name> node-type=llm-api
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              preference:
-                matchExpressions:
-                  - key: node-type
-                    operator: In
-                    values:
-                      - llm-api
       serviceAccountName: llm-api
       containers:
         - name: llm-api
