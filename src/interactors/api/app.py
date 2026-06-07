@@ -138,11 +138,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from interactors.api.idle_shutdown import idle_shutdown_loop, readiness_watch_loop
     from sqlalchemy.orm import Session as _Session
 
-    _bg_session = _Session(engine)
-    inference_store = SQLAlchemyInferenceStore(_bg_session)
+    def _bg_store_factory() -> SQLAlchemyInferenceStore:
+        return SQLAlchemyInferenceStore(_Session(engine))
 
-    shutdown_task = asyncio.create_task(idle_shutdown_loop(inference_store, pod_adapter))
-    readiness_task = asyncio.create_task(readiness_watch_loop(inference_store, pod_adapter))
+    shutdown_task = asyncio.create_task(idle_shutdown_loop(_bg_store_factory, pod_adapter))
+    readiness_task = asyncio.create_task(readiness_watch_loop(_bg_store_factory, pod_adapter))
     log.info("Idle inference shutdown task started")
     log.info("Inference readiness watcher task started")
 
@@ -151,7 +151,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     finally:
         shutdown_task.cancel()
         readiness_task.cancel()
-        _bg_session.close()
         clear_adapter()
         clear_auth()
         clear_uow()

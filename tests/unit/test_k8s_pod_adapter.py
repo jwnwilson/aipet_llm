@@ -115,3 +115,93 @@ class TestDeletePodGuard:
         core.delete_namespaced_service.assert_called_once_with(
             name="inference-abc123", namespace="default"
         )
+
+
+class TestPodStatus:
+    def test_returns_failed_when_pod_not_found(self):
+        """A 404 from k8s must return 'failed' so the polling loop transitions state immediately."""
+        adapter, core = _make_adapter()
+        exc = Exception("not found")
+        exc.status = 404
+        core.read_namespaced_pod.side_effect = exc
+
+        assert adapter.pod_status("inference-abc", "default") == "failed"
+
+    def test_returns_unknown_on_non_404_api_error(self):
+        """Transient errors (500, timeout) must return 'unknown', not 'failed'."""
+        adapter, core = _make_adapter()
+        exc = Exception("internal server error")
+        exc.status = 500
+        core.read_namespaced_pod.side_effect = exc
+
+        assert adapter.pod_status("inference-abc", "default") == "unknown"
+
+    def test_returns_unknown_when_error_has_no_status(self):
+        """Errors without a status attribute (e.g. network timeout) must return 'unknown'."""
+        adapter, core = _make_adapter()
+        core.read_namespaced_pod.side_effect = ConnectionError("timeout")
+
+        assert adapter.pod_status("inference-abc", "default") == "unknown"
+
+
+class TestCreatePodConflict:
+    def test_reuses_running_pod_on_409(self):
+        """409 on a running pod must reuse it without deleting or recreating."""
+        adapter, core = _make_adapter()
+        conflict = Exception("already exists")
+        conflict.status = 409
+        core.create_namespaced_pod.side_effect = conflict
+        adapter.pod_status = MagicMock(return_value="running")
+
+        with patch("adapters.compute.k8s.adapter.k8s_client"):
+            result = adapter.create_pod("inference-abc", "model-1", "path/model.gguf")
+
+        assert result == "inference-abc"
+        core.delete_namespaced_pod.assert_not_called()
+        assert core.create_namespaced_pod.call_count == 1
+
+    def test_deletes_and_recreates_failed_pod_on_409(self):
+        """409 on a failed pod must delete the stale pod then recreate it."""
+        adapter, core = _make_adapter()
+        conflict = Exception("already exists")
+        conflict.status = 409
+        recreated = MagicMock()
+        recreated.metadata.uid = "uid-new"
+        core.create_namespaced_pod.side_effect = [conflict, recreated]
+        adapter.pod_status = MagicMock(return_value="failed")
+
+        with patch("adapters.compute.k8s.adapter.k8s_client"):
+            result = adapter.create_pod("inference-abc", "model-1", "path/model.gguf")
+
+        assert result == "inference-abc"
+        core.delete_namespaced_pod.assert_called_once_with(name="inference-abc", namespace="default")
+        assert core.create_namespaced_pod.call_count == 2
+
+    def test_raises_on_non_conflict_error(self):
+        """Non-409 errors must propagate so the instance is marked FAILED."""
+        adapter, core = _make_adapter()
+        exc = Exception("server error")
+        exc.status = 500
+        core.create_namespaced_pod.side_effect = exc
+
+        with patch("adapters.compute.k8s.adapter.k8s_client"):
+            with pytest.raises(Exception, match="server error"):
+                adapter.create_pod("inference-abc", "model-1", "path/model.gguf")
+
+    def test_service_409_is_silently_reused(self):
+        """409 on service creation must not raise — service already exists is fine."""
+        adapter, core = _make_adapter()
+        pod_result = MagicMock()
+        pod_result.metadata.uid = "uid-1"
+        pod_result.status.phase = "Pending"
+        pod_result.spec.node_name = None
+        core.create_namespaced_pod.return_value = pod_result
+
+        svc_conflict = Exception("service already exists")
+        svc_conflict.status = 409
+        core.create_namespaced_service.side_effect = svc_conflict
+
+        with patch("adapters.compute.k8s.adapter.k8s_client"):
+            result = adapter.create_pod("inference-abc", "model-1", "path/model.gguf")
+
+        assert result == "inference-abc"

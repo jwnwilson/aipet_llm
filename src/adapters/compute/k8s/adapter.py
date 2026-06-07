@@ -253,7 +253,10 @@ class K8sPodAdapter(PodLifecyclePort):
         try:
             self._core.delete_namespaced_service(name=pod_name, namespace=namespace)
         except Exception as exc:
-            log.warning("Could not delete Service %s: %s", pod_name, exc)
+            if getattr(exc, "status", None) == 404:
+                log.debug("delete_namespaced_service %s: not found (may already be gone)", pod_name)
+            else:
+                log.warning("Could not delete Service %s: %s", pod_name, exc)
 
     def pod_service_url(self, pod_name: str, namespace: str = "default") -> str:
         """Return ClusterIP HTTP URL. Overridable via INFERENCE_WORKER_URL for local dev."""

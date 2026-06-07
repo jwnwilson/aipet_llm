@@ -69,13 +69,22 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
         return self._session.scalar(stmt) or 0
 
     def list_active(self) -> list[InferenceInstance]:
-        self._session.expire_all()
         rows = (
             self._session.query(_InferenceInstanceRow)
             .filter(_InferenceInstanceRow.status.in_(_ACTIVE_STATUSES))
             .all()
         )
         return [_row_to_domain(r) for r in rows]
+
+    def __enter__(self) -> "SQLAlchemyInferenceStore":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if exc_type is None:
+            self._session.commit()
+        else:
+            self._session.rollback()
+        self._session.close()
 
     def get(self, id: str) -> InferenceInstance | None:
         row = self._session.get(_InferenceInstanceRow, id)

@@ -131,6 +131,48 @@ def test_create_run_id_defaults_to_none(store):
     assert inst.run_id is None
 
 
+# --- session identity-map cache regression ---
+
+def test_list_active_reflects_update_from_another_session(tmp_path):
+    """Regression: long-lived background session must not serve stale cached state.
+
+    Without expire_all(), SQLAlchemy's identity map caches INITIALIZING and ignores
+    the fresh row data returned by the next SELECT, keeping the instance stuck.
+    """
+    engine = make_engine(f"sqlite:///{tmp_path}/cache_bug.db")
+    init_db(engine)
+
+    # Request session: create instance and move it to INITIALIZING
+    with Session(engine) as req:
+        s = SQLAlchemyInferenceStore(req)
+        inst = s.create(InferenceInstanceConfig(model_id="m1"))
+        s.update_status(inst.id, InferenceStatus.INITIALIZING)
+        req.commit()
+
+    instance_id = inst.id
+
+    # Background session — simulates the long-lived _bg_session wired in app.py
+    bg_session = Session(engine)
+    bg_store = SQLAlchemyInferenceStore(bg_session)
+
+    try:
+        # First poll: loads INITIALIZING into the identity map
+        first = bg_store.list_active()
+        assert first[0].status == InferenceStatus.INITIALIZING
+
+        # A second request session promotes the instance to AVAILABLE and commits
+        with Session(engine) as req2:
+            s2 = SQLAlchemyInferenceStore(req2)
+            s2.update_status(instance_id, InferenceStatus.AVAILABLE)
+            req2.commit()
+
+        # Second poll: expire_all() must force re-read; stale cache must not win
+        second = bg_store.list_active()
+        assert second[0].status == InferenceStatus.AVAILABLE
+    finally:
+        bg_session.close()
+
+
 # --- list_active FAILED exclusion ---
 
 def test_list_active_excludes_failed(store):

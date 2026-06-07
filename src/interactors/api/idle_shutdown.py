@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Callable
 
 from domain.models import InferenceStatus
 from domain.ports import InferenceStorePort, PodLifecyclePort
@@ -14,7 +15,6 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_IDLE_TIMEOUT_HOURS = 2
 _POLL_INTERVAL_SECONDS = 300  # 5 minutes
-_INITIALIZING_TIMEOUT_MINUTES = 5
 
 
 def _idle_timeout_hours() -> int:
@@ -62,15 +62,24 @@ def sweep_idle_instances(store: InferenceStorePort, pod_adapter: PodLifecyclePor
     return stopped
 
 
-async def idle_shutdown_loop(store: InferenceStorePort, pod_adapter: PodLifecyclePort) -> None:
-    """Long-running asyncio task that sweeps idle instances every POLL_INTERVAL_SECONDS."""
+async def idle_shutdown_loop(
+    store_factory: Callable[[], InferenceStorePort],
+    pod_adapter: PodLifecyclePort,
+) -> None:
+    """Long-running asyncio task that sweeps idle instances every POLL_INTERVAL_SECONDS.
+
+    Uses a fresh store (and DB session) on each iteration so the sweep never
+    holds a long-lived transaction that could block Alembic migrations on
+    other pods during startup.
+    """
     poll_interval = int(os.environ.get("INFERENCE_IDLE_POLL_SECONDS", _POLL_INTERVAL_SECONDS))
     while True:
         await asyncio.sleep(poll_interval)
         try:
-            stopped = sweep_idle_instances(store, pod_adapter)
-            if stopped:
-                log.info("Idle shutdown sweep stopped %d instance(s)", stopped)
+            with store_factory() as store:
+                stopped = sweep_idle_instances(store, pod_adapter)
+                if stopped:
+                    log.info("Idle shutdown sweep stopped %d instance(s)", stopped)
         except Exception:
             log.exception("Idle shutdown sweep encountered an unexpected error")
 
@@ -111,12 +120,15 @@ def check_initializing_instances(
 
 
 async def readiness_watch_loop(
-    store: InferenceStorePort, pod_adapter: PodLifecyclePort
+    store_factory: Callable[[], InferenceStorePort],
+    pod_adapter: PodLifecyclePort,
 ) -> None:
     """Periodically promote INITIALIZING instances to AVAILABLE.
 
     Runs every INFERENCE_READINESS_POLL_SECONDS (default 10 s) so inference
     pods become usable within one poll cycle of their readiness probe passing.
+
+    Uses a fresh store (and DB session) on each iteration — see idle_shutdown_loop.
     """
     poll_interval = int(
         os.environ.get("INFERENCE_READINESS_POLL_SECONDS", _READINESS_POLL_SECONDS)
@@ -124,8 +136,9 @@ async def readiness_watch_loop(
     while True:
         await asyncio.sleep(poll_interval)
         try:
-            promoted = check_initializing_instances(store, pod_adapter)
-            if promoted:
-                log.info("Readiness sweep promoted %d instance(s) to AVAILABLE", promoted)
+            with store_factory() as store:
+                promoted = check_initializing_instances(store, pod_adapter)
+                if promoted:
+                    log.info("Readiness sweep promoted %d instance(s) to AVAILABLE", promoted)
         except Exception:
             log.exception("Readiness watch loop encountered an unexpected error")

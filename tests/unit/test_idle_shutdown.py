@@ -227,3 +227,28 @@ class TestCheckInitializingInstances:
         promoted = check_initializing_instances(store, pod)
         assert promoted == 0
         store.update_status.assert_not_called()
+
+    def test_does_not_transition_on_unknown_phase(self):
+        """Transient API errors ('unknown') must not change instance state."""
+        from interactors.api.idle_shutdown import check_initializing_instances
+        store = _make_store([self._initializing()])
+        pod = _make_pod()
+        pod.pod_status.return_value = "unknown"
+
+        promoted = check_initializing_instances(store, pod)
+
+        assert promoted == 0
+        store.update_status.assert_not_called()
+
+    def test_marks_failed_immediately_when_pod_not_found(self):
+        """pod_status returns 'failed' for 404; polling loop must mark FAILED without delay."""
+        from interactors.api.idle_shutdown import check_initializing_instances
+        store = _make_store([self._initializing()])
+        pod = _make_pod()
+        # Adapter returns "failed" for 404 (pod deleted / never created)
+        pod.pod_status.return_value = "failed"
+
+        promoted = check_initializing_instances(store, pod)
+
+        assert promoted == 0
+        store.update_status.assert_called_once_with("inst-1", InferenceStatus.FAILED)

@@ -112,11 +112,12 @@ def stop_instance(
             namespace=instance.pod_namespace,
         )
     except Exception:
-        log.exception("Failed to delete pod for instance %s", instance_id)
+        log.exception("Failed to delete pod for instance %s — will still mark SHUTDOWN", instance_id)
 
     updated = store.update_status(instance_id, InferenceStatus.SHUTDOWN)
     if updated is None:
         raise HTTPException(status_code=404, detail="Inference instance not found")
+    log.info("Instance %s marked SHUTDOWN (pod_name=%s)", instance_id, instance.pod_name)
     return updated
 
 
