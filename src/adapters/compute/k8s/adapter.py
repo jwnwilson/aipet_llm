@@ -218,7 +218,7 @@ class K8sPodAdapter(PodLifecyclePort):
                             pod_name, cond.type, cond.status, cond.reason, cond.message,
                         )
 
-            log.debug("pod_status: pod=%s raw_phase=%r", pod_name, phase)
+            log.info("pod_status: pod=%s raw_phase=%r", pod_name, phase)
 
             if phase == "running":
                 if pod.status and pod.status.container_statuses:
@@ -231,6 +231,9 @@ class K8sPodAdapter(PodLifecyclePort):
                 return "pending"
             return "unknown"
         except Exception as exc:
+            if getattr(exc, "status", None) == 404:
+                log.debug("pod_status: pod %s not found in namespace %s — treating as failed", pod_name, namespace)
+                return "failed"
             log.warning("pod_status: could not read pod %s in namespace %s: %s", pod_name, namespace, exc)
             return "unknown"
 

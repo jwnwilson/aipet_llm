@@ -69,6 +69,7 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
         return self._session.scalar(stmt) or 0
 
     def list_active(self) -> list[InferenceInstance]:
+        self._session.expire_all()
         rows = (
             self._session.query(_InferenceInstanceRow)
             .filter(_InferenceInstanceRow.status.in_(_ACTIVE_STATUSES))

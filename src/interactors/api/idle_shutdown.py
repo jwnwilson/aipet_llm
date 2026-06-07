@@ -106,14 +106,6 @@ def check_initializing_instances(
         elif phase == "failed":
             store.update_status(instance.id, InferenceStatus.FAILED)
             log.warning("Instance %s pod failed — marked FAILED", instance.id)
-        elif phase == "unknown":
-            age = datetime.now(timezone.utc) - instance.updated_at
-            if age > timedelta(minutes=_INITIALIZING_TIMEOUT_MINUTES):
-                store.update_status(instance.id, InferenceStatus.FAILED)
-                log.warning(
-                    "Instance %s stuck INITIALIZING for %s with no pod — marked FAILED",
-                    instance.id, age,
-                )
 
     return promoted
 
