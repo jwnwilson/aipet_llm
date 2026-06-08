@@ -35,6 +35,8 @@ def sweep_idle_instances(store: InferenceStorePort, pod_adapter: PodLifecyclePor
     stopped = 0
 
     for instance in store.list_active():
+        if instance.keep_alive:
+            continue
         # Use last_used_at if set, otherwise fall back to created_at
         last_activity = instance.last_used_at or instance.created_at
         if last_activity > cutoff:

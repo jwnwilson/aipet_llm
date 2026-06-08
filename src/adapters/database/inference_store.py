@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, func, select as sa_select
+from sqlalchemy import Boolean, DateTime, Integer, String, func, select as sa_select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from adapters.database import Base
@@ -25,6 +25,7 @@ class _InferenceInstanceRow(Base):
     pod_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     pod_namespace: Mapped[str] = mapped_column(String(255), nullable=False, default="default")
     idle_timeout_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
+    keep_alive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -40,6 +41,7 @@ def _row_to_domain(row: _InferenceInstanceRow) -> InferenceInstance:
         pod_name=row.pod_name,
         pod_namespace=row.pod_namespace,
         idle_timeout_minutes=row.idle_timeout_minutes,
+        keep_alive=row.keep_alive,
         last_used_at=row.last_used_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -101,6 +103,7 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
             pod_name=config.pod_name,
             pod_namespace=config.pod_namespace,
             idle_timeout_minutes=config.idle_timeout_minutes,
+            keep_alive=config.keep_alive,
             created_at=now,
             updated_at=now,
         )
@@ -163,6 +166,16 @@ class SQLAlchemyInferenceStore(InferenceStorePort):
         if not row:
             return None
         row.last_used_at = datetime.now(timezone.utc)
+        row.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._session.refresh(row)
+        return _row_to_domain(row)
+
+    def update_keep_alive(self, id: str, keep_alive: bool) -> InferenceInstance | None:
+        row = self._session.get(_InferenceInstanceRow, id)
+        if not row:
+            return None
+        row.keep_alive = keep_alive
         row.updated_at = datetime.now(timezone.utc)
         self._session.flush()
         self._session.refresh(row)

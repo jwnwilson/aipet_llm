@@ -2,7 +2,7 @@ import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Play, Square, Trash2 } from 'lucide-react'
-import { deleteInference, getInference, startInference, stopInference } from '@/api/inferences'
+import { deleteInference, getInference, startInference, stopInference, updateInference } from '@/api/inferences'
 import { getModel } from '@/api/models'
 import { InferenceStatusBadge } from '@/components/InferenceStatusBadge'
 import { InstanceInferencePanel } from '@/components/InstanceInferencePanel'
@@ -68,6 +68,11 @@ export function InferenceDetailPage() {
       queryClient.removeQueries({ queryKey: ['inferences', id] })
       navigate('/inferences')
     },
+  })
+
+  const keepAliveMutation = useMutation({
+    mutationFn: (keepAlive: boolean) => updateInference(id!, { keep_alive: keepAlive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inferences', id] }),
   })
 
   if (isLoading) {
@@ -160,6 +165,24 @@ export function InferenceDetailPage() {
           <MetricBlock label="Created" value={formatDate(instance.created_at)} />
           <MetricBlock label="Last used" value={formatDate(instance.last_used_at)} />
           <MetricBlock label="Updated" value={formatDate(instance.updated_at)} />
+          <MetricBlock
+            label="Keep alive"
+            value={
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-[#d0d0c8] accent-[#1a1a1a]"
+                  checked={instance.keep_alive}
+                  disabled={keepAliveMutation.isPending}
+                  onChange={e => keepAliveMutation.mutate(e.target.checked)}
+                  aria-label="Keep alive — skip idle shutdown"
+                />
+                <span className="font-['IBM_Plex_Mono'] text-[0.75rem] text-[#3a3a36] select-none">
+                  {instance.keep_alive ? 'Enabled — will not be shut down when idle' : 'Disabled — will shut down when idle'}
+                </span>
+              </label>
+            }
+          />
         </dl>
       </section>
 

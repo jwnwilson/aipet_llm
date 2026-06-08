@@ -179,6 +179,7 @@ export interface InferenceInstanceConfig {
   pod_name?: string
   pod_namespace?: string
   idle_timeout_minutes?: number
+  keep_alive?: boolean
 }
 
 export interface InferenceInstance {
@@ -188,6 +189,7 @@ export interface InferenceInstance {
   pod_name: string
   pod_namespace: string
   idle_timeout_minutes: number
+  keep_alive: boolean
   status: InferenceStatus
   last_used_at: string | null
   created_at: string
