@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Play, Square, Trash2 } from 'lucide-react'
-import { deleteInference, listInferences, startInference, stopInference } from '@/api/inferences'
+import { deleteInference, listInferences, startInference, stopInference, updateInference } from '@/api/inferences'
 import { listModels } from '@/api/models'
 import { InferenceStatusBadge } from '@/components/InferenceStatusBadge'
 import { InstanceInferencePanel } from '@/components/InstanceInferencePanel'
@@ -26,14 +26,16 @@ interface ModelGroupProps {
   onStart: (id: string) => void
   onStop: (id: string) => void
   onDelete: (id: string) => void
+  onToggleKeepAlive: (id: string, keepAlive: boolean) => void
   pendingStart: string | null
   pendingStop: string | null
   pendingDelete: string | null
+  pendingKeepAlive: string | null
 }
 
 function ModelGroup({
-  model, instances, onStart, onStop, onDelete,
-  pendingStart, pendingStop, pendingDelete,
+  model, instances, onStart, onStop, onDelete, onToggleKeepAlive,
+  pendingStart, pendingStop, pendingDelete, pendingKeepAlive,
 }: ModelGroupProps) {
   const [expandedTest, setExpandedTest] = useState<string | null>(null)
 
@@ -65,6 +67,19 @@ function ModelGroup({
               </Link>
 
               <div className="flex gap-2 items-center shrink-0">
+                <label className="flex items-center gap-1.5 cursor-pointer" title="Keep alive — skip idle shutdown">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-[#d0d0c8] accent-[#1a1a1a]"
+                    checked={instance.keep_alive}
+                    disabled={pendingKeepAlive === instance.id}
+                    onChange={e => onToggleKeepAlive(instance.id, e.target.checked)}
+                    aria-label={`Keep alive ${instance.id}`}
+                  />
+                  <span className="font-['IBM_Plex_Mono'] text-[0.65rem] uppercase tracking-[0.1em] text-[#6b6b6b] select-none">
+                    Keep alive
+                  </span>
+                </label>
                 {instance.status === 'available' && (
                   <Button
                     size="sm"
@@ -151,6 +166,11 @@ export function InferencePage() {
     mutationFn: (id: string) => deleteInference(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inferences'] }),
   })
+  const keepAliveMutation = useMutation({
+    mutationFn: ({ id, keepAlive }: { id: string; keepAlive: boolean }) =>
+      updateInference(id, { keep_alive: keepAlive }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inferences'] }),
+  })
 
   const grouped = new Map<string, InferenceInstance[]>()
   for (const inst of instances) {
@@ -214,9 +234,11 @@ export function InferencePage() {
               onStart={id => startMutation.mutate(id)}
               onStop={id => stopMutation.mutate(id)}
               onDelete={id => deleteMutation.mutate(id)}
+              onToggleKeepAlive={(id, keepAlive) => keepAliveMutation.mutate({ id, keepAlive })}
               pendingStart={startMutation.isPending ? (startMutation.variables ?? null) : null}
               pendingStop={stopMutation.isPending ? (stopMutation.variables ?? null) : null}
               pendingDelete={deleteMutation.isPending ? (deleteMutation.variables ?? null) : null}
+              pendingKeepAlive={keepAliveMutation.isPending ? (keepAliveMutation.variables?.id ?? null) : null}
             />
           ))}
           <Pagination page={page} pages={instancesData?.pages ?? 1} onPageChange={setPage} />

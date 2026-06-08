@@ -6,6 +6,7 @@ export interface InferenceInstanceConfig {
   pod_name?: string
   pod_namespace?: string
   idle_timeout_minutes?: number
+  keep_alive?: boolean
 }
 
 export async function listInferences(page = 1, limit = 50, modelId?: string, runId?: string): Promise<PaginatedResponse<InferenceInstance>> {
@@ -37,6 +38,11 @@ export async function stopInference(id: string): Promise<InferenceInstance> {
 
 export async function deleteInference(id: string): Promise<void> {
   await apiClient.delete(`/api/inferences/${id}`)
+}
+
+export async function updateInference(id: string, patch: { keep_alive: boolean }): Promise<InferenceInstance> {
+  const { data } = await apiClient.patch<InferenceInstance>(`/api/inferences/${id}`, patch)
+  return data
 }
 
 export async function inferInstance(id: string, request: InferenceRequest): Promise<InferenceResponse> {

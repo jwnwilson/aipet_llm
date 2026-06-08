@@ -10,6 +10,8 @@ import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from pydantic import BaseModel
+
 from domain.models import InferenceInstance, InferenceInstanceConfig, InferenceRequest, InferenceResponse, InferenceStatus, PaginatedResponse
 from domain.ports import InferenceStorePort, PodLifecyclePort
 from interactors.api.auth import require_approved
@@ -135,6 +137,22 @@ def delete_instance(
             detail=f"Cannot delete instance in status '{instance.status}' — stop it first",
         )
     store.delete(instance_id)
+
+
+class _InstancePatch(BaseModel):
+    keep_alive: bool
+
+
+@router.patch("/{instance_id}", response_model=InferenceInstance)
+def patch_instance(
+    instance_id: str,
+    patch: _InstancePatch,
+    store: InferenceStorePort = Depends(get_inference_store),
+) -> InferenceInstance:
+    instance = store.update_keep_alive(instance_id, patch.keep_alive)
+    if instance is None:
+        raise HTTPException(status_code=404, detail="Inference instance not found")
+    return instance
 
 
 @router.post("/{instance_id}/infer", response_model=InferenceResponse)

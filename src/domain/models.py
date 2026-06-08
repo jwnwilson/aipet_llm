@@ -275,6 +275,7 @@ class InferenceInstanceConfig(BaseModel):
     pod_name: str = ""
     pod_namespace: str = "default"
     idle_timeout_minutes: int = 120
+    keep_alive: bool = False
 
 
 class InferenceInstance(InferenceInstanceConfig):
