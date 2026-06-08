@@ -373,7 +373,7 @@ jobs:
           # and recreate the Service, which GC-s the inlets Tunnel CRD and forces a new
           # DigitalOcean droplet (new IP), breaking DNS on every deploy.
           # Use infra/k8s/nginx/service.yaml manually only during cluster-wipe recovery.
-          find infra/k8s/ -name '*.yaml' ! -name '*.example.yaml' ! -path '*/nginx/*' | sort | xargs -I{} kubectl apply -f {}
+          find infra/k8s/ -name '*.yaml' ! -name '*.example.yaml' ! -path '*/nginx/*' ! -path '*/cluster/*' | sort | xargs -I{} kubectl apply -f {}
 
       - name: Wait for rollouts
         run: |
