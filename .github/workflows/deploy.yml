@@ -280,6 +280,9 @@ jobs:
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
           chmod 600 ~/.kube/config
 
+      - name: Verify cluster connectivity
+        run: kubectl get nodes -o name
+
       - name: Sync llm-api-secrets in k8s
         run: |
           kubectl create secret generic llm-api-secrets \
