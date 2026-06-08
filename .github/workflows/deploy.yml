@@ -285,7 +285,6 @@ jobs:
 
       - name: Sync llm-api-secrets in k8s
         run: |
-          kubectl delete secret llm-api-secrets --ignore-not-found=true
           kubectl create secret generic llm-api-secrets \
             --from-literal=aws-s3-bucket=${{ secrets.AWS_S3_BUCKET }} \
             --from-literal=aws-access-key-id=${{ secrets.AIPET_AWS_ACCESS_KEY_ID }} \
@@ -301,25 +300,26 @@ jobs:
             --from-literal=auth0-audience=${{ secrets.AUTH0_AUDIENCE }} \
             --from-literal=auth0-client-id=${{ secrets.AUTH0_CLIENT_ID }} \
             --from-literal=auth0-mgmt-client-id=${{ secrets.AUTH0_MGMT_CLIENT_ID }} \
-            --from-literal=auth0-mgmt-client-secret=${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
+            --from-literal=auth0-mgmt-client-secret=${{ secrets.AUTH0_MGMT_CLIENT_SECRET }} \
+            --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
       - name: Sync llm-api-db-secret in k8s
         run: |
-          kubectl delete secret llm-api-db-secret --ignore-not-found=true
           kubectl create secret generic llm-api-db-secret \
             --from-literal=postgres-user=aipet \
             --from-literal=postgres-password="${{ secrets.AIPET_DB_PASSWORD }}" \
             --from-literal=postgres-db=aipet \
-            --from-literal=database-url="postgresql+psycopg2://aipet:${{ secrets.AIPET_DB_PASSWORD }}@llm-api-db:5432/aipet"
+            --from-literal=database-url="postgresql+psycopg2://aipet:${{ secrets.AIPET_DB_PASSWORD }}@llm-api-db:5432/aipet" \
+            --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
       - name: Refresh ECR pull credentials in k8s
         run: |
           AWS_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-          kubectl delete secret ecr-credentials --ignore-not-found=true
           kubectl create secret docker-registry ecr-credentials \
             --docker-server=${AWS_ACCOUNT}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com \
             --docker-username=AWS \
-            --docker-password="$(aws ecr get-login-password --region ${{ env.AWS_REGION }})"
+            --docker-password="$(aws ecr get-login-password --region ${{ env.AWS_REGION }})" \
+            --dry-run=client -o yaml | kubectl apply --validate=false -f -
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
