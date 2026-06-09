@@ -20,9 +20,31 @@ def _s3():
     return boto3.client("s3")
 
 
+def _read_existing_status(s3) -> str | None:
+    """Return the current value of status.txt, or None if it doesn't exist."""
+    try:
+        obj = s3.get_object(Bucket=BUCKET, Key=f"{RUN_ID}/status.txt")
+        return obj["Body"].read().decode().strip()
+    except Exception:  # noqa: BLE001 — treat any error as "no status yet"
+        return None
+
+
 def main() -> None:
     s3 = _s3()
     print(f"[bootstrap] run_id={RUN_ID}  bucket={BUCKET}", flush=True)
+
+    # ── Idempotency guard ────────────────────────────────────────────────────
+    # Prevent overwriting a completed run's status if the instance is somehow
+    # reused. VastAI doesn't auto-restart like RunPod, but this is a safeguard.
+    existing_status = _read_existing_status(s3)
+    print(f"[bootstrap] existing status.txt={existing_status!r}", flush=True)
+    if existing_status in ("done", "failed"):
+        print(
+            f"[bootstrap] run already {existing_status} — exiting to avoid re-running",
+            flush=True,
+        )
+        return
+
     s3.put_object(Bucket=BUCKET, Key=f"{RUN_ID}/status.txt", Body=b"pending")
 
     # Find the project wheel in S3

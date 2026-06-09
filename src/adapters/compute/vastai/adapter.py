@@ -63,7 +63,13 @@ class VastAiTrainingAdapter(RemoteJobPort):
     # ------------------------------------------------------------------
 
     def submit(self, spec: RemoteJobSpec) -> str:
-        run_id = f"workflow/{spec.run_id}" if spec.run_id else f"workflow/{uuid.uuid4().hex}"
+        # Eval jobs must get a fresh namespace so they don't collide with the
+        # completed training run's status.txt=done or overwrite its artifacts.
+        # The checkpoint reference travels via TRAINING_ARTIFACT_REF, not run_id.
+        if spec.job_type == "eval":
+            run_id = f"workflow/{uuid.uuid4().hex}"
+        else:
+            run_id = f"workflow/{spec.run_id}" if spec.run_id else f"workflow/{uuid.uuid4().hex}"
         log.info(
             "vastai submit  run_id=%s  job_type=%s  experiment=%s",
             run_id, spec.job_type, spec.experiment_name,
