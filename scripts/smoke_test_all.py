@@ -7,9 +7,9 @@ prefixes every output line with the backend name, then prints a summary.
 Usage:
     python scripts/smoke_test_all.py [backend ...]
 
-    With no arguments both backends are tested.
+    With no arguments all backends are tested.
     Pass explicit names to test a subset, e.g.:
-        python scripts/smoke_test_all.py kaggle
+        python scripts/smoke_test_all.py kaggle vastai
 
 Required env vars (shared by all backends):
     API_URL, AUTH0_DOMAIN, AUTH0_MGMT_CLIENT_ID, AUTH0_MGMT_CLIENT_SECRET,
@@ -19,6 +19,7 @@ Required env vars (shared by all backends):
 Optional per-backend env vars (only needed for the corresponding backend):
     KAGGLE_USERNAME, KAGGLE_API_TOKEN    — kaggle
     K8S_IMAGE_PULL_SECRET                — k8s (defaults to 'ecr-credentials')
+    VASTAI_GPU_QUERY                     — vastai (default: "num_gpus=1 gpu_name=RTX_3090 reliability>0.99")
 """
 
 from __future__ import annotations
@@ -31,13 +32,14 @@ from pathlib import Path
 
 _SCRIPT = Path(__file__).parent / "smoke_test.py"
 
-_ALL_BACKENDS = ["k8s", "kaggle", "runpod"]
+_ALL_BACKENDS = ["k8s", "kaggle", "runpod", "vastai"]
 
 # ANSI colours — one per backend, falls back gracefully on dumb terminals.
 _COLOURS = {
     "k8s":    "\033[36m",   # cyan
     "kaggle": "\033[33m",   # yellow
     "runpod": "\033[35m",   # magenta
+    "vastai": "\033[34m",   # blue
 }
 _RESET = "\033[0m"
 _GREEN = "\033[32m"
