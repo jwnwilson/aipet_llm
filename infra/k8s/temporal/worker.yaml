@@ -81,10 +81,13 @@ spec:
                   key: kaggle-key
                   optional: true
             - name: RUNPOD_IMAGE
-              # Placeholder — stamped by CI deploy workflow with the RunPod training image ref
+              # Placeholder — stamped by CI deploy workflow with the remote training image ref
               value: <ECR_RUNPOD_IMAGE>
             - name: RUNPOD_EVAL_IMAGE
-              # Placeholder — stamped by CI deploy workflow with the RunPod eval image ref
+              # Placeholder — stamped by CI deploy workflow with the remote training eval image ref
+              value: <ECR_RUNPOD_IMAGE>
+            - name: VASTAI_IMAGE
+              # Same pre-baked image as RunPod — stamped by CI deploy workflow
               value: <ECR_RUNPOD_IMAGE>
             - name: RUNPOD_API_KEY
               valueFrom:
