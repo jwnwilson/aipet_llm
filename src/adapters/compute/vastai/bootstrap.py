@@ -43,15 +43,20 @@ def main() -> None:
     whl = Path("/tmp") / whl_key.split("/")[-1]
     print(f"[bootstrap] downloading wheel  key={whl_key}", flush=True)
     s3.download_file(BUCKET, whl_key, str(whl))
-    # Install with [training] extras so transformers, datasets, accelerate,
-    # peft, bitsandbytes, and sentencepiece are available inside the instance.
+    # When TRAINING_DEPS_PREINSTALLED=1 (set in docker/remote-training/Dockerfile) the
+    # heavy ML libs are already in the image; only install the project code.
+    # Otherwise install with [training] extras for the vanilla pytorch image.
+    if os.environ.get("TRAINING_DEPS_PREINSTALLED"):
+        install_target = str(whl)
+    else:
+        install_target = f"{whl}[training]"
     subprocess.run(
-        [sys.executable, "-m", "pip", "install", f"{whl}[training]"],
+        [sys.executable, "-m", "pip", "install", install_target],
         check=True,
     )
     # Route to the correct module based on JOB_TYPE env var.
     job_type = os.environ.get("JOB_TYPE", "train")
-    print(f"[bootstrap] wheel installed with [training] extras — starting job_type={job_type}", flush=True)
+    print(f"[bootstrap] wheel installed ({install_target}) — starting job_type={job_type}", flush=True)
 
     import runpy
     runpy.run_module("interactors.cli.training.remote_worker", run_name="__main__")

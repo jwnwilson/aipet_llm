@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
-# RunPod training image — AMD64 + CUDA variant with all training deps pre-baked.
-# Eliminates the 4-6 min pip install that happens on every pod start when using
-# the vanilla pytorch image. Built for linux/amd64 to match RunPod's GPU hosts.
+# Remote training image — AMD64 + CUDA variant with all training deps pre-baked.
+# Used by RunPod and Vast.ai backends. Eliminates the 4-6 min pip install that
+# happens on every pod start when using the vanilla pytorch image.
 FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel
 
 RUN pip install --no-cache-dir \

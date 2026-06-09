@@ -31,7 +31,7 @@ jobs:
       inference: ${{ steps.filter.outputs.inference }}
       training: ${{ steps.filter.outputs.training }}
       export: ${{ steps.filter.outputs.export }}
-      runpod: ${{ steps.filter.outputs.runpod }}
+      runpod: ${{ steps.filter.outputs.remote_training }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,8 +64,8 @@ jobs:
               - 'llama.cpp/**'
               - 'pyproject.toml'
               - 'uv.lock'
-            runpod:
-              - 'docker/runpod/Dockerfile'
+            remote_training:
+              - 'docker/remote-training/Dockerfile'
               - 'pyproject.toml'
               - 'uv.lock'
 
@@ -219,13 +219,13 @@ jobs:
             echo "image=${REGISTRY}/${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── RunPod training image (AMD64 + CUDA — public ECR, no auth required) ──
-      - name: Build and push RunPod training image (AMD64)
+      # ── Remote training image (AMD64 + CUDA — public ECR, no auth required) ──
+      - name: Build and push remote training image (AMD64)
         if: ${{ needs.changes.outputs.runpod == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: docker/runpod/Dockerfile
+          file: docker/remote-training/Dockerfile
           platforms: linux/amd64
           push: true
           tags: |
