@@ -28,6 +28,11 @@ from domain.train.config import DEFAULT_EPOCHS, DEFAULT_MODEL, DEFAULT_OUTPUT_DI
 _engine: _Engine | None = None
 _storage: StoragePort | None = None
 
+# Max length of the progress `detail` string allowed into a Temporal heartbeat.
+# Heartbeat details must stay well under the server's ~2 MB blob limit; a short
+# status line is all we ever need here.
+_HEARTBEAT_DETAIL_MAX = 2000
+
 
 def configure_engine(engine: _Engine) -> None:
     global _engine
@@ -493,16 +498,36 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
                 except Exception:
                     log.warning("Failed to persist training logs for run %s", config.run_id)
 
-            # Detailed heartbeat after each poll (background loop covers gaps between polls).
-            # run_id is included so a restarted worker can resume polling without resubmitting.
-            activity.heartbeat({"status": status, "elapsed_s": elapsed_s, "logs": logs, "run_id": run_id})
-
+            # Fetch progress (a small fraction + short detail string) before the heartbeat
+            # so it can ride along.  Unlike logs, this stays bounded — safe for heartbeat
+            # details.  Only fetched when a DB run_id exists (matches DB-persist guard below).
+            frac, detail = 0.0, ""
             if config.run_id:
                 try:
                     frac, detail = await loop.run_in_executor(None, lambda: adapter.progress(run_id))
-                    if frac > 0:
-                        with _create_uow().transaction() as _uow:
-                            _uow.run_store.update_progress(config.run_id, frac, detail)
+                except Exception:
+                    frac, detail = 0.0, ""
+
+            # Detailed heartbeat after each poll (background loop covers gaps between polls).
+            # run_id is included so a restarted worker can resume polling without resubmitting.
+            # NOTE: never put `logs` here — cumulative training logs grow unbounded and blow
+            # past Temporal's ~2 MB heartbeat-details limit on long runs, killing the activity
+            # with a non-retryable "Heartbeat details exceed size limit." error. Logs are
+            # already persisted to S3 above; the live-log UI streams them from there.
+            # `detail` is truncated defensively so a runaway progress string can't reintroduce
+            # the same size failure.
+            activity.heartbeat({
+                "status": status,
+                "elapsed_s": elapsed_s,
+                "run_id": run_id,
+                "progress": frac,
+                "detail": detail[:_HEARTBEAT_DETAIL_MAX],
+            })
+
+            if config.run_id and frac > 0:
+                try:
+                    with _create_uow().transaction() as _uow:
+                        _uow.run_store.update_progress(config.run_id, frac, detail)
                 except Exception:
                     pass
 

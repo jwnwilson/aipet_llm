@@ -2,7 +2,13 @@
 # Remote training image — AMD64 + CUDA variant with all training deps pre-baked.
 # Used by RunPod and Vast.ai backends. Eliminates the 4-6 min pip install that
 # happens on every pod start when using the vanilla pytorch image.
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-devel
+#
+# Uses the CUDA *runtime* base (not -devel): every baked dependency ships
+# prebuilt CUDA kernels (bitsandbytes) or is pure Python (transformers, peft,
+# accelerate, datasets), so the ~3-5 GB CUDA toolkit/compilers in -devel are
+# dead weight. Dropping them shrinks the image pulled from ECR to the remote
+# GPU provider on every run — the dominant data-transfer-out cost.
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 RUN pip install --no-cache-dir \
     transformers>=5.7.0 \

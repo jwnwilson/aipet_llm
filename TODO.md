@@ -2,7 +2,6 @@
 
 ## Quick wins
 - Add progress % tracker for training or eval / remote compute jobs
-- Re-add vastai as a compute option
 
 ## AI productivity gains
 - Create skill to consolidate learnings from session and update memory of claude.md then compact context.

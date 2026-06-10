@@ -423,7 +423,7 @@ class TestTrainRemotePolling:
         assert adapter.logs.call_count >= 1
 
     @pytest.mark.asyncio
-    async def test_heartbeat_is_dict_with_status_elapsed_and_logs(self, monkeypatch):
+    async def test_heartbeat_carries_status_elapsed_and_run_id(self, monkeypatch):
         acts = self._patches(monkeypatch)
         captured: list[dict] = []
         monkeypatch.setattr(acts.activity, "heartbeat", lambda hb: captured.append(hb))
@@ -438,20 +438,34 @@ class TestTrainRemotePolling:
         assert isinstance(first, dict)
         assert first["status"] == "running"
         assert "elapsed_s" in first
-        assert first["logs"] == "step 10 loss=0.5"
+        # run_id must be present so a restarted worker can resume polling.
+        assert first["run_id"] == "run-42"
 
     @pytest.mark.asyncio
-    async def test_heartbeat_logs_field_is_empty_when_adapter_returns_none(self, monkeypatch):
+    async def test_heartbeat_excludes_logs(self, monkeypatch):
+        """Logs must NOT ride in heartbeat details.
+
+        Cumulative training logs grow without bound; Temporal rejects heartbeat
+        details over ~2 MB with a non-retryable "Heartbeat details exceed size
+        limit." error. Logs are persisted to S3 separately, so they have no
+        business in the heartbeat payload.
+        """
         acts = self._patches(monkeypatch)
         captured: list[dict] = []
         monkeypatch.setattr(acts.activity, "heartbeat", lambda hb: captured.append(hb))
 
-        adapter = self._make_adapter(["done"], log_output="")
+        # Simulate a long run whose log file has grown past the 2 MB limit.
+        huge_logs = "x" * (3 * 1024 * 1024)
+        adapter = self._make_adapter(["running", "done"], log_output=huge_logs)
         config = TrainConfig(experiment_name="test-exp", output_dir="/tmp/out")
         with patch("interactors.temporal.activities.asyncio.sleep"):
             await acts._train_remote(config, adapter)
 
-        assert captured[0]["logs"] == ""
+        assert captured, "heartbeat should have been called"
+        for hb in captured:
+            assert "logs" not in hb, "logs must not be embedded in heartbeat details"
+            # Every heartbeat payload must stay comfortably under the 2 MB limit.
+            assert len(json.dumps(hb)) < 100_000
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +511,57 @@ class TestTrainRemoteProgress:
 
         adapter.progress.assert_called()
         mock_store.update_progress.assert_called_with("run-db-1", 0.5, "epoch=1.0  loss=0.4312")
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_includes_progress_and_detail(self, monkeypatch):
+        acts = self._patches(monkeypatch)
+        captured: list[dict] = []
+        monkeypatch.setattr(acts.activity, "heartbeat", lambda hb: captured.append(hb))
+        mock_store = MagicMock()
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
+
+        adapter = self._make_adapter(["running", "done"], progress_return=(0.42, "epoch=2.0  loss=0.31"))
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        with patch("interactors.temporal.activities.asyncio.sleep"):
+            await acts._train_remote(config, adapter)
+
+        assert captured, "heartbeat should have been called"
+        assert captured[0]["progress"] == 0.42
+        assert captured[0]["detail"] == "epoch=2.0  loss=0.31"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_progress_defaults_when_no_run_id(self, monkeypatch):
+        acts = self._patches(monkeypatch)
+        captured: list[dict] = []
+        monkeypatch.setattr(acts.activity, "heartbeat", lambda hb: captured.append(hb))
+
+        adapter = self._make_adapter(["done"], progress_return=(0.75, "epoch=2.0"))
+        config = TrainConfig(run_id="", experiment_name="test", output_dir="/tmp/out")
+        with patch("interactors.temporal.activities.asyncio.sleep"):
+            await acts._train_remote(config, adapter)
+
+        # No run_id → progress is never fetched, heartbeat carries safe defaults.
+        adapter.progress.assert_not_called()
+        assert captured[0]["progress"] == 0.0
+        assert captured[0]["detail"] == ""
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_detail_is_truncated(self, monkeypatch):
+        acts = self._patches(monkeypatch)
+        captured: list[dict] = []
+        monkeypatch.setattr(acts.activity, "heartbeat", lambda hb: captured.append(hb))
+        mock_store = MagicMock()
+        monkeypatch.setattr(acts, "_create_uow", lambda: _mock_uow(run_store=mock_store))
+
+        huge_detail = "y" * (1024 * 1024)
+        adapter = self._make_adapter(["done"], progress_return=(0.5, huge_detail))
+        config = TrainConfig(run_id="run-db-1", experiment_name="test", output_dir="/tmp/out")
+        with patch("interactors.temporal.activities.asyncio.sleep"):
+            await acts._train_remote(config, adapter)
+
+        # A runaway detail string must not reintroduce the heartbeat-size failure.
+        assert len(captured[0]["detail"]) <= acts._HEARTBEAT_DETAIL_MAX
+        assert len(json.dumps(captured[0])) < 100_000
 
     @pytest.mark.asyncio
     async def test_skips_update_when_fraction_is_zero(self, monkeypatch):
