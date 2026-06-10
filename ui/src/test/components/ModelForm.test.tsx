@@ -30,4 +30,21 @@ describe('ModelForm', () => {
     expect((screen.getByDisplayValue('existing') as HTMLInputElement).value).toBe('existing')
     expect((screen.getByDisplayValue('10') as HTMLInputElement).value).toBe('10')
   })
+
+  it('shows all base model options when the default value is selected', async () => {
+    render(<ModelForm onSubmit={vi.fn()} />)
+    await userEvent.click(screen.getByDisplayValue('HuggingFaceTB/SmolLM2-360M'))
+    const options = await screen.findAllByRole('option')
+    expect(options.length).toBeGreaterThan(1)
+    expect(screen.getByRole('option', { name: 'Qwen/Qwen2.5-0.5B' })).toBeInTheDocument()
+  })
+
+  it('narrows base model options while typing a partial query', async () => {
+    render(<ModelForm onSubmit={vi.fn()} />)
+    const input = screen.getByDisplayValue('HuggingFaceTB/SmolLM2-360M')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'qwen')
+    const options = await screen.findAllByRole('option')
+    expect(options.every(opt => /qwen/i.test(opt.textContent ?? ''))).toBe(true)
+  })
 })

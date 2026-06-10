@@ -18,13 +18,14 @@ export function Combobox({ value, onChange, options, placeholder, disabled, clas
   const containerRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLUListElement>(null)
 
-  const filtered = React.useMemo(
-    () =>
-      value.trim() === ''
-        ? options
-        : options.filter(opt => opt.toLowerCase().includes(value.toLowerCase())),
-    [value, options]
-  )
+  const filtered = React.useMemo(() => {
+    const query = value.trim()
+    // When the value exactly matches an option it is a selection, not a search
+    // term — show the full list so every choice stays reachable. Only narrow
+    // the list while the user is actively typing a partial query.
+    if (query === '' || options.includes(value)) return options
+    return options.filter(opt => opt.toLowerCase().includes(query.toLowerCase()))
+  }, [value, options])
 
   React.useEffect(() => { setActiveIndex(-1) }, [filtered])
 
