@@ -27,6 +27,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     outputs:
+      backend: ${{ steps.filter.outputs.backend }}
       proxy: ${{ steps.filter.outputs.proxy }}
       inference: ${{ steps.filter.outputs.inference }}
       training: ${{ steps.filter.outputs.training }}
@@ -40,6 +41,20 @@ jobs:
         id: filter
         with:
           filters: |
+            # Aggregate gate: true when anything that affects the backend
+            # build or k8s deploy changed. Pure UI/docs-only pushes leave this
+            # false, so the whole build + deploy pipeline is skipped (the UI has
+            # its own deploy-ui.yml workflow). infra/k8s/** and smoke tests are
+            # included because they change what `deploy` applies even when no
+            # image is rebuilt.
+            backend:
+              - 'docker/**'
+              - 'src/**'
+              - 'infra/k8s/**'
+              - 'llama.cpp/**'
+              - 'scripts/smoke_test*.py'
+              - 'pyproject.toml'
+              - 'uv.lock'
             proxy:
               - 'docker/proxy/Dockerfile'
               - 'src/**'
@@ -72,7 +87,10 @@ jobs:
   # ── Build: push ARM64 images to ECR ───────────────────────────────────────
   build:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Skip the entire build + deploy pipeline when no backend paths changed.
+    # deploy `needs: build`, so a skipped build cascades to skip deploy too.
+    # workflow_dispatch always forces a full rebuild + deploy.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && needs.changes.outputs.backend == 'true') }}
     runs-on: ubuntu-latest
     outputs:
       proxy_image: ${{ steps.proxy-image.outputs.image }}
