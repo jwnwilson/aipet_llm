@@ -199,12 +199,40 @@ def build_hf_dataset(records: list[dict], tokenizer, max_length: int = MAX_LENGT
 
 
 class _ProgressCallback(TrainerCallback):
-    """Writes a JSON sidecar after each log step so remote pollers can read training progress."""
+    """Writes a ``progress.json`` sidecar and emits clean periodic % log lines.
 
-    def __init__(self, progress_path: "Path") -> None:
+    Two consumers depend on this:
+      * Remote ``progress()`` adapters (RunPod/VastAI) read the ``fraction`` field
+        to advance the ``/progress/stream`` SSE — so we always write a *banded*
+        ``fraction`` (``floor + span * step/max_steps``). ``step``/``max_steps`` are
+        kept too for the SSH/Kaggle adapters that compute the fraction themselves.
+      * The remote worker captures the Python ``logging`` stream into S3 ``logs.txt``;
+        tqdm bars bypass it, so we emit a tidy ``training progress: NN%`` line here.
+
+    Updates fire on every HF log step (``on_log``) and on a time floor
+    (``on_step_end`` throttled to ``min_interval_s``) so a slow-stepping run still ticks.
+    """
+
+    def __init__(
+        self,
+        progress_path: "Path",
+        *,
+        floor: float = 0.0,
+        span: float = 1.0,
+        min_interval_s: float = 30.0,
+    ) -> None:
         import time as _time
         self._path = progress_path
+        self._floor = floor
+        self._span = span
+        self._min_interval_s = min_interval_s
         self._start = _time.time()
+        self._last_emit: float | None = None  # None → first on_step_end always emits
+        self._metrics: dict[str, float] = {}  # latest float logs (loss, eval_loss, …)
+
+    def _now(self) -> float:
+        import time as _time
+        return _time.monotonic()
 
     def on_log(
         self,
@@ -214,23 +242,57 @@ class _ProgressCallback(TrainerCallback):
         logs: dict | None = None,
         **kwargs,
     ) -> None:
+        if logs:
+            for k, v in logs.items():
+                if isinstance(v, float):
+                    self._metrics[k] = round(v, 4)
+        self._emit(state, force=True)
+
+    def on_step_end(
+        self,
+        args: "TrainingArguments",
+        state: "TrainerState",
+        control: "TrainerControl",
+        **kwargs,
+    ) -> None:
+        if self._last_emit is None or self._now() - self._last_emit >= self._min_interval_s:
+            self._emit(state)
+
+    def _emit(self, state: "TrainerState", force: bool = False) -> None:  # noqa: ARG002
         import time as _time
-        if not logs:
-            return
+        max_steps = getattr(state, "max_steps", 0) or 0
+        step = getattr(state, "global_step", 0) or 0
+        raw = (step / max_steps) if max_steps else 0.0
+        fraction = round(self._floor + self._span * raw, 4)
+        epoch = round(getattr(state, "epoch", 0.0) or 0.0, 2)
+        loss = self._metrics.get("loss")
+
+        detail_parts = [f"step {step}/{max_steps}", f"epoch={epoch}"]
+        if loss is not None:
+            detail_parts.append(f"loss={loss:.4f}")
+        detail = " ".join(detail_parts)
+
         entry: dict = {
-            "step": state.global_step,
-            "max_steps": state.max_steps,
-            "epoch": round(state.epoch or 0.0, 2),
+            "step": step,
+            "max_steps": max_steps,
+            "epoch": epoch,
             "elapsed_s": int(_time.time() - self._start),
+            "fraction": fraction,
+            "detail": detail,
+            **self._metrics,
         }
-        for k, v in logs.items():
-            if isinstance(v, float):
-                entry[k] = round(v, 4)
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             self._path.write_text(json.dumps(entry))
         except OSError:
             pass
+
+        log.info(
+            "training progress: %d%% (step %d/%d, epoch=%.2f, loss=%s)",
+            round(fraction * 100), step, max_steps, epoch,
+            f"{loss:.4f}" if loss is not None else "n/a",
+        )
+        self._last_emit = self._now()
 
 
 class _ActionQualityCallback(TrainerCallback):
@@ -353,6 +415,8 @@ def train(
     batch_size: int | None = None,
     no_mps: bool = False,
     progress_path: str | None = None,
+    progress_floor: float = 0.0,
+    progress_span: float = 1.0,
     force_qlora: bool | None = None,
 ) -> None:
     if not _TORCH_AVAILABLE:
@@ -547,7 +611,11 @@ def train(
     effective_progress_path = progress_path or str(Path(output_dir) / "progress.json")
     callbacks = [
         _ActionQualityCallback(eval_records, tokenizer, n_sample=20),
-        _ProgressCallback(Path(effective_progress_path)),
+        _ProgressCallback(
+            Path(effective_progress_path),
+            floor=progress_floor,
+            span=progress_span,
+        ),
     ]
     if not dry_run and _has_eval:
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=patience))
