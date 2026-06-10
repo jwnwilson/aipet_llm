@@ -67,7 +67,11 @@ def test_emit_logs_clean_percent_line(tmp_path):
 
     logging.disable(logging.NOTSET)  # undo any leaked global suppression
     logger = trainer_mod.log  # the precise logger instance _emit() logs through
-    prev_level, prev_propagate = logger.level, logger.propagate
+    prev_level, prev_propagate, prev_disabled = logger.level, logger.propagate, logger.disabled
+    # logging.config.fileConfig(disable_existing_loggers=True) — used by Alembic's
+    # env.py — sets `.disabled = True` on existing loggers; that flag is NOT cleared
+    # by logging.disable()/setLevel(), so reset it explicitly or _emit() stays muted.
+    logger.disabled = False
     logger.setLevel(logging.INFO)
     logger.propagate = False
     logger.addHandler(handler)
@@ -77,6 +81,7 @@ def test_emit_logs_clean_percent_line(tmp_path):
         logger.removeHandler(handler)
         logger.setLevel(prev_level)
         logger.propagate = prev_propagate
+        logger.disabled = prev_disabled
 
     lines = [r.getMessage() for r in records if "training progress" in r.getMessage()]
     assert len(lines) == 1

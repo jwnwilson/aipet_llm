@@ -21,7 +21,11 @@ import adapters.database.run_store      # noqa: F401 — registers _RunRow with 
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which sets `.disabled = True` on
+    # every already-created logger (e.g. domain.train.trainer) the moment this
+    # module is imported — silently muting app logging for the rest of the process.
+    # Keep existing loggers alive; we only want to add Alembic's own config.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
