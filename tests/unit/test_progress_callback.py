@@ -48,8 +48,25 @@ def test_emit_logs_clean_percent_line(tmp_path, caplog):
     path = tmp_path / "progress.json"
     cb = _ProgressCallback(path)
 
-    with caplog.at_level(logging.INFO, logger="domain.train.trainer"):
+    # Capture directly on the target logger rather than relying on propagation to
+    # caplog's root handler. Under xdist --dist=loadfile, another test or imported
+    # library in the same worker can leave global logging state dirty (e.g. an
+    # active logging.disable() or a non-propagating ancestor), which silently drops
+    # the record and makes this assertion flaky CI-only. Resetting disable + binding
+    # the handler to the logger (propagate=False to avoid double-capture) makes the
+    # capture deterministic regardless of leaked state.
+    logging.disable(logging.NOTSET)
+    logger = logging.getLogger("domain.train.trainer")
+    prev_level, prev_propagate = logger.level, logger.propagate
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.addHandler(caplog.handler)
+    try:
         cb._emit(_state(step=42, max_steps=100), force=True)
+    finally:
+        logger.removeHandler(caplog.handler)
+        logger.setLevel(prev_level)
+        logger.propagate = prev_propagate
 
     lines = [r.message for r in caplog.records if "training progress" in r.message]
     assert len(lines) == 1
