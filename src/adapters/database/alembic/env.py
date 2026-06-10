@@ -21,7 +21,10 @@ import adapters.database.run_store      # noqa: F401 — registers _RunRow with 
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which would disable every app
+    # logger (e.g. domain.train.trainer) when migrations run in-process — leaking
+    # into tests and silencing real log output. Keep existing loggers alive.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
