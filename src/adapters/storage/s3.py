@@ -20,8 +20,23 @@ class S3StorageAdapter(StoragePort):
 
     def __init__(self, bucket: str | None = None) -> None:
         import boto3
+        from botocore.config import Config
+
         self._bucket = bucket or os.environ["AWS_S3_BUCKET"]
-        self._s3 = boto3.client("s3")
+        # Bound every S3 call so a stalled connection can't hang the caller
+        # indefinitely. The Temporal train poll loop uploads logs from the same
+        # thread it heartbeats on; an unbounded boto3 retry/backoff there could
+        # consume the whole 10-minute heartbeat budget and trip a heartbeat
+        # timeout. connect/read timeouts + a small retry cap keep any single
+        # call to a few seconds at most.
+        self._s3 = boto3.client(
+            "s3",
+            config=Config(
+                connect_timeout=10,
+                read_timeout=30,
+                retries={"max_attempts": 3, "mode": "standard"},
+            ),
+        )
 
     def upload(self, local_path: Path, key: str) -> None:
         log.debug("s3 upload  bucket=%s  key=%s  src=%s", self._bucket, key, local_path)

@@ -464,6 +464,7 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
 
     # Read existing S3 log content once so subsequent writes append rather than overwrite.
     train_log_prefix = _build_log_prefix(config.run_id, "TRAINING") if config.run_id else ""
+    last_logs: str = ""  # only re-upload to S3 when the cumulative log actually changes
 
     # Background heartbeat keeps the activity alive while executor calls block.
     # status() + logs() can take >2 min on slow VastAI/S3 paths; without this
@@ -492,9 +493,21 @@ async def _train_remote(config: TrainConfig, adapter: RemoteJobPort) -> Checkpoi
                 activity.logger.info("Instance output:\n%s", logs)
                 log.info("Instance output (run_id=%s):\n%s", run_id, logs)
 
-            if logs and config.run_id:
+            if logs and logs != last_logs and config.run_id:
+                # Re-upload only when the cumulative log changed — adapter.logs()
+                # returns the full log every poll, so unchanged content would mean
+                # re-uploading the same (growing) blob every 30s for nothing.
+                # Run off the event loop so a slow S3 put can't block the
+                # background heartbeat task and trip the heartbeat timeout.
+                payload = (train_log_prefix + logs).encode()
                 try:
-                    _get_storage().write_bytes(f"workflow/{config.run_id}/logs.txt", (train_log_prefix + logs).encode())
+                    await loop.run_in_executor(
+                        None,
+                        lambda: _get_storage().write_bytes(
+                            f"workflow/{config.run_id}/logs.txt", payload
+                        ),
+                    )
+                    last_logs = logs
                 except Exception:
                     log.warning("Failed to persist training logs for run %s", config.run_id)
 
