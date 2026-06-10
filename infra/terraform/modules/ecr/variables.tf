@@ -8,3 +8,9 @@ variable "image_retention_count" {
   type        = number
   default     = 10
 }
+
+variable "untagged_retention_days" {
+  description = "Days to retain untagged images before expiring them"
+  type        = number
+  default     = 14
+}
