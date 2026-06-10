@@ -141,6 +141,11 @@ def run(
             patience=config.patience,
             warmup_ratio=config.warmup_ratio,
             progress_path=str(progress_path),
+            # Map the trainer's 0→1 step progress into the run's overall band so
+            # the reported fraction stays monotonic between the surrounding phase
+            # writes: 0.15 (data downloaded) → 0.90 (uploading checkpoint).
+            progress_floor=0.15,
+            progress_span=0.75,
         )
         log.info("training complete  checkpoint=%s", checkpoint_dir)
     except Exception as exc:
