@@ -116,7 +116,7 @@ def poll_run_to_completion(
     api_url: str,
     headers: dict[str, str],
     run_id: str,
-    timeout_seconds: int = 1800,
+    timeout_seconds: int = 2400,
     poll_interval: int = 10,
 ) -> dict:
     """Poll GET /api/runs/{run_id} until status reaches a terminal state.
