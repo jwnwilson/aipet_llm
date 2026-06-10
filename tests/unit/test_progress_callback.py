@@ -44,31 +44,41 @@ def test_emit_zero_max_steps_does_not_divide_by_zero(tmp_path):
     assert data["fraction"] == 0.2  # equals floor, no error
 
 
-def test_emit_logs_clean_percent_line(tmp_path, caplog):
+def test_emit_logs_clean_percent_line(tmp_path):
     path = tmp_path / "progress.json"
     cb = _ProgressCallback(path)
 
-    # Capture directly on the target logger rather than relying on propagation to
-    # caplog's root handler. Under xdist --dist=loadfile, another test or imported
-    # library in the same worker can leave global logging state dirty (e.g. an
-    # active logging.disable() or a non-propagating ancestor), which silently drops
-    # the record and makes this assertion flaky CI-only. Resetting disable + binding
-    # the handler to the logger (propagate=False to avoid double-capture) makes the
-    # capture deterministic regardless of leaked state.
-    logging.disable(logging.NOTSET)
-    logger = logging.getLogger("domain.train.trainer")
+    # Do NOT rely on pytest's caplog here. Under this repo's config
+    # (--dist=loadfile + log_cli=true) on CI, caplog's handler level and global
+    # logging state (logging.disable(), ancestor propagation) leak across tests in
+    # a worker and silently drop the record — making this assertion fail CI-only.
+    # Instead attach our own handler to the *exact* logger object _emit() writes to
+    # and capture into our own list, fully independent of global logging state.
+    from domain.train import trainer as trainer_mod
+
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    handler = _Capture()
+    handler.setLevel(logging.INFO)
+
+    logging.disable(logging.NOTSET)  # undo any leaked global suppression
+    logger = trainer_mod.log  # the precise logger instance _emit() logs through
     prev_level, prev_propagate = logger.level, logger.propagate
     logger.setLevel(logging.INFO)
     logger.propagate = False
-    logger.addHandler(caplog.handler)
+    logger.addHandler(handler)
     try:
         cb._emit(_state(step=42, max_steps=100), force=True)
     finally:
-        logger.removeHandler(caplog.handler)
+        logger.removeHandler(handler)
         logger.setLevel(prev_level)
         logger.propagate = prev_propagate
 
-    lines = [r.message for r in caplog.records if "training progress" in r.message]
+    lines = [r.getMessage() for r in records if "training progress" in r.getMessage()]
     assert len(lines) == 1
     assert "42%" in lines[0]
 
